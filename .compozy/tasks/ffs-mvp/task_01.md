@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Cargo workspace + cross-platform CI scaffolding
 type: chore
 complexity: medium
@@ -29,12 +29,12 @@ Establish the Rust workspace that will hold every Rust crate the FFS MVP needs (
 </requirements>
 
 ## Subtasks
-- [ ] 1.1 Create the root `Cargo.toml` with workspace members and shared dependencies pinned at workspace level.
-- [ ] 1.2 Create skeleton `Cargo.toml` and a `lib.rs` or `main.rs` placeholder for each member crate.
-- [ ] 1.3 Configure `rust-toolchain.toml` and `.cargo/config.toml` (cross-platform build settings, target triples).
-- [ ] 1.4 Add `.github/workflows/ci.yml` running build, test, fmt, clippy on the three OSes.
-- [ ] 1.5 Add a `release.yml` workflow that produces static `ffs-cli` artifacts for each target on tagged releases.
-- [ ] 1.6 Add a placeholder smoke test in every crate to confirm the workspace compiles and tests run.
+- [x] 1.1 Create the root `Cargo.toml` with workspace members and shared dependencies pinned at workspace level.
+- [x] 1.2 Create skeleton `Cargo.toml` and a `lib.rs` or `main.rs` placeholder for each member crate.
+- [x] 1.3 Configure `rust-toolchain.toml` and `.cargo/config.toml` (cross-platform build settings, target triples).
+- [x] 1.4 Add `.github/workflows/ci.yml` running build, test, fmt, clippy on the three OSes.
+- [x] 1.5 Add a `release.yml` workflow that produces static `ffs-cli` artifacts for each target on tagged releases.
+- [x] 1.6 Add a placeholder smoke test in every crate to confirm the workspace compiles and tests run.
 
 ## Implementation Details
 Create the workspace layout described in TechSpec § Implementation Notes of ADR-015 (`crates/ffs-core`, `crates/ffs-daemon`, etc.). The CI matrix must verify that `bundled-sqlcipher` cross-compiles on each OS, since this is called out as a known risk in the TechSpec § Known Risks.

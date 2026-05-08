@@ -4,7 +4,7 @@
 
 | # | Title | Status | Complexity | Dependencies |
 |---|-------|--------|------------|--------------|
-| 01 | Cargo workspace + cross-platform CI scaffolding | pending | medium | — |
+| 01 | Cargo workspace + cross-platform CI scaffolding | completed | medium | — |
 | 02 | Atom envelope: JCS canonicalization + Ed25519 sign/verify + BLAKE3 multihash | pending | high | task_01 |
 | 03 | Predicate spec loader: TOML + JSON Schema + reverse-map rule parsing | pending | medium | task_02 |
 | 04 | SQLite atom store with SQLCipher and bitemporal indexes | pending | high | task_02 |

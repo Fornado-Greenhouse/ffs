@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ffs-core",
+    "crates/ffs-daemon",
+    "crates/ffs-cli",
+    "crates/ffs-mcp",
+    "crates/ffs-federation",
+    "crates/ffs-fastpath",
+    "crates/ffs-skills-host",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["FFS Contributors"]
+repository = "https://github.com/foley/ffs"
+rust-version = "1.95"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+ffs-core = { path = "crates/ffs-core" }
+ffs-fastpath = { path = "crates/ffs-fastpath" }
+ffs-federation = { path = "crates/ffs-federation" }
+ffs-skills-host = { path = "crates/ffs-skills-host" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

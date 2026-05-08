@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ffs-cli ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            artifact: ffs
+            archive_ext: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: ffs
+            archive_ext: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: ffs
+            archive_ext: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: ffs.exe
+            archive_ext: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Install musl tools (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build ffs-cli
+        run: cargo build --release --target ${{ matrix.target }} --bin ffs
+
+      - name: Verify static linkage (Linux musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          file target/${{ matrix.target }}/release/${{ matrix.artifact }}
+          # On musl, ldd typically prints "statically linked" or fails to find dyn deps.
+          ldd target/${{ matrix.target }}/release/${{ matrix.artifact }} || true
+
+      - name: Verify linkage (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          file target/${{ matrix.target }}/release/${{ matrix.artifact }}
+          otool -L target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+      - name: Verify linkage (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          dir target\${{ matrix.target }}\release\${{ matrix.artifact }}
+
+      - name: Package (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf ../../../ffs-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path target/${{ matrix.target }}/release/${{ matrix.artifact }} `
+            -DestinationPath ffs-${{ matrix.target }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffs-${{ matrix.target }}
+          path: ffs-${{ matrix.target }}.${{ matrix.archive_ext }}

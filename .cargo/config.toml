@@ -1,0 +1,6 @@
+[build]
+# Default workspace build settings. Per-target overrides live in CI workflows
+# where target-specific tooling (musl-gcc, etc.) is installed at runtime.
+
+[net]
+git-fetch-with-cli = true
