@@ -7,5 +7,19 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_jcs = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+blake3 = { workspace = true }
+multibase = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true, features = ["parsing", "formatting", "macros"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = { workspace = true }
+
 [lints]
 workspace = true

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Atom envelope — JCS canonicalization, Ed25519 sign/verify, BLAKE3 multihash
 type: backend
 complexity: high
@@ -32,13 +32,13 @@ Implement the substrate's foundational interoperability contract: the canonical-
 </requirements>
 
 ## Subtasks
-- [ ] 2.1 Define the `AtomEnvelope`, `EntityId`, `PredicateName`, `Tier`, `Provenance`, `Signature`, `PublicKey`, `Multihash`, `Iso8601` types.
-- [ ] 2.2 Implement JCS canonicalization (use `serde_jcs`) and assert byte stability with property tests.
-- [ ] 2.3 Implement Ed25519 signing and verification (use `ed25519-dalek`) with the elided-signature signing protocol.
-- [ ] 2.4 Implement BLAKE3 multihash content addressing (use `blake3` and `multihash` crates).
-- [ ] 2.5 Implement multibase encoding/decoding for keys, signatures, and hashes.
-- [ ] 2.6 Provide a `verify()` method returning a typed `VerifyError`.
-- [ ] 2.7 Add property tests for canonicalization stability, signing roundtrip, multihash roundtrip.
+- [x] 2.1 Define the `AtomEnvelope`, `EntityId`, `PredicateName`, `Tier`, `Provenance`, `Signature`, `PublicKey`, `Multihash`, `Iso8601` types.
+- [x] 2.2 Implement JCS canonicalization (use `serde_jcs`) and assert byte stability with property tests.
+- [x] 2.3 Implement Ed25519 signing and verification (use `ed25519-dalek`) with the elided-signature signing protocol.
+- [x] 2.4 Implement BLAKE3 multihash content addressing (use `blake3` and `multihash` crates).
+- [x] 2.5 Implement multibase encoding/decoding for keys, signatures, and hashes.
+- [x] 2.6 Provide a `verify()` method returning a typed `VerifyError`.
+- [x] 2.7 Add property tests for canonicalization stability, signing roundtrip, multihash roundtrip.
 
 ## Implementation Details
 Create `crates/ffs-core/src/atom.rs` and supporting submodules. Follow the signing protocol step-by-step from ADR-017 (omit `signature`, JCS-canonicalize, sign, re-insert, JCS-canonicalize, hash). Numbers in atoms use ISO 8601 strings rather than Unix epochs to avoid integer/float ambiguity in JCS. RFC 8785 test vectors should be checked into the repo and exercised in CI.

@@ -30,6 +30,26 @@ ffs-fastpath = { path = "crates/ffs-fastpath" }
 ffs-federation = { path = "crates/ffs-federation" }
 ffs-skills-host = { path = "crates/ffs-skills-host" }
 
+# Serialization
+serde = "1"
+serde_json = "1"
+serde_jcs = "0.1"
+
+# Crypto and content addressing
+ed25519-dalek = "2"
+blake3 = "1"
+multibase = "0.9"
+
+# Errors
+thiserror = "2"
+
+# Time
+time = "0.3"
+
+# Test utilities
+proptest = "1"
+rand = "0.8"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
