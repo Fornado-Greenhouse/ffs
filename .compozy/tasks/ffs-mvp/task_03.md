@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Predicate spec loader — TOML + JSON Schema + reverse-map rule parsing
 type: backend
 complexity: medium
@@ -32,13 +32,13 @@ Implement the predicate-spec loader that reads TOML predicate definitions from `
 </requirements>
 
 ## Subtasks
-- [ ] 3.1 Define the typed predicate-spec model (`PredicateSpec`, `ReverseMapRule`, `RenderingConvention`, `Pagination`).
-- [ ] 3.2 Implement TOML parsing with deny-unknown-fields strictness.
-- [ ] 3.3 Integrate JSON Schema validation against the embedded `[claim_schema]`.
-- [ ] 3.4 Implement reverse-map rule parsing and internal-consistency validation.
-- [ ] 3.5 Implement parent-predicate resolution against the registry.
-- [ ] 3.6 Implement hot-reload by watching the `~/.ffs/config/predicates/` directory.
-- [ ] 3.7 Expose a `validate_claim` function consumed by atom-authoring callers.
+- [x] 3.1 Define the typed predicate-spec model (`PredicateSpec`, `ReverseMapRule`, `RenderingConvention`, `Pagination`).
+- [x] 3.2 Implement TOML parsing with deny-unknown-fields strictness.
+- [x] 3.3 Integrate JSON Schema validation against the embedded `[claim_schema]`.
+- [x] 3.4 Implement reverse-map rule parsing and internal-consistency validation.
+- [x] 3.5 Implement parent-predicate resolution against the registry.
+- [x] 3.6 Implement hot-reload by watching the `~/.ffs/config/predicates/` directory.
+- [x] 3.7 Expose a `validate_claim` function consumed by atom-authoring callers.
 
 ## Implementation Details
 Create `crates/ffs-core/src/predicate.rs` and helpers. Use the `toml` crate for parsing and `jsonschema` for validation. The `notify` crate (already needed for fast-path watching in task 09) reloads specs when files change. Predicate specs are themselves authored as substrate atoms (predicate-spec atoms with `predicate = "predicate.spec"`); the loader is the bootstrap path that loads them from disk before the substrate is fully online.

@@ -40,6 +40,11 @@ ed25519-dalek = "2"
 blake3 = "1"
 multibase = "0.9"
 
+# Config / schema / filesystem
+toml = "0.8"
+jsonschema = "0.27"
+notify = "6"
+
 # Errors
 thiserror = "2"
 
@@ -49,6 +54,7 @@ time = "0.3"
 # Test utilities
 proptest = "1"
 rand = "0.8"
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

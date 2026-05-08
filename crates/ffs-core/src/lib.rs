@@ -9,6 +9,7 @@ pub mod atom;
 pub mod error;
 pub mod multibase;
 pub mod multihash;
+pub mod predicate;
 
 pub use atom::{
     AtomEnvelope, AtomTemplate, EntityId, Iso8601, PredicateName, Provenance, PublicKey, Signature,

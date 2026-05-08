@@ -14,12 +14,16 @@ serde_jcs = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 blake3 = { workspace = true }
 multibase = { workspace = true }
+toml = { workspace = true }
+jsonschema = { workspace = true }
+notify = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, features = ["parsing", "formatting", "macros"] }
 
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true
