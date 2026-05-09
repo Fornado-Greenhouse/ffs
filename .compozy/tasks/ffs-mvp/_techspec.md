@@ -1,7 +1,6 @@
 # Foley File System (FFS) MVP — Technical Specification
 
 **Status:** Draft
-**Owner:** Wes Foley
 **Date:** 2026-05-05
 **Source PRD:** [`_prd.md`](_prd.md)
 

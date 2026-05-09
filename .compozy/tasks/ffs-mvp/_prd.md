@@ -1,7 +1,6 @@
 # Foley File System (FFS) — Product Requirements Document
 
 **Status:** Draft
-**Owner:** Wes Foley
 **Date:** 2026-05-05
 
 ## Overview

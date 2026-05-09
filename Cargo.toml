@@ -13,9 +13,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "Apache-2.0"
-authors = ["FFS Contributors"]
-repository = "https://github.com/foley/ffs"
+license = "BlueOak-1.0.0"
+authors = ["Wes Foley", "FFS Contributors"]
+repository = "https://github.com/Fornado-Greenhouse/ffs"
 rust-version = "1.95"
 
 [workspace.lints.rust]
