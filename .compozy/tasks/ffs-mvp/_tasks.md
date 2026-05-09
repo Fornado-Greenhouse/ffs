@@ -7,7 +7,7 @@
 | 01 | Cargo workspace + cross-platform CI scaffolding | completed | medium | — |
 | 02 | Atom envelope: JCS canonicalization + Ed25519 sign/verify + BLAKE3 multihash | completed | high | task_01 |
 | 03 | Predicate spec loader: TOML + JSON Schema + reverse-map rule parsing | completed | medium | task_02 |
-| 04 | SQLite atom store with SQLCipher and bitemporal indexes | pending | high | task_02 |
+| 04 | SQLite atom store with SQLCipher and bitemporal indexes | completed | high | task_02 |
 | 05 | Capability evaluator: action × scope × bitemporal window | pending | high | task_02, task_04 |
 | 06 | Projection renderer with Tera templates and reverse-map-annotated output | pending | medium | task_03, task_04, task_05 |
 | 07 | JSON-RPC 2.0 dispatcher in ffs-daemon over UDS / Windows named pipe | pending | high | task_04, task_05, task_06 |

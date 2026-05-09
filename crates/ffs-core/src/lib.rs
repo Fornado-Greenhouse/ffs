@@ -10,6 +10,7 @@ pub mod error;
 pub mod multibase;
 pub mod multihash;
 pub mod predicate;
+pub mod store;
 
 pub use atom::{
     AtomEnvelope, AtomTemplate, EntityId, Iso8601, PredicateName, Provenance, PublicKey, Signature,
@@ -18,6 +19,7 @@ pub use atom::{
 pub use error::{BadTimestampError, SignError, VerifyError};
 pub use multibase::MultibaseError;
 pub use multihash::{Multihash, MultihashError};
+pub use store::{AtomStore, MemAtomStore, SCHEMA_VERSION, SqliteAtomStore, StoreError};
 
 /// Workspace marker exposed so smoke tests can confirm the crate links.
 pub const CRATE_NAME: &str = "ffs-core";

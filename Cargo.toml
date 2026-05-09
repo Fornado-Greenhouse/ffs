@@ -45,6 +45,11 @@ toml = "0.8"
 jsonschema = "0.27"
 notify = "6"
 
+# Storage and OS keychain
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+keyring = "3"
+base64 = "0.22"
+
 # Errors
 thiserror = "2"
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: SQLite atom store with SQLCipher and bitemporal indexes
 type: backend
 complexity: high
@@ -33,14 +33,14 @@ Implement the per-substrate SQLite database that stores atoms, classifications, 
 </requirements>
 
 ## Subtasks
-- [ ] 4.1 Define the `AtomStore` trait with read/write/query methods.
-- [ ] 4.2 Author the SQLite schema migrations (initial v1 schema).
-- [ ] 4.3 Implement the `SqliteAtomStore` against `rusqlite` with the `bundled-sqlcipher` feature.
-- [ ] 4.4 Source DEK from the OS keychain via the `keyring` crate.
-- [ ] 4.5 Implement signature and hash validation on every insert.
-- [ ] 4.6 Build composite indexes for bitemporal queries (entity × predicate × tx_time).
-- [ ] 4.7 Wire FTS5 indexing for claim payload search.
-- [ ] 4.8 Implement an in-memory `MemAtomStore` for downstream tests.
+- [x] 4.1 Define the `AtomStore` trait with read/write/query methods.
+- [x] 4.2 Author the SQLite schema migrations (initial v1 schema).
+- [x] 4.3 Implement the `SqliteAtomStore` against `rusqlite` with the `bundled-sqlcipher` feature.
+- [x] 4.4 Source DEK from the OS keychain via the `keyring` crate.
+- [x] 4.5 Implement signature and hash validation on every insert.
+- [x] 4.6 Build composite indexes for bitemporal queries (entity × predicate × tx_time).
+- [x] 4.7 Wire FTS5 indexing for claim payload search.
+- [x] 4.8 Implement an in-memory `MemAtomStore` for downstream tests.
 
 ## Implementation Details
 Create `crates/ffs-core/src/store/` with submodules `mod.rs`, `sqlite.rs`, `mem.rs`, `schema.rs`, `migrations.rs`. The single SQLite file lives at `~/.ffs/store.db`. Backup is `cp store.db backup.db` plus the keychain DEK separately.
