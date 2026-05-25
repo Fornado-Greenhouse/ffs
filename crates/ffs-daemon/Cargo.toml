@@ -7,6 +7,10 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "ffs_daemon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ffs-daemon"
 path = "src/main.rs"
@@ -16,6 +20,21 @@ ffs-core = { workspace = true }
 ffs-fastpath = { workspace = true }
 ffs-federation = { workspace = true }
 ffs-skills-host = { workspace = true }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true, features = ["parsing", "formatting"] }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
 
 [lints]
 workspace = true

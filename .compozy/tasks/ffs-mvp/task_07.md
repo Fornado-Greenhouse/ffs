@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: JSON-RPC 2.0 dispatcher in ffs-daemon over UDS / Windows named pipe
 type: backend
 complexity: high
@@ -35,13 +35,13 @@ Stand up the long-running `ffs-daemon` process that owns the substrate state and
 </requirements>
 
 ## Subtasks
-- [ ] 7.1 Define the `Request` enum with serde method-tag dispatch (per TechSpec Core Interfaces).
-- [ ] 7.2 Implement the `tokio` UDS listener and Windows named-pipe listener behind a unified abstraction.
-- [ ] 7.3 Implement the dispatch table mapping methods to handler functions.
-- [ ] 7.4 Wire each method to the corresponding ffs-core module (atom, predicate, store, capability, projection).
-- [ ] 7.5 Implement notification publishing with per-connection event queues.
-- [ ] 7.6 Implement graceful shutdown and socket cleanup.
-- [ ] 7.7 Add structured logging via `tracing` for every method call and capability decision.
+- [x] 7.1 Define the `Request` enum with serde method-tag dispatch (per TechSpec Core Interfaces).
+- [x] 7.2 Implement the `tokio` UDS listener and Windows named-pipe listener behind a unified abstraction.
+- [x] 7.3 Implement the dispatch table mapping methods to handler functions.
+- [x] 7.4 Wire each method to the corresponding ffs-core module (atom, predicate, store, capability, projection).
+- [x] 7.5 Implement notification publishing with per-connection event queues.
+- [x] 7.6 Implement graceful shutdown and socket cleanup.
+- [x] 7.7 Add structured logging via `tracing` for every method call and capability decision.
 
 ## Implementation Details
 Create `crates/ffs-daemon/src/main.rs` (binary entrypoint) and `crates/ffs-daemon/src/dispatch/` (dispatch logic). The daemon owns a single `Arc<dyn AtomStore>` and serializes writes with a `Mutex` or single-writer task. Reads can be concurrent.
