@@ -6,6 +6,7 @@
 //! capability evaluation (05), and projection rendering (06).
 
 pub mod atom;
+pub mod capability;
 pub mod error;
 pub mod multibase;
 pub mod multihash;
@@ -15,6 +16,10 @@ pub mod store;
 pub use atom::{
     AtomEnvelope, AtomTemplate, EntityId, Iso8601, PredicateName, Provenance, PublicKey, Signature,
     SourceKind, Tier,
+};
+pub use capability::{
+    Action, CAPABILITY_PREDICATE, CapabilityClaim, CapabilityError, CapabilityScope, Decision,
+    DenyReason, EvalError, Target, build_capability_atom, evaluate, validate_supersession_narrows,
 };
 pub use error::{BadTimestampError, SignError, VerifyError};
 pub use multibase::MultibaseError;

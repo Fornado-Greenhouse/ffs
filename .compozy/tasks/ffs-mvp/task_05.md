@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Capability evaluator — action × scope × bitemporal window
 type: backend
 complexity: high
@@ -33,13 +33,13 @@ Implement the fixed capability evaluator that decides whether a given author may
 </requirements>
 
 ## Subtasks
-- [ ] 5.1 Define the `Action`, `Target`, `Decision`, `DenyReason` types.
-- [ ] 5.2 Implement the evaluator against the `AtomStore` trait so it works in tests with `MemAtomStore`.
-- [ ] 5.3 Implement bitemporal window resolution with `tx_time` and `valid_at`.
-- [ ] 5.4 Implement scope intersection across predicate, entity, classification, tier.
-- [ ] 5.5 Implement supersession-aware capability lookup (active capability set at a given tx_time).
-- [ ] 5.6 Add property tests asserting that supersession monotonically narrows scope.
-- [ ] 5.7 Document the deny reasons (`NotInScope`, `Expired`, `Revoked`, `NoCapabilityFound`, etc.).
+- [x] 5.1 Define the `Action`, `Target`, `Decision`, `DenyReason` types.
+- [x] 5.2 Implement the evaluator against the `AtomStore` trait so it works in tests with `MemAtomStore`.
+- [x] 5.3 Implement bitemporal window resolution with `tx_time` and `valid_at`.
+- [x] 5.4 Implement scope intersection across predicate, entity, classification, tier.
+- [x] 5.5 Implement supersession-aware capability lookup (active capability set at a given tx_time).
+- [x] 5.6 Add property tests asserting that supersession monotonically narrows scope.
+- [x] 5.7 Document the deny reasons (`NotInScope`, `Expired`, `Revoked`, `NoCapabilityFound`, etc.).
 
 ## Implementation Details
 Create `crates/ffs-core/src/capability.rs` and submodules. The capabilities table in the store (per ADR-016) is the input set. Capability atoms have `predicate = "capability.grant"` and the claim payload shape described in TechSpec § Implementation Design § Data Models.
