@@ -21,7 +21,7 @@ pub struct ApiRequest {
     pub params: Value,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiResponse {
     pub jsonrpc: String,
     pub id: Value,
@@ -29,18 +29,18 @@ pub struct ApiResponse {
     pub payload: ApiPayload,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ApiPayload {
     Success { result: Value },
     Error { error: ApiError },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiError {
     pub code: i32,
     pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub data: Option<Value>,
 }
 

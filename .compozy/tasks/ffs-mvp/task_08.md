@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: ffs CLI — argv parser, `ffs://` URL resolver, static binaries for Linux/macOS/Windows
 type: backend
 complexity: medium
@@ -31,13 +31,13 @@ Build the `ffs` command-line tool that resolves `ffs://` URLs by calling the loc
 </requirements>
 
 ## Subtasks
-- [ ] 8.1 Define the CLI argument structure (using `clap`).
-- [ ] 8.2 Implement the `ffs://` URL parser supporting path, atom, entity addressing and bitemporal query parameters.
-- [ ] 8.3 Implement the JSON-RPC client speaking to the daemon over UDS / named pipe.
-- [ ] 8.4 Implement each subcommand by translating argv into JSON-RPC and rendering responses.
-- [ ] 8.5 Implement `--json` output mode emitting canonical envelopes for atoms.
-- [ ] 8.6 Wire exit codes and structured stderr diagnostics.
-- [ ] 8.7 Verify static-binary build artifacts for the three platforms.
+- [x] 8.1 Define the CLI argument structure (using `clap`).
+- [x] 8.2 Implement the `ffs://` URL parser supporting path, atom, entity addressing and bitemporal query parameters.
+- [x] 8.3 Implement the JSON-RPC client speaking to the daemon over UDS / named pipe.
+- [x] 8.4 Implement each subcommand by translating argv into JSON-RPC and rendering responses.
+- [x] 8.5 Implement `--json` output mode emitting canonical envelopes for atoms.
+- [x] 8.6 Wire exit codes and structured stderr diagnostics.
+- [x] 8.7 Verify static-binary build artifacts for the three platforms.
 
 ## Implementation Details
 Create `crates/ffs-cli/src/main.rs` and submodules. The static binary requirement means using `x86_64-unknown-linux-musl` for Linux, ensuring all dependencies are statically linked (verify with `ldd`/`otool -L`/`dumpbin /dependents`).
