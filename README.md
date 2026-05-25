@@ -122,7 +122,7 @@ This project is being built in the open. There is nothing to install yet; the mo
 - 💬 Open a [Discussion](https://github.com/Fornado-Greenhouse/ffs/discussions) — especially with use-case signal: *"here's the network I'd want to share — does FFS fit?"*
 - 🐛 File an [Issue](https://github.com/Fornado-Greenhouse/ffs/issues) for design feedback, technical concerns, or "I'd like to use this for X."
 
-`CONTRIBUTING.md` and `SECURITY.md` are forthcoming. For security concerns in the meantime, contact the maintainer directly.
+`CONTRIBUTING.md` and `SECURITY.md` are forthcoming. For security concerns in the meantime, contact the maintainer directly. Operational norms for working in this repo (test runner, shell discipline, ADR numbering) are documented in [`CLAUDE.md`](CLAUDE.md).
 
 ## License and credit
 

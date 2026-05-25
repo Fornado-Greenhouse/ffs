@@ -300,7 +300,7 @@ A few rules of the road:
 - All public-type changes get an ADR.
 - Cross-cutting changes (atom envelope, capability evaluator, federation transport) require a security-review note.
 - Property tests are required for any logic with state-machine flavor; integration tests are required for cross-process flows.
-- Format and lint gates are non-negotiable. CI runs `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and the full test matrix on Linux/macOS/Windows.
+- Format and lint gates are non-negotiable. CI runs `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo nextest run --workspace --all-features` on Linux/macOS/Windows.
 - Federation-relevant changes consider peer-version skew: peers won't upgrade in lockstep.
 
-`CONTRIBUTING.md` (forthcoming) covers operational details: branch strategy, review expectations, release cadence.
+`CLAUDE.md` covers operational discipline for agentic operators (test runner, shell tool conventions, ADR numbering). `CONTRIBUTING.md` (forthcoming) covers branch strategy, review expectations, release cadence.
