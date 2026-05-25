@@ -50,6 +50,9 @@ rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"]
 keyring = "3"
 base64 = "0.22"
 
+# Templating
+tera = "1"
+
 # Errors
 thiserror = "2"
 

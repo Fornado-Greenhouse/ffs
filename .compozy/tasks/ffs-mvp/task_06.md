@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Projection renderer with Tera templates and reverse-map-annotated output
 type: backend
 complexity: medium
@@ -35,13 +35,13 @@ Render a projection path (e.g., `contacts/by-name/S/Sarah_Chen.md`) into markdow
 </requirements>
 
 ## Subtasks
-- [ ] 6.1 Define `ProjectionRequest`, `ProjectionResponse`, `ReverseMapAnnotation` types.
-- [ ] 6.2 Wire the Tera template engine and load templates from `~/.ffs/config/templates/`.
-- [ ] 6.3 Implement the path-to-query resolution (path family + sub-path → atom selection).
-- [ ] 6.4 Apply capability filtering to selected atoms before rendering.
-- [ ] 6.5 Render markdown via Tera using predicate-spec rendering convention.
-- [ ] 6.6 Emit reverse-map annotations alongside the markdown.
-- [ ] 6.7 Compute `render_hash` so the daemon can short-circuit unchanged re-renders.
+- [x] 6.1 Define `ProjectionRequest`, `ProjectionResponse`, `ReverseMapAnnotation` types.
+- [x] 6.2 Wire the Tera template engine and load templates from `~/.ffs/config/templates/`.
+- [x] 6.3 Implement the path-to-query resolution (path family + sub-path → atom selection).
+- [x] 6.4 Apply capability filtering to selected atoms before rendering.
+- [x] 6.5 Render markdown via Tera using predicate-spec rendering convention.
+- [x] 6.6 Emit reverse-map annotations alongside the markdown.
+- [x] 6.7 Compute `render_hash` so the daemon can short-circuit unchanged re-renders.
 
 ## Implementation Details
 Create `crates/ffs-core/src/projection.rs` with submodules. Tera templates are referenced by predicate specs (TechSpec § Implementation Design § Core Interfaces describes `[rendering].template`). Reverse-map annotations are emitted in a parallel data structure (not embedded in markdown) so editors render plain markdown and the daemon's fast-path consults the annotations separately.

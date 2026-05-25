@@ -11,6 +11,7 @@ pub mod error;
 pub mod multibase;
 pub mod multihash;
 pub mod predicate;
+pub mod projection;
 pub mod store;
 
 pub use atom::{

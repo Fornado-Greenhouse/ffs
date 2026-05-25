@@ -21,6 +21,7 @@ rusqlite = { workspace = true }
 keyring = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
+tera = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, features = ["parsing", "formatting", "macros"] }
 
