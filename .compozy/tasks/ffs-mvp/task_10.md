@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: ffs-skills-host — subprocess host + stdio bridging for Python skills
 type: backend
 complexity: medium
@@ -32,13 +32,13 @@ Run Python skills (scribe, librarian, auditor) as long-lived subprocesses of the
 </requirements>
 
 ## Subtasks
-- [ ] 10.1 Define the skill registry and `Skill` trait abstraction.
-- [ ] 10.2 Implement subprocess spawning and stdio framing.
-- [ ] 10.3 Implement the substrate-access proxy: skills call back to the daemon's JSON-RPC.
-- [ ] 10.4 Implement supervision: crash detection, exponential backoff, restart policy.
-- [ ] 10.5 Implement per-call timeouts and timeout-triggered restart.
-- [ ] 10.6 Implement graceful shutdown.
-- [ ] 10.7 Provide the Python `ffs_skill` helper library packaged with skill bundles.
+- [x] 10.1 Define the skill registry and `Skill` trait abstraction.
+- [x] 10.2 Implement subprocess spawning and stdio framing.
+- [x] 10.3 Implement the substrate-access proxy: skills call back to the daemon's JSON-RPC.
+- [x] 10.4 Implement supervision: crash detection, exponential backoff, restart policy.
+- [x] 10.5 Implement per-call timeouts and timeout-triggered restart.
+- [x] 10.6 Implement graceful shutdown.
+- [x] 10.7 Provide the Python `ffs_skill` helper library packaged with skill bundles.
 
 ## Implementation Details
 Create `crates/ffs-skills-host/src/lib.rs` and submodules. The Python helper library lives at `skills/_lib/ffs_skill.py` and is imported by each skill. The host treats skills as opaque processes; only the stdio JSON protocol is observable.
