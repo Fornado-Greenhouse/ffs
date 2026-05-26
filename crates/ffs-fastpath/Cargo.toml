@@ -9,6 +9,20 @@ rust-version.workspace = true
 
 [dependencies]
 ffs-core = { workspace = true }
+ffs-daemon = { workspace = true }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true, features = ["parsing", "formatting"] }
+tokio = { workspace = true }
+notify = { workspace = true }
+tracing = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-util = { workspace = true }
 
 [lints]
 workspace = true

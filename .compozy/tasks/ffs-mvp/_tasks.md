@@ -12,7 +12,7 @@
 | 06 | Projection renderer with Tera templates and reverse-map-annotated output | completed | medium | task_03, task_04, task_05 |
 | 07 | JSON-RPC 2.0 dispatcher in ffs-daemon over UDS / Windows named pipe | completed | high | task_04, task_05, task_06 |
 | 08 | ffs CLI: argv parser, `ffs://` URL resolver, static binaries for Linux/macOS/Windows | completed | medium | task_07 |
-| 09 | ffs-fastpath: filesystem watcher + diff classifier + supersession-or-route-to-ingest | pending | high | task_03, task_04, task_06, task_07 |
+| 09 | ffs-fastpath: filesystem watcher + diff classifier + supersession-or-route-to-ingest | completed | high | task_03, task_04, task_06, task_07 |
 | 10 | ffs-skills-host: subprocess host + stdio bridging for Python skills | pending | medium | task_07 |
 | 11 | Scribe skill (Python): markdown to proposed atoms with provenance | pending | medium | task_03, task_07, task_10 |
 | 12 | Librarian skill (Python): working-set manager and drift watcher | pending | low | task_04, task_06, task_07, task_10 |

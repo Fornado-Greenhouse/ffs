@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: ffs-fastpath — filesystem watcher + diff classifier + supersession-or-route-to-ingest
 type: backend
 complexity: high
@@ -37,13 +37,13 @@ Detect projection-file edits via OS-level filesystem watchers, classify each dif
 </requirements>
 
 ## Subtasks
-- [ ] 9.1 Define `ProjectionDiff`, `EditClassification`, `FastPathResult` types.
-- [ ] 9.2 Wire the `notify` crate against the projection working-set directories.
-- [ ] 9.3 Implement event debouncing.
-- [ ] 9.4 Implement the diff classifier consuming reverse-map rules.
-- [ ] 9.5 Implement fast-path supersession-atom authoring and re-render.
-- [ ] 9.6 Implement slow-path routing to ingest folder with provenance.
-- [ ] 9.7 Implement on-restart reconciliation against the working-set state.
+- [x] 9.1 Define `ProjectionDiff`, `EditClassification`, `FastPathResult` types.
+- [x] 9.2 Wire the `notify` crate against the projection working-set directories.
+- [x] 9.3 Implement event debouncing.
+- [x] 9.4 Implement the diff classifier consuming reverse-map rules.
+- [x] 9.5 Implement fast-path supersession-atom authoring and re-render.
+- [x] 9.6 Implement slow-path routing to ingest folder with provenance.
+- [x] 9.7 Implement on-restart reconciliation against the working-set state.
 
 ## Implementation Details
 Create `crates/ffs-fastpath/src/lib.rs` and submodules. The classifier consumes reverse-map annotations from task 06's projection renderer (each render emits annotations linking output elements to atom fields). On a diff, walk the reverse-map rules in order; the first rule that fully accounts for the diff wins. No match → slow-path.

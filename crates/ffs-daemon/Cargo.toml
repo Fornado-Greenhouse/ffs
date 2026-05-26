@@ -17,9 +17,11 @@ path = "src/main.rs"
 
 [dependencies]
 ffs-core = { workspace = true }
-ffs-fastpath = { workspace = true }
-ffs-federation = { workspace = true }
-ffs-skills-host = { workspace = true }
+# Note: ffs-daemon does NOT depend on ffs-fastpath, ffs-federation, or
+# ffs-skills-host at the library level. Those crates depend on ffs-daemon
+# (for the EventPublisher type) and are wired into the daemon binary by
+# task_22's onboarding scripts. Adding back-deps here would create a
+# cycle.
 
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
