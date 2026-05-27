@@ -113,6 +113,9 @@ fn setup() -> Harness {
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     });
     Harness {
         _dir: dir,
@@ -277,23 +280,20 @@ async fn ingest_submit_returns_submission_id_without_scribe_configured() {
 }
 
 #[tokio::test]
-async fn federation_methods_are_stubbed_with_not_implemented() {
+async fn federation_pull_is_stubbed_with_not_implemented() {
+    // task_14 implemented federation.peer.add / federation.peer.list
+    // and bridge.establish / bridge.rotate. federation.pull is still
+    // a task_15 stub (the pull-sync engine).
     let h = setup();
-    for method in [
-        "federation.peer.add",
-        "federation.peer.list",
-        "federation.pull",
-    ] {
-        let resp = h
-            .dispatcher
-            .handle(req(6, method, serde_json::json!({"peer": owner_pk()})))
-            .await;
-        assert_eq!(
-            error_code(&resp),
-            Some(ERR_NOT_IMPLEMENTED),
-            "method {method} expected NOT_IMPLEMENTED"
-        );
-    }
+    let resp = h
+        .dispatcher
+        .handle(req(
+            6,
+            "federation.pull",
+            serde_json::json!({"peer": owner_pk()}),
+        ))
+        .await;
+    assert_eq!(error_code(&resp), Some(ERR_NOT_IMPLEMENTED));
 }
 
 #[tokio::test]
@@ -452,6 +452,9 @@ async fn spawn_server() -> (
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     });
 
     let socket = run_dir.join("ffs.sock");

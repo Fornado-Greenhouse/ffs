@@ -17,11 +17,13 @@ path = "src/main.rs"
 
 [dependencies]
 ffs-core = { workspace = true }
-# Note: ffs-daemon does NOT depend on ffs-fastpath, ffs-federation, or
-# ffs-skills-host at the library level. Those crates depend on ffs-daemon
-# (for the EventPublisher type) and are wired into the daemon binary by
+ffs-federation = { workspace = true }
+# Note: ffs-daemon does NOT depend on ffs-fastpath or ffs-skills-host
+# at the library level. Those crates depend on ffs-daemon (for the
+# EventPublisher type) and are wired into the daemon binary by
 # task_22's onboarding scripts. Adding back-deps here would create a
-# cycle.
+# cycle. ffs-federation does NOT depend on ffs-daemon so its dep is
+# safe to take here for the bridge.* RPCs.
 
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -40,6 +42,7 @@ ed25519-dalek = { workspace = true, features = ["rand_core"] }
 tempfile = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 ffs-skills-host = { workspace = true }
+ffs-federation = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

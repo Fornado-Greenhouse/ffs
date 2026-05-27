@@ -84,6 +84,9 @@ fn setup(with_signing_key: bool) -> Harness {
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     };
     Harness {
         _dir: dir,

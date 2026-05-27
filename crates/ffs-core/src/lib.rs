@@ -8,6 +8,7 @@
 pub mod atom;
 pub mod capability;
 pub mod error;
+pub mod federation_peers;
 pub mod multibase;
 pub mod multihash;
 pub mod predicate;
@@ -25,6 +26,9 @@ pub use capability::{
     DenyReason, EvalError, Target, build_capability_atom, evaluate, validate_supersession_narrows,
 };
 pub use error::{BadTimestampError, SignError, VerifyError};
+pub use federation_peers::{
+    FederationPeer, FederationPeerError, FederationPeerStore, InMemoryFederationPeerStore,
+};
 pub use multibase::MultibaseError;
 pub use multihash::{Multihash, MultihashError};
 pub use quarantine::{

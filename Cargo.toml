@@ -67,6 +67,10 @@ clap = { version = "4", features = ["derive", "env"] }
 url = "2"
 ffs-daemon = { path = "crates/ffs-daemon" }
 
+# Federation transport
+rcgen = "0.13"
+rustls-pki-types = "1"
+
 # Errors
 thiserror = "2"
 

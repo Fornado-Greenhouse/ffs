@@ -136,8 +136,29 @@ pub struct CapabilityEvaluateParams {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FederationPeerAddParams {
+    pub peer_id: String,
+    pub peer_pubkey: PublicKey,
     pub endpoint: String,
     pub fingerprint: Multihash,
+}
+
+impl FederationPeerAddParams {
+    pub fn peer_id_for_target(&self) -> &str {
+        &self.peer_id
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BridgeEstablishParams {
+    pub peer_id: String,
+    pub our_capability: Multihash,
+    pub our_vocab: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BridgeRotateParams {
+    pub peer_id: String,
+    pub new_fingerprint: Multihash,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -139,6 +139,9 @@ fn setup() -> Harness {
         scribe: None,
         working_set: working_set.clone(),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     };
     Harness {
         _dir: dir,

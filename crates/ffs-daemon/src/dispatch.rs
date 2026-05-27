@@ -11,16 +11,22 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 
 use ffs_core::capability::{self, Decision, EvalError, Target};
+use ffs_core::federation_peers::{FederationPeer, FederationPeerStore};
 use ffs_core::projection::{ProjectionRenderer, ProjectionRequest};
 use ffs_core::quarantine::{IngestQuarantine, Proposal, SubmissionStatus};
 use ffs_core::store::AtomStore;
 use ffs_core::working_set::WorkingSetStore;
 use ffs_core::{
-    AtomTemplate, EntityId, Iso8601, PredicateName, PublicKey, Tier, predicate::SpecRegistry,
+    AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier,
+    predicate::SpecRegistry,
 };
+
+use ffs_federation::client::FederationClient;
+use ffs_federation::handshake::rotation_signing_bytes;
+use ffs_federation::handshake::{HANDSHAKE_PROTOCOL_VERSION, HandshakeRequest, RotateRequest};
 
 use crate::api::*;
 use crate::notify::EventPublisher;
@@ -53,6 +59,20 @@ pub struct Dispatcher {
     /// signing return `ERR_NOT_IMPLEMENTED` so a dispatcher without a
     /// configured key is still usable for read-only flows.
     pub signing_key: Option<Arc<SigningKey>>,
+    /// Federation peer state (pinned fingerprints, capability hashes,
+    /// pull watermarks). Populated by `bridge.establish` and read
+    /// by `federation.peer.list`.
+    pub federation_peers: Arc<dyn FederationPeerStore>,
+    /// Federation transport client. `None` disables outbound bridge
+    /// calls (the daemon can still serve incoming federation
+    /// requests but cannot initiate handshakes). The production
+    /// reqwest+rustls binding plugs in here; tests inject
+    /// `InMemoryFederationClient`.
+    pub federation_client: Option<Arc<dyn FederationClient>>,
+    /// This substrate's TLS certificate fingerprint. Sent to peers
+    /// so they can pin us at the TLS layer. `None` until the
+    /// daemon has generated its cert at startup.
+    pub our_cert_fingerprint: Option<Multihash>,
 }
 
 /// Abstraction over the scribe extractor. The daemon binary wires
@@ -98,8 +118,10 @@ impl Dispatcher {
             "ingest.submit" => self.ingest_submit(req.params).await,
             "fastpath.submit" => stub_not_implemented("task_09"),
             "capability.evaluate" => self.capability_evaluate(req.params).await,
-            "federation.peer.add" => stub_not_implemented("task_14"),
-            "federation.peer.list" => stub_not_implemented("task_14"),
+            "federation.peer.add" => self.federation_peer_add(req.params).await,
+            "federation.peer.list" => self.federation_peer_list().await,
+            "bridge.establish" => self.bridge_establish(req.params).await,
+            "bridge.rotate" => self.bridge_rotate(req.params).await,
             "federation.pull" => stub_not_implemented("task_15"),
             "predicate.inspect" => self.predicate_inspect(req.params).await,
             "health.summary" => self.health_summary().await,
@@ -464,6 +486,171 @@ impl Dispatcher {
         to_value(&serde_json::json!({"evicted": evicted}))
     }
 
+    // ---- federation handlers ----
+
+    /// Register a peer's endpoint + pinned fingerprint locally so the
+    /// substrate trusts subsequent inbound mTLS from that cert and
+    /// can initiate a handshake to it. Capability-checks `Federate`
+    /// on the owner; out-of-band fingerprint exchange happens before
+    /// this call (paste into the CLI / plugin).
+    async fn federation_peer_add(&self, params: Value) -> Result<Value, ApiError> {
+        let p: FederationPeerAddParams = parse_params(params)?;
+
+        let now = current_iso8601();
+        let target = Target {
+            predicate: PredicateName::new("capability.grant"),
+            entity: EntityId::new(p.peer_id_for_target()),
+            classification: None,
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Federate,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+
+        let peer = FederationPeer {
+            peer_id: p.peer_id.clone(),
+            peer_pubkey: p.peer_pubkey.clone(),
+            endpoint: p.endpoint,
+            cert_fingerprint: p.fingerprint,
+            our_capability: None,
+            their_capability: None,
+            vocab: Vec::new(),
+            watermarks: Default::default(),
+            established_at: now,
+            last_seen_at: None,
+        };
+        self.federation_peers
+            .upsert(peer)
+            .await
+            .map_err(federation_err)?;
+        to_value(&serde_json::json!({"peer_id": p.peer_id}))
+    }
+
+    async fn federation_peer_list(&self) -> Result<Value, ApiError> {
+        let peers = self.federation_peers.list().await;
+        to_value(&peers)
+    }
+
+    /// Initiate the in-band handshake with an already-pinned peer.
+    /// Requires `federation_client` to be configured (without it the
+    /// daemon can still serve inbound but cannot initiate).
+    async fn bridge_establish(&self, params: Value) -> Result<Value, ApiError> {
+        let p: BridgeEstablishParams = parse_params(params)?;
+        let client = self.federation_client.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "bridge.establish requires a configured federation client".into(),
+            data: None,
+        })?;
+        let our_fp = self.our_cert_fingerprint.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "bridge.establish requires our_cert_fingerprint to be configured".into(),
+            data: None,
+        })?;
+
+        let peer = self
+            .federation_peers
+            .get(&p.peer_id)
+            .await
+            .ok_or_else(|| ApiError {
+                code: ERR_NOT_FOUND,
+                message: format!("peer not registered: {}", p.peer_id),
+                data: None,
+            })?;
+
+        let req = HandshakeRequest {
+            protocol_version: HANDSHAKE_PROTOCOL_VERSION,
+            initiator_pubkey: self.owner.clone(),
+            initiator_capability: p.our_capability.clone(),
+            initiator_vocab: p.our_vocab.clone(),
+            initiator_anchor: current_iso8601(),
+        };
+        let resp = client
+            .handshake(&peer.endpoint, our_fp, req)
+            .await
+            .map_err(|e| ApiError {
+                code: ERR_INTERNAL,
+                message: format!("handshake: {e}"),
+                data: None,
+            })?;
+
+        // Stamp our peer record with the bridge contract.
+        let mut updated = peer.clone();
+        updated.our_capability = Some(p.our_capability);
+        updated.their_capability = Some(resp.responder_capability.clone());
+        updated.vocab = resp.responder_vocab.clone();
+        updated.last_seen_at = Some(current_iso8601());
+        self.federation_peers
+            .upsert(updated)
+            .await
+            .map_err(federation_err)?;
+        to_value(&serde_json::json!({
+            "peer_id": p.peer_id,
+            "their_capability": resp.responder_capability,
+            "their_vocab": resp.responder_vocab,
+            "their_anchor": resp.responder_anchor,
+        }))
+    }
+
+    /// Rotate this substrate's TLS certificate with a peer: signs
+    /// the new fingerprint with the OLD signing key and ships it.
+    /// On peer acceptance, the peer updates its pinned fingerprint.
+    async fn bridge_rotate(&self, params: Value) -> Result<Value, ApiError> {
+        let p: BridgeRotateParams = parse_params(params)?;
+        let client = self.federation_client.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "bridge.rotate requires a configured federation client".into(),
+            data: None,
+        })?;
+        let key = self.signing_key.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "bridge.rotate requires a configured signing key".into(),
+            data: None,
+        })?;
+        let our_fp = self.our_cert_fingerprint.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "bridge.rotate requires our_cert_fingerprint to be configured".into(),
+            data: None,
+        })?;
+
+        let peer = self
+            .federation_peers
+            .get(&p.peer_id)
+            .await
+            .ok_or_else(|| ApiError {
+                code: ERR_NOT_FOUND,
+                message: format!("peer not registered: {}", p.peer_id),
+                data: None,
+            })?;
+
+        // Sign over (our_cert_fingerprint, new_fingerprint). The
+        // receiver knows our_cert_fingerprint as their pinned fingerprint
+        // for us; the (old, new) pair binds the signature to this
+        // specific rotation event.
+        let signed_bytes = rotation_signing_bytes(our_fp, &p.new_fingerprint);
+        let sig = key.sign(&signed_bytes);
+        let req = RotateRequest {
+            new_fingerprint: p.new_fingerprint,
+            old_signature: sig.to_bytes().to_vec(),
+        };
+        let resp = client
+            .rotate(&peer.endpoint, our_fp, req)
+            .await
+            .map_err(|e| ApiError {
+                code: ERR_INTERNAL,
+                message: format!("rotate: {e}"),
+                data: None,
+            })?;
+        to_value(&serde_json::json!({"accepted": resp.accepted}))
+    }
+
     // ---- audit handlers ----
 
     /// Sign and insert an `auditor.daily_summary` atom carrying the
@@ -651,6 +838,14 @@ fn quarantine_err(e: ffs_core::quarantine::QuarantineError) -> ApiError {
 }
 
 fn working_set_err(e: ffs_core::working_set::WorkingSetError) -> ApiError {
+    ApiError {
+        code: ERR_STORE,
+        message: e.to_string(),
+        data: None,
+    }
+}
+
+fn federation_err(e: ffs_core::federation_peers::FederationPeerError) -> ApiError {
     ApiError {
         code: ERR_STORE,
         message: e.to_string(),

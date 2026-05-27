@@ -142,6 +142,9 @@ async fn spawn_with_atoms(n_atoms: usize) -> Bench {
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     });
 
     let socket = run_dir.join("ffs.sock");

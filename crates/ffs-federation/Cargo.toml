@@ -10,5 +10,19 @@ rust-version.workspace = true
 [dependencies]
 ffs-core = { workspace = true }
 
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true, features = ["parsing", "formatting"] }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+rcgen = { workspace = true }
+rustls-pki-types = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

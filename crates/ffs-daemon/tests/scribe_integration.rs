@@ -295,6 +295,9 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
         scribe,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     };
     Some(Harness {
         _dir: dir,

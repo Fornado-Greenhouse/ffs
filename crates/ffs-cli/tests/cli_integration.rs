@@ -114,6 +114,9 @@ async fn spawn() -> Server {
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     });
 
     let socket = run_dir.join("ffs.sock");
@@ -292,6 +295,9 @@ async fn cli_capability_denied_exits_with_code_two() {
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
         signing_key: None,
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
     });
     let socket = run_dir.join("ffs.sock");
     let cancel = CancellationToken::new();
