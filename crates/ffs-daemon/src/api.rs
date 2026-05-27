@@ -164,6 +164,41 @@ pub struct IngestSubmitResult {
     pub submission_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkingSetTouchParams {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkingSetPinParams {
+    pub path: String,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkingSetMaterializeParams {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkingSetMaterializeResult {
+    pub path: String,
+    pub render_hash: Multihash,
+    pub markdown: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkingSetRefreshed {
+    pub path: String,
+    pub render_hash: Multihash,
+    pub markdown: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkingSetEvictParams {
+    pub cap: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthSummary {
     pub proposals: u32,

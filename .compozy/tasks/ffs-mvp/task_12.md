@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Librarian skill (Python) — working-set manager and drift watcher
 type: backend
 complexity: low
@@ -34,12 +34,12 @@ The librarian curates the materialized projection working set on disk and watche
 </requirements>
 
 ## Subtasks
-- [ ] 12.1 Author the `SKILL.md` metadata.
-- [ ] 12.2 Implement the working-set heuristic (recency + user-pinned).
-- [ ] 12.3 Implement drift detection by comparing stored `last_render_hash` against the current render.
-- [ ] 12.4 Implement projection refresh on detected drift.
-- [ ] 12.5 Surface drift flags via the daily-summary input queue.
-- [ ] 12.6 Implement size-cap eviction.
+- [x] 12.1 Author the `SKILL.md` metadata.
+- [x] 12.2 Implement the working-set heuristic (recency + user-pinned).
+- [x] 12.3 Implement drift detection by comparing stored `last_render_hash` against the current render.
+- [x] 12.4 Implement projection refresh on detected drift.
+- [x] 12.5 Surface drift flags via the daily-summary input queue.
+- [x] 12.6 Implement size-cap eviction.
 
 ## Implementation Details
 Create `skills/librarian/SKILL.md`, `skills/librarian/watcher.py`, and `skills/librarian/tests/`. The librarian consumes `working_set` table state (per ADR-016) via the daemon's JSON-RPC and writes refreshed projections to disk via the daemon's `projection.render` plus a `working_set.materialize` method (the latter added to the dispatcher in task 07's method set).

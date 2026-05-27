@@ -13,8 +13,9 @@ use serde_json::Value;
 
 use ffs_core::capability::{self, Decision, EvalError, Target};
 use ffs_core::projection::{ProjectionRenderer, ProjectionRequest};
-use ffs_core::quarantine::{IngestQuarantine, Proposal};
+use ffs_core::quarantine::{IngestQuarantine, Proposal, SubmissionStatus};
 use ffs_core::store::AtomStore;
+use ffs_core::working_set::WorkingSetStore;
 use ffs_core::{EntityId, Iso8601, PredicateName, PublicKey, predicate::SpecRegistry};
 
 use crate::api::*;
@@ -37,6 +38,11 @@ pub struct Dispatcher {
     /// and owns its own concurrency strategy (the production wiring
     /// dispatches via `ffs-skills-host`; tests inject a stub).
     pub scribe: Option<Arc<dyn ScribeExtractor>>,
+    /// Working-set state: which projections the librarian has
+    /// materialized on disk, their render hashes, recency, and
+    /// pin bits. The librarian skill (task 12) drives drift
+    /// detection and eviction through this.
+    pub working_set: Arc<dyn WorkingSetStore>,
 }
 
 /// Abstraction over the scribe extractor. The daemon binary wires
@@ -87,6 +93,13 @@ impl Dispatcher {
             "federation.pull" => stub_not_implemented("task_15"),
             "predicate.inspect" => self.predicate_inspect(req.params).await,
             "health.summary" => self.health_summary().await,
+            "working_set.list" => self.working_set_list().await,
+            "working_set.touch" => self.working_set_touch(req.params).await,
+            "working_set.pin" => self.working_set_pin(req.params).await,
+            "working_set.materialize" => self.working_set_materialize(req.params).await,
+            "working_set.detect_drift" => self.working_set_detect_drift().await,
+            "working_set.refresh_drifted" => self.working_set_refresh_drifted().await,
+            "working_set.evict_to_cap" => self.working_set_evict_to_cap(req.params).await,
             other => Err(ApiError {
                 code: ERR_METHOD_NOT_FOUND,
                 message: format!("unknown method: {other}"),
@@ -308,13 +321,26 @@ impl Dispatcher {
     }
 
     async fn health_summary(&self) -> Result<Value, ApiError> {
-        // Proposals, questions, drift_flags depend on tasks 11/12/13 (scribe,
-        // librarian, auditor). For MVP we report zero plus the visible atom
-        // count, which is consistent with the store at this moment.
+        // Proposals: count of `Pending` submissions in the quarantine
+        // — those the scribe has accepted for processing but the user
+        // hasn't accepted yet.
+        let proposals = self
+            .quarantine
+            .list(Some(SubmissionStatus::Pending))
+            .await
+            .len() as u32;
+        // Drift flags: count of working-set entries whose stored
+        // `last_render_hash` no longer matches the current render
+        // (computed lazily on demand). Re-rendering everything for
+        // health.summary would be O(N) projections; keep this cheap
+        // by reusing the same detect-drift helper.
+        let drift_flags = self.compute_drift().await.unwrap_or_default().len() as u32;
+        // Questions: a Phase 2 surface (the librarian asks the user
+        // about ambiguous extractions). Zero at MVP.
         let summary = HealthSummary {
-            proposals: 0,
+            proposals,
             questions: 0,
-            drift_flags: 0,
+            drift_flags,
             atom_count: self.atom_count_estimate(),
         };
         to_value(&summary)
@@ -325,6 +351,131 @@ impl Dispatcher {
         // of a known predicate (or via 0 if no predicate is registered). At MVP
         // scale the renderer-side stats are sufficient.
         0
+    }
+
+    // ---- working_set handlers ----
+
+    async fn working_set_list(&self) -> Result<Value, ApiError> {
+        let entries = self.working_set.list_oldest_first().await;
+        to_value(&entries)
+    }
+
+    async fn working_set_touch(&self, params: Value) -> Result<Value, ApiError> {
+        let p: WorkingSetTouchParams = parse_params(params)?;
+        self.working_set
+            .touch(&p.path, current_iso8601())
+            .await
+            .map_err(working_set_err)?;
+        to_value(&serde_json::json!({"ok": true}))
+    }
+
+    async fn working_set_pin(&self, params: Value) -> Result<Value, ApiError> {
+        let p: WorkingSetPinParams = parse_params(params)?;
+        self.working_set
+            .pin(&p.path, p.pinned)
+            .await
+            .map_err(working_set_err)?;
+        to_value(&serde_json::json!({"ok": true}))
+    }
+
+    /// Materialize a projection: re-render and record the new
+    /// `last_render_hash` in the working set. Does NOT write the
+    /// rendered markdown to disk — that's the librarian's
+    /// responsibility (it owns the projection root path). The
+    /// renderer's `render_hash` field gives the librarian a stable
+    /// content hash to write + a value to store here for future
+    /// drift checks.
+    async fn working_set_materialize(&self, params: Value) -> Result<Value, ApiError> {
+        let p: WorkingSetMaterializeParams = parse_params(params)?;
+        let req = ProjectionRequest {
+            path: p.path.clone(),
+            as_of: None,
+            agent: self.owner.clone(),
+        };
+        let resp = self.renderer.render(&req).map_err(render_err)?;
+        let render_hash = resp.render_hash.clone();
+        self.working_set
+            .upsert(p.path.clone(), render_hash.clone(), current_iso8601())
+            .await
+            .map_err(working_set_err)?;
+        to_value(&WorkingSetMaterializeResult {
+            path: p.path,
+            render_hash,
+            markdown: resp.markdown,
+        })
+    }
+
+    /// Scan every working-set entry, re-render, and return the paths
+    /// whose render hash has changed since materialization (drifted).
+    /// Does not modify state — pair with `refresh_drifted` to act.
+    async fn working_set_detect_drift(&self) -> Result<Value, ApiError> {
+        let drifted = self.compute_drift().await.map_err(|e| ApiError {
+            code: ERR_RENDER,
+            message: e,
+            data: None,
+        })?;
+        to_value(&serde_json::json!({"drifted": drifted}))
+    }
+
+    /// Detect-then-refresh: for every drifted entry, re-materialize.
+    /// Returns the list of refreshed paths.
+    async fn working_set_refresh_drifted(&self) -> Result<Value, ApiError> {
+        let drifted = self.compute_drift().await.map_err(|e| ApiError {
+            code: ERR_RENDER,
+            message: e,
+            data: None,
+        })?;
+        let mut refreshed = Vec::with_capacity(drifted.len());
+        for path in drifted {
+            let req = ProjectionRequest {
+                path: path.clone(),
+                as_of: None,
+                agent: self.owner.clone(),
+            };
+            let resp = self.renderer.render(&req).map_err(render_err)?;
+            self.working_set
+                .upsert(path.clone(), resp.render_hash.clone(), current_iso8601())
+                .await
+                .map_err(working_set_err)?;
+            refreshed.push(WorkingSetRefreshed {
+                path,
+                render_hash: resp.render_hash,
+                markdown: resp.markdown,
+            });
+        }
+        to_value(&serde_json::json!({"refreshed": refreshed}))
+    }
+
+    async fn working_set_evict_to_cap(&self, params: Value) -> Result<Value, ApiError> {
+        let p: WorkingSetEvictParams = parse_params(params)?;
+        let evicted = self.working_set.evict_to_cap(p.cap).await;
+        to_value(&serde_json::json!({"evicted": evicted}))
+    }
+
+    /// Internal helper: list working-set entries, re-render each,
+    /// return paths whose hash no longer matches. On render error
+    /// for a single entry, treat it as not-drifted (the librarian
+    /// will retry on the next tick). String error so callers can
+    /// thread it through both ApiError and serde results.
+    async fn compute_drift(&self) -> Result<Vec<String>, String> {
+        let entries = self.working_set.list_oldest_first().await;
+        let mut drifted = Vec::new();
+        for entry in entries {
+            let req = ProjectionRequest {
+                path: entry.path.clone(),
+                as_of: None,
+                agent: self.owner.clone(),
+            };
+            match self.renderer.render(&req) {
+                Ok(resp) => {
+                    if resp.render_hash != entry.last_render_hash {
+                        drifted.push(entry.path);
+                    }
+                }
+                Err(_) => continue, // treat render errors as not-drifted; the librarian retries
+            }
+        }
+        Ok(drifted)
     }
 }
 
@@ -355,6 +506,14 @@ fn to_value<T: Serialize>(v: &T) -> Result<Value, ApiError> {
 }
 
 fn quarantine_err(e: ffs_core::quarantine::QuarantineError) -> ApiError {
+    ApiError {
+        code: ERR_STORE,
+        message: e.to_string(),
+        data: None,
+    }
+}
+
+fn working_set_err(e: ffs_core::working_set::WorkingSetError) -> ApiError {
     ApiError {
         code: ERR_STORE,
         message: e.to_string(),

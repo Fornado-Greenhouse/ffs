@@ -28,6 +28,7 @@ use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
 use ffs_core::quarantine::{InMemoryQuarantine, IngestQuarantine, Proposal, SubmissionStatus};
 use ffs_core::store::{AtomStore, MemAtomStore};
+use ffs_core::working_set::InMemoryWorkingSet;
 use ffs_core::{Iso8601, PredicateName, PublicKey};
 use ffs_daemon::dispatch::{ScribeExtractError, ScribeExtractor};
 use ffs_daemon::{ApiRequest, ApiResponse, Dispatcher, EventPublisher};
@@ -292,6 +293,7 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
         owner: owner_pk(),
         quarantine: quarantine.clone(),
         scribe,
+        working_set: Arc::new(InMemoryWorkingSet::new()),
     };
     Some(Harness {
         _dir: dir,

@@ -1,0 +1,26 @@
+{
+  "v": 1,
+  "predicate": "agent.definition",
+  "claim": {
+    "name": "librarian",
+    "kind": "librarian",
+    "version": "0.1.0",
+    "capabilities": [
+      {
+        "action": "read",
+        "scope": {
+          "predicates": ["contact.person", "person.generic", "note", "predicate.spec"]
+        }
+      },
+      {
+        "action": "write",
+        "scope": {
+          "scope_note": "working-set state only; no atom authorship"
+        }
+      }
+    ],
+    "entry_point": "watcher.py",
+    "cadence_seconds_default": 30
+  },
+  "_note": "Placeholder definition. Phase 2 task signs this as a real atom; for MVP it documents the librarian's intended capability scope."
+}

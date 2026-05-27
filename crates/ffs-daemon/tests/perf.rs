@@ -26,6 +26,7 @@ use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
 use ffs_core::quarantine::InMemoryQuarantine;
 use ffs_core::store::{AtomStore, MemAtomStore};
+use ffs_core::working_set::InMemoryWorkingSet;
 use ffs_core::{AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier};
 use ffs_daemon::transport;
 use ffs_daemon::{Dispatcher, EventPublisher};
@@ -139,6 +140,7 @@ async fn spawn_with_atoms(n_atoms: usize) -> Bench {
         owner: owner_pk(),
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
+        working_set: Arc::new(InMemoryWorkingSet::new()),
     });
 
     let socket = run_dir.join("ffs.sock");

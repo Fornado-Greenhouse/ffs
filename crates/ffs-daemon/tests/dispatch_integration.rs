@@ -30,6 +30,7 @@ use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
 use ffs_core::quarantine::InMemoryQuarantine;
 use ffs_core::store::{AtomStore, MemAtomStore};
+use ffs_core::working_set::InMemoryWorkingSet;
 use ffs_core::{AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier};
 use ffs_daemon::api::{
     ApiPayload, ApiRequest, ApiResponse, ERR_CAPABILITY_DENIED, ERR_METHOD_NOT_FOUND,
@@ -110,6 +111,7 @@ fn setup() -> Harness {
         owner: owner_pk(),
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
+        working_set: Arc::new(InMemoryWorkingSet::new()),
     });
     Harness {
         _dir: dir,
@@ -447,6 +449,7 @@ async fn spawn_server() -> (
         owner: owner_pk(),
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
+        working_set: Arc::new(InMemoryWorkingSet::new()),
     });
 
     let socket = run_dir.join("ffs.sock");
