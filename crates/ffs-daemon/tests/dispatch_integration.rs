@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 use ffs_core::capability::{Action, CapabilityScope, build_capability_atom};
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
+use ffs_core::quarantine::InMemoryQuarantine;
 use ffs_core::store::{AtomStore, MemAtomStore};
 use ffs_core::{AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier};
 use ffs_daemon::api::{
@@ -107,6 +108,8 @@ fn setup() -> Harness {
         renderer,
         notifier,
         owner: owner_pk(),
+        quarantine: Arc::new(InMemoryQuarantine::new()),
+        scribe: None,
     });
     Harness {
         _dir: dir,
@@ -243,8 +246,13 @@ async fn atom_get_for_missing_hash_returns_not_found() {
 }
 
 #[tokio::test]
-async fn ingest_submit_is_stubbed_with_not_implemented() {
+async fn ingest_submit_returns_submission_id_without_scribe_configured() {
+    // task_11 implemented ingest.submit. With no scribe wired in, the
+    // call still succeeds (capability-checked) and stores a Pending
+    // submission. The full pipeline (scribe → Extracted) is exercised
+    // in scribe_integration.rs.
     let h = setup();
+    grant_full_capability(&*h.store, &owner_pk());
     let resp = h
         .dispatcher
         .handle(req(
@@ -253,7 +261,16 @@ async fn ingest_submit_is_stubbed_with_not_implemented() {
             serde_json::json!({"source_uri": "file:///x", "content": "anything"}),
         ))
         .await;
-    assert_eq!(error_code(&resp), Some(ERR_NOT_IMPLEMENTED));
+    let id = match &resp.payload {
+        ffs_daemon::ApiPayload::Success { result } => result["submission_id"]
+            .as_str()
+            .expect("submission_id")
+            .to_string(),
+        ffs_daemon::ApiPayload::Error { error } => {
+            panic!("expected success; got error: {error:?}");
+        }
+    };
+    assert!(id.starts_with("sub-"), "id should be hash-tagged: {id}");
 }
 
 #[tokio::test]
@@ -428,6 +445,8 @@ async fn spawn_server() -> (
         renderer,
         notifier: notifier.clone(),
         owner: owner_pk(),
+        quarantine: Arc::new(InMemoryQuarantine::new()),
+        scribe: None,
     });
 
     let socket = run_dir.join("ffs.sock");

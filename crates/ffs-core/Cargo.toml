@@ -24,6 +24,8 @@ rand = { workspace = true }
 tera = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, features = ["parsing", "formatting", "macros"] }
+tokio = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

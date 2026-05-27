@@ -160,6 +160,11 @@ pub struct CapabilityDecisionWire {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct IngestSubmitResult {
+    pub submission_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct HealthSummary {
     pub proposals: u32,
     pub questions: u32,

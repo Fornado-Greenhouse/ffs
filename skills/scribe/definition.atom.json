@@ -1,0 +1,27 @@
+{
+  "v": 1,
+  "predicate": "agent.definition",
+  "claim": {
+    "name": "scribe",
+    "kind": "scribe",
+    "version": "0.1.0",
+    "capabilities": [
+      {
+        "action": "write",
+        "scope": {
+          "predicates": ["contact.person", "person.generic", "note"],
+          "classifications": ["existence", "notes"]
+        }
+      },
+      {
+        "action": "read",
+        "scope": {
+          "predicates": ["predicate.spec"]
+        }
+      }
+    ],
+    "entry_point": "extraction.py",
+    "rationale_template": "scribe-extracted from {source_uri} (content_hash={content_hash})"
+  },
+  "_note": "This is a placeholder definition. Phase 2 task will sign it as a real atom; for MVP it documents the scribe's intended capability scope."
+}

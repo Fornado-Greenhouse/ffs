@@ -12,6 +12,7 @@ pub mod multibase;
 pub mod multihash;
 pub mod predicate;
 pub mod projection;
+pub mod quarantine;
 pub mod store;
 
 pub use atom::{
@@ -25,6 +26,9 @@ pub use capability::{
 pub use error::{BadTimestampError, SignError, VerifyError};
 pub use multibase::MultibaseError;
 pub use multihash::{Multihash, MultihashError};
+pub use quarantine::{
+    InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError, Submission, SubmissionStatus,
+};
 pub use store::{AtomStore, MemAtomStore, SCHEMA_VERSION, SqliteAtomStore, StoreError};
 
 /// Workspace marker exposed so smoke tests can confirm the crate links.

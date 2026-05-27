@@ -1,0 +1,51 @@
+# Repo-root Python tooling for the FFS skill bundles + their tests.
+#
+# Why this lives at the repo root and not per-skill:
+# - Skill bundles under `skills/<name>/` are claw-shape distributable
+#   artifacts (ADR-009). They must not carry a Python interpreter or
+#   test-tool dependencies; they are *what gets installed*, not the
+#   dev environment that builds and tests them.
+# - The librarian (task_12) and auditor (task_13) skills will reuse
+#   this same toolchain. One root environment, one pinned set, one
+#   `python -m pytest` invocation.
+#
+# Developer workflow (matches CLAUDE.md § Python tests):
+#   python3 -m venv .venv
+#   .venv/bin/pip install -e '.[dev]'
+#   .venv/bin/python -m pytest skills/
+#
+# CI installs the same pinned set so behavior is reproducible.
+
+[project]
+name = "ffs-skills"
+version = "0.0.0"
+description = "Development env for FFS Python skill bundles (scribe, librarian, auditor)."
+requires-python = ">=3.11"
+# No runtime dependencies: skills run inside ffs-skills-host with the
+# stdlib + the `ffs_skill` helper (skills/_lib/ffs_skill.py). External
+# packages would defeat the zero-dependency goal for the skill bundles.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# The repo root is not a Python package — skill bundles live under
+# `skills/<name>/` and are loaded as data by the Rust skills host, not
+# imported. Tell setuptools explicitly so its auto-discovery doesn't
+# trip over `crates/`, `target/`, etc.
+[tool.setuptools]
+packages = []
+
+[tool.pytest.ini_options]
+testpaths = ["skills"]
+# Skill bundles are not Python packages; let pytest pick up tests by
+# directory layout rather than package import.
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

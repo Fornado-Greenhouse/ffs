@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Scribe skill (Python) — markdown to proposed atoms with provenance
 type: backend
 complexity: medium
@@ -34,13 +34,13 @@ The scribe is the absorption agent: it reads markdown files dropped into `~/.ffs
 </requirements>
 
 ## Subtasks
-- [ ] 11.1 Author the `SKILL.md` metadata describing scribe's identity, capabilities, and entry point.
-- [ ] 11.2 Implement markdown ingestion: read the file, parse frontmatter, segment body sections.
-- [ ] 11.3 Implement extraction for `contact.person` predicates (name, email, phone, org, notes).
-- [ ] 11.4 Implement extraction for `person.generic` predicates (name, role, team).
-- [ ] 11.5 Implement extraction for `note` predicates (title, tags, body).
-- [ ] 11.6 Validate inferred claims against the predicate's JSON Schema before submission.
-- [ ] 11.7 Submit proposals via `ingest.submit` with provenance and rationale.
+- [x] 11.1 Author the `SKILL.md` metadata describing scribe's identity, capabilities, and entry point.
+- [x] 11.2 Implement markdown ingestion: read the file, parse frontmatter, segment body sections.
+- [x] 11.3 Implement extraction for `contact.person` predicates (name, email, phone, org, notes).
+- [x] 11.4 Implement extraction for `person.generic` predicates (name, role, team).
+- [x] 11.5 Implement extraction for `note` predicates (title, tags, body).
+- [x] 11.6 Validate inferred claims against the predicate's JSON Schema before submission.
+- [x] 11.7 Submit proposals via `ingest.submit` with provenance and rationale.
 
 ## Implementation Details
 Create `skills/scribe/SKILL.md`, `skills/scribe/extraction.py`, `skills/scribe/prompts/`, and `skills/scribe/tests/`. The skill consumes the `ffs_skill` Python helper library (task 10) for the stdio protocol. LLM access is configured by the user externally; the scribe accepts a configured model client.

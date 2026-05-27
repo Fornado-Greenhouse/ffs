@@ -24,6 +24,7 @@ use tokio_util::sync::CancellationToken;
 use ffs_core::capability::{Action, CapabilityScope, build_capability_atom};
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
+use ffs_core::quarantine::InMemoryQuarantine;
 use ffs_core::store::{AtomStore, MemAtomStore};
 use ffs_core::{AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier};
 use ffs_daemon::transport;
@@ -136,6 +137,8 @@ async fn spawn_with_atoms(n_atoms: usize) -> Bench {
         renderer,
         notifier,
         owner: owner_pk(),
+        quarantine: Arc::new(InMemoryQuarantine::new()),
+        scribe: None,
     });
 
     let socket = run_dir.join("ffs.sock");

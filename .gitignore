@@ -2,3 +2,15 @@
 **/*.rs.bk
 Cargo.lock.bak
 .DS_Store
+
+# Python dev environment lives at the repo root (.venv/) per CLAUDE.md.
+# Both the root and any accidental nested copies are excluded so a
+# skill bundle stays a clean SKILL.md-shaped artifact.
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+**/.pytest_cache/
+*.egg-info/
+**/*.egg-info/

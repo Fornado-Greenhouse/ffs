@@ -39,6 +39,40 @@ This rule replaces ad-hoc `cargo test ... | grep "test result"` / `... | awk '{s
 
 ---
 
+## Python tests
+
+Skill bundles (`skills/<name>/`) are claw-shape distributable artifacts (ADR-009). They must NOT carry a Python interpreter or test-tool dependencies — those live at the repo root.
+
+### Canonical layout
+
+- `pyproject.toml` at the repo root declares the Python tooling for every skill bundle (scribe, librarian, auditor, future skills).
+- A single virtualenv at the repo root: `.venv/`. Gitignored. The same env runs every skill's tests.
+- Skill bundles stay clean: their directories contain only `SKILL.md`, the entry script, `prompts/`, `tests/`, `definition.atom.json`. No `.venv/`, no `__pycache__/`, no `requirements.txt`.
+
+### Setup (one-time)
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+```
+
+### Canonical commands
+
+| What | Command |
+|---|---|
+| All skill tests | `.venv/bin/python -m pytest skills/` |
+| One skill | `.venv/bin/python -m pytest skills/scribe/tests/` |
+| One test | `.venv/bin/python -m pytest skills/scribe/tests/test_extraction.py::test_frontmatter_name_yields_contact_person` |
+
+### Rules
+
+- **Never `python3 -m venv` inside a skill bundle.** The venv goes at the repo root; nested copies pollute the bundle and confuse the skills host (which loads the bundle as data, not as a Python package).
+- **Never `pip install --break-system-packages` or `--user`.** Use the repo-root venv; if pytest isn't found, set the venv up first.
+- **Skill-bundle Python code has zero pip dependencies.** Tests may use pytest; runtime extraction logic uses only stdlib + the `ffs_skill` helper.
+- Bare invocations only (no piping); pytest's summary line is already at the end.
+
+---
+
 ## Shell tool discipline
 
 Default to dedicated tools, not shell text-munging:

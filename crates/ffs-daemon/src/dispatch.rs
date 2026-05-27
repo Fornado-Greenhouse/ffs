@@ -13,8 +13,9 @@ use serde_json::Value;
 
 use ffs_core::capability::{self, Decision, EvalError, Target};
 use ffs_core::projection::{ProjectionRenderer, ProjectionRequest};
+use ffs_core::quarantine::{IngestQuarantine, Proposal};
 use ffs_core::store::AtomStore;
-use ffs_core::{Iso8601, PublicKey, predicate::SpecRegistry};
+use ffs_core::{EntityId, Iso8601, PredicateName, PublicKey, predicate::SpecRegistry};
 
 use crate::api::*;
 use crate::notify::EventPublisher;
@@ -28,6 +29,33 @@ pub struct Dispatcher {
     /// local UDS / named pipe. Future tasks (MCP server, federation pull)
     /// will route requests with their own per-call identity.
     pub owner: PublicKey,
+    /// Ingest quarantine: stores submitted content and the scribe's
+    /// extracted proposals. Wired by the daemon binary at startup.
+    pub quarantine: Arc<dyn IngestQuarantine>,
+    /// Scribe extractor hook: when set, `ingest.submit` invokes it on
+    /// each submission to populate the proposals. The hook is async
+    /// and owns its own concurrency strategy (the production wiring
+    /// dispatches via `ffs-skills-host`; tests inject a stub).
+    pub scribe: Option<Arc<dyn ScribeExtractor>>,
+}
+
+/// Abstraction over the scribe extractor. The daemon binary wires
+/// this to a `ffs-skills-host::SkillProcess`, but the trait lets tests
+/// inject a synchronous in-process stub without standing up a Python
+/// subprocess.
+#[async_trait::async_trait]
+pub trait ScribeExtractor: Send + Sync {
+    async fn extract(
+        &self,
+        source_uri: &str,
+        content: &[u8],
+    ) -> Result<Vec<Proposal>, ScribeExtractError>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ScribeExtractError {
+    #[error("scribe failed: {0}")]
+    Failed(String),
 }
 
 impl Dispatcher {
@@ -51,7 +79,7 @@ impl Dispatcher {
             "atom.list" => self.atom_list(req.params).await,
             "projection.render" => self.projection_render(req.params).await,
             "path.list" => self.path_list(req.params).await,
-            "ingest.submit" => stub_not_implemented("task_11"),
+            "ingest.submit" => self.ingest_submit(req.params).await,
             "fastpath.submit" => stub_not_implemented("task_09"),
             "capability.evaluate" => self.capability_evaluate(req.params).await,
             "federation.peer.add" => stub_not_implemented("task_14"),
@@ -168,6 +196,71 @@ impl Dispatcher {
         to_value(&resp)
     }
 
+    async fn ingest_submit(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestSubmitParams = parse_params(params)?;
+
+        // Capability check: the caller must hold a `Write` capability
+        // for the scribe's target predicate space. Per ADR-013, the
+        // quarantine is a `note`-scoped operation at the boundary —
+        // the actual atom-level capability check fires when the user
+        // accepts a proposal. Use `note` as the target predicate so
+        // the check is meaningful for the MVP: any agent that can
+        // create notes can submit raw content for scribing.
+        let now = current_iso8601();
+        let target = Target {
+            predicate: PredicateName::new("note"),
+            entity: EntityId::new("ingest"),
+            classification: None,
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Write,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+
+        let content_bytes = p.content.into_bytes();
+        let id = self
+            .quarantine
+            .submit(p.source_uri.clone(), content_bytes.clone())
+            .await
+            .map_err(quarantine_err)?;
+
+        // Fire scribe extraction in the background so `ingest.submit`
+        // returns immediately with the submission id. The user reads
+        // proposals via `health.summary` / the daily summary panel.
+        if let Some(scribe) = self.scribe.clone() {
+            let quarantine = self.quarantine.clone();
+            let submission_id = id.clone();
+            let source_uri = p.source_uri;
+            tokio::spawn(async move {
+                match scribe.extract(&source_uri, &content_bytes).await {
+                    Ok(proposals) => {
+                        if let Err(e) = quarantine.complete(&submission_id, proposals).await {
+                            tracing::warn!(error = %e, id = %submission_id, "quarantine_complete_failed");
+                        }
+                    }
+                    Err(e) => {
+                        if let Err(e2) = quarantine
+                            .fail(&submission_id, format!("scribe: {e}"))
+                            .await
+                        {
+                            tracing::warn!(error = %e2, id = %submission_id, "quarantine_fail_failed");
+                        }
+                    }
+                }
+            });
+        }
+
+        to_value(&IngestSubmitResult { submission_id: id })
+    }
+
     async fn capability_evaluate(&self, params: Value) -> Result<Value, ApiError> {
         let p: CapabilityEvaluateParams = parse_params(params)?;
         let target = Target {
@@ -259,6 +352,14 @@ fn to_value<T: Serialize>(v: &T) -> Result<Value, ApiError> {
         message: format!("serialization: {e}"),
         data: None,
     })
+}
+
+fn quarantine_err(e: ffs_core::quarantine::QuarantineError) -> ApiError {
+    ApiError {
+        code: ERR_STORE,
+        message: e.to_string(),
+        data: None,
+    }
 }
 
 fn store_err(e: ffs_core::store::StoreError) -> ApiError {
