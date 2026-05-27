@@ -138,6 +138,7 @@ fn setup() -> Harness {
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: working_set.clone(),
+        signing_key: None,
     };
     Harness {
         _dir: dir,

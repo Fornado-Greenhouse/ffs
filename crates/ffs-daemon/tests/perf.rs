@@ -141,6 +141,7 @@ async fn spawn_with_atoms(n_atoms: usize) -> Bench {
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
+        signing_key: None,
     });
 
     let socket = run_dir.join("ffs.sock");

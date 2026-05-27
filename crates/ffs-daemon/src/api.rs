@@ -199,6 +199,29 @@ pub struct WorkingSetEvictParams {
     pub cap: usize,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditPublishParams {
+    /// Structured claim payload the auditor produced. Embedded
+    /// verbatim into the signed `auditor.daily_summary` atom.
+    pub claim: Value,
+    /// Optional bitemporal anchor. Defaults to "now" if omitted.
+    #[serde(default)]
+    pub valid_from: Option<Iso8601>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuditQueryParams {
+    /// Optional lower-bound tx_time filter. When omitted, returns
+    /// every auditor.daily_summary atom in the store.
+    #[serde(default)]
+    pub since: Option<Iso8601>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AuditPublishResult {
+    pub atom_hash: Multihash,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthSummary {
     pub proposals: u32,

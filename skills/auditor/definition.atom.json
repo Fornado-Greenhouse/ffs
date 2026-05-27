@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "predicate": "agent.definition",
+  "claim": {
+    "name": "auditor",
+    "kind": "auditor",
+    "version": "0.1.0",
+    "capabilities": [
+      {
+        "action": "read",
+        "scope": {
+          "predicates": [
+            "contact.person",
+            "person.generic",
+            "note",
+            "auditor.daily_summary"
+          ]
+        }
+      },
+      {
+        "action": "write",
+        "scope": {
+          "predicates": ["auditor.daily_summary"]
+        }
+      }
+    ],
+    "entry_point": "audit.py",
+    "cadence_seconds_default": 86400
+  },
+  "_note": "Placeholder definition. Phase 2 task signs this as a real atom; for MVP it documents the auditor's intended capability scope."
+}

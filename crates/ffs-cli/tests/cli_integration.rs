@@ -113,6 +113,7 @@ async fn spawn() -> Server {
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
+        signing_key: None,
     });
 
     let socket = run_dir.join("ffs.sock");
@@ -290,6 +291,7 @@ async fn cli_capability_denied_exits_with_code_two() {
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
+        signing_key: None,
     });
     let socket = run_dir.join("ffs.sock");
     let cancel = CancellationToken::new();

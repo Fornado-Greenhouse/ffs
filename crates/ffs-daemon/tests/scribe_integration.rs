@@ -294,6 +294,7 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
         quarantine: quarantine.clone(),
         scribe,
         working_set: Arc::new(InMemoryWorkingSet::new()),
+        signing_key: None,
     };
     Some(Harness {
         _dir: dir,

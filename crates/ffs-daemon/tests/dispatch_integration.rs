@@ -112,6 +112,7 @@ fn setup() -> Harness {
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
+        signing_key: None,
     });
     Harness {
         _dir: dir,
@@ -450,6 +451,7 @@ async fn spawn_server() -> (
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
+        signing_key: None,
     });
 
     let socket = run_dir.join("ffs.sock");

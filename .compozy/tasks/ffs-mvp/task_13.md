@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Auditor skill (Python) — daily health summary atom authoring
 type: backend
 complexity: medium
@@ -35,12 +35,12 @@ The auditor produces a daily atom summarizing substrate health: pending scribe p
 </requirements>
 
 ## Subtasks
-- [ ] 13.1 Author the `SKILL.md` metadata.
-- [ ] 13.2 Implement the metric aggregation logic.
-- [ ] 13.3 Implement threshold evaluation for the four flag types.
-- [ ] 13.4 Author the summary atom with structured claim payload + textual narrative.
-- [ ] 13.5 Limit user-visible panel content to top-5 items.
-- [ ] 13.6 Wire on-demand invocation via `health.summary` JSON-RPC method.
+- [x] 13.1 Author the `SKILL.md` metadata.
+- [x] 13.2 Implement the metric aggregation logic.
+- [x] 13.3 Implement threshold evaluation for the four flag types.
+- [x] 13.4 Author the summary atom with structured claim payload + textual narrative.
+- [x] 13.5 Limit user-visible panel content to top-5 items.
+- [x] 13.6 Wire on-demand invocation via `health.summary` JSON-RPC method.
 
 ## Implementation Details
 Create `skills/auditor/SKILL.md`, `skills/auditor/audit.py`, and `skills/auditor/tests/`. The auditor uses the daemon's `atom.list` and a `audit_query` method (added to the dispatcher in task 07) for metric aggregation.

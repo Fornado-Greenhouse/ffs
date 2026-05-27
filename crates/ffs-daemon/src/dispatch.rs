@@ -11,12 +11,16 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 
+use ed25519_dalek::SigningKey;
+
 use ffs_core::capability::{self, Decision, EvalError, Target};
 use ffs_core::projection::{ProjectionRenderer, ProjectionRequest};
 use ffs_core::quarantine::{IngestQuarantine, Proposal, SubmissionStatus};
 use ffs_core::store::AtomStore;
 use ffs_core::working_set::WorkingSetStore;
-use ffs_core::{EntityId, Iso8601, PredicateName, PublicKey, predicate::SpecRegistry};
+use ffs_core::{
+    AtomTemplate, EntityId, Iso8601, PredicateName, PublicKey, Tier, predicate::SpecRegistry,
+};
 
 use crate::api::*;
 use crate::notify::EventPublisher;
@@ -43,6 +47,12 @@ pub struct Dispatcher {
     /// pin bits. The librarian skill (task 12) drives drift
     /// detection and eviction through this.
     pub working_set: Arc<dyn WorkingSetStore>,
+    /// Signing key the daemon uses when authoring atoms on behalf of
+    /// long-running skills (auditor's daily summary, future
+    /// scribe-promoted atoms). When `None`, methods that require
+    /// signing return `ERR_NOT_IMPLEMENTED` so a dispatcher without a
+    /// configured key is still usable for read-only flows.
+    pub signing_key: Option<Arc<SigningKey>>,
 }
 
 /// Abstraction over the scribe extractor. The daemon binary wires
@@ -100,6 +110,8 @@ impl Dispatcher {
             "working_set.detect_drift" => self.working_set_detect_drift().await,
             "working_set.refresh_drifted" => self.working_set_refresh_drifted().await,
             "working_set.evict_to_cap" => self.working_set_evict_to_cap(req.params).await,
+            "audit.publish_summary" => self.audit_publish_summary(req.params).await,
+            "audit.query" => self.audit_query(req.params).await,
             other => Err(ApiError {
                 code: ERR_METHOD_NOT_FOUND,
                 message: format!("unknown method: {other}"),
@@ -450,6 +462,131 @@ impl Dispatcher {
         let p: WorkingSetEvictParams = parse_params(params)?;
         let evicted = self.working_set.evict_to_cap(p.cap).await;
         to_value(&serde_json::json!({"evicted": evicted}))
+    }
+
+    // ---- audit handlers ----
+
+    /// Sign and insert an `auditor.daily_summary` atom carrying the
+    /// caller-supplied claim. The atom uses entity = `"auditor"` (the
+    /// singleton entity per ADR-013) so subsequent atoms supersede
+    /// the chain naturally. Tier = `"existence"` so the summary is
+    /// visible by default; user can reclassify later if needed.
+    async fn audit_publish_summary(&self, params: Value) -> Result<Value, ApiError> {
+        let p: AuditPublishParams = parse_params(params)?;
+        let key = self.signing_key.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "audit.publish_summary requires a configured daemon signing key".into(),
+            data: None,
+        })?;
+
+        // Capability check: the caller must hold Write on the
+        // auditor.daily_summary predicate (auditor identity in
+        // production; owner during MVP).
+        let now = current_iso8601();
+        let target = Target {
+            predicate: PredicateName::new("auditor.daily_summary"),
+            entity: EntityId::new("auditor"),
+            classification: None,
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Write,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+
+        // Chain newest-on-newest: if a previous summary exists, the
+        // new one supersedes it. Provides a stable single-entity
+        // "current summary" head for `audit.query`.
+        let supersedes = self
+            .store
+            .head_of_chain(
+                &EntityId::new("auditor"),
+                &PredicateName::new("auditor.daily_summary"),
+                None,
+            )
+            .map_err(store_err)?
+            .map(|env| env.content_hash())
+            .transpose()
+            .map_err(|e| ApiError {
+                code: ERR_INTERNAL,
+                message: format!("content_hash: {e}"),
+                data: None,
+            })?;
+
+        let tmpl = AtomTemplate {
+            v: 1,
+            entity: EntityId::new("auditor"),
+            predicate: PredicateName::new("auditor.daily_summary"),
+            claim: p.claim,
+            valid_from: p.valid_from.unwrap_or_else(|| now.clone()),
+            valid_to: None,
+            tx_time: now,
+            classification: Tier::new("existence"),
+            supersedes,
+            provenance: vec![],
+        };
+        let env = tmpl.sign(key).map_err(|e| ApiError {
+            code: ERR_INTERNAL,
+            message: format!("sign: {e}"),
+            data: None,
+        })?;
+        let hash = self.store.insert(&env).map_err(store_err)?;
+        to_value(&AuditPublishResult { atom_hash: hash })
+    }
+
+    /// Return the most recent `auditor.daily_summary` atom (and the
+    /// full chain when no `since` filter narrows it). Read-side
+    /// capability check fires on each returned atom.
+    async fn audit_query(&self, params: Value) -> Result<Value, ApiError> {
+        // Tolerate a null or missing params body; the entire payload
+        // is optional (a since-filter).
+        let params = if params.is_null() {
+            serde_json::json!({})
+        } else {
+            params
+        };
+        let p: AuditQueryParams = parse_params(params)?;
+        let atoms = self
+            .store
+            .list_by_entity(
+                &EntityId::new("auditor"),
+                Some(&PredicateName::new("auditor.daily_summary")),
+                p.since.as_ref(),
+            )
+            .map_err(store_err)?;
+
+        let now = current_iso8601();
+        let mut visible = Vec::with_capacity(atoms.len());
+        for env in atoms {
+            let target = Target {
+                predicate: env.predicate.clone(),
+                entity: env.entity.clone(),
+                classification: Some(env.classification.clone()),
+                tier: None,
+            };
+            let decision = capability::evaluate(
+                &*self.store,
+                &self.owner,
+                capability::Action::Read,
+                &target,
+                &now,
+            )
+            .map_err(eval_err)?;
+            if matches!(decision, Decision::Allow { .. }) {
+                visible.push(env);
+            }
+        }
+        // Most-recent first by tx_time so the daily-health-summary
+        // panel can take the head.
+        visible.sort_by(|a, b| b.tx_time.as_str().cmp(a.tx_time.as_str()));
+        to_value(&visible)
     }
 
     /// Internal helper: list working-set entries, re-render each,

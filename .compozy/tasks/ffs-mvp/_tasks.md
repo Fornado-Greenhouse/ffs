@@ -16,7 +16,7 @@
 | 10 | ffs-skills-host: subprocess host + stdio bridging for Python skills | completed | medium | task_07 |
 | 11 | Scribe skill (Python): markdown to proposed atoms with provenance | completed | medium | task_03, task_07, task_10 |
 | 12 | Librarian skill (Python): working-set manager and drift watcher | completed | low | task_04, task_06, task_07, task_10 |
-| 13 | Auditor skill (Python): daily health summary atom authoring | pending | medium | task_04, task_05, task_07, task_10 |
+| 13 | Auditor skill (Python): daily health summary atom authoring | completed | medium | task_04, task_05, task_07, task_10 |
 | 14 | Federation transport: mTLS HTTPS server/client, cert-from-Ed25519, bridge handshake | pending | critical | task_02, task_04, task_05, task_07 |
 | 15 | Federation pull sync: watermarks, capability-filtered serving, intersection, revocation | pending | critical | task_14 |
 | 16 | ffs-mcp: six MVP MCP tools wrapping the daemon's JSON-RPC | pending | medium | task_07 |
