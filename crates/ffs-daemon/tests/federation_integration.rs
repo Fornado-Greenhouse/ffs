@@ -96,6 +96,7 @@ fn make_side(name: &'static str, seed: u8) -> Side {
         responder_vocab: vec!["contact.person".into(), "note".into()],
         responder_anchor: Iso8601::new("2026-05-27T08:00:00Z").unwrap(),
         peers: peers.clone() as Arc<dyn FederationPeerStore>,
+        store: store.clone(),
     };
     let dispatcher = Dispatcher {
         store: store.clone(),
@@ -110,6 +111,7 @@ fn make_side(name: &'static str, seed: u8) -> Side {
         federation_peers: peers.clone(),
         federation_client: None, // set after wiring routes
         our_cert_fingerprint: Some(cert.fingerprint.clone()),
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     };
     Side {
         name,

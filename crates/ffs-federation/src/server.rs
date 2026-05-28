@@ -16,8 +16,10 @@ use std::sync::Arc;
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
+use ffs_core::capability::{self, CapabilityClaim, Decision, Target};
 use ffs_core::federation_peers::FederationPeerStore;
-use ffs_core::{Iso8601, Multihash, PublicKey};
+use ffs_core::store::AtomStore;
+use ffs_core::{AtomEnvelope, EntityId, Iso8601, Multihash, PredicateName, PublicKey};
 
 use crate::handshake::{
     HANDSHAKE_PROTOCOL_VERSION, HandshakeError, HandshakeRequest, HandshakeResponse, RotateRequest,
@@ -34,6 +36,10 @@ pub enum ServerError {
     RotationBadSignature(String),
     #[error("peer store: {0}")]
     PeerStore(#[from] ffs_core::federation_peers::FederationPeerError),
+    #[error("capability {0} not found in store")]
+    CapabilityUnknown(String),
+    #[error("capability grantee does not match the inbound peer")]
+    CapabilityMismatch,
     #[error("io: {0}")]
     Io(String),
 }
@@ -58,6 +64,10 @@ pub struct FederationContext {
     /// Peer store; handlers consult it for fingerprint pinning and
     /// update it when handshake succeeds.
     pub peers: Arc<dyn FederationPeerStore>,
+    /// Local atom store. The pull / get-atom / intersection handlers
+    /// read from it; capability filtering happens at the source per
+    /// ADR-020 so out-of-scope atoms never leave the substrate.
+    pub store: Arc<dyn AtomStore>,
 }
 
 /// Handler for `POST /federation/v1/handshake`.
@@ -164,6 +174,240 @@ fn verify_sig(
     key.verify(msg, sig)
 }
 
+// ---- pull / get_atom / intersection / revocation handlers ----
+
+/// Per-pull limit. Protects the responder from a runaway requester
+/// pulling the entire substrate in one request; the client paginates
+/// by advancing its watermark.
+pub const MAX_PULL_PAGE: usize = 1_000;
+
+/// Handler for `GET /federation/v1/atoms?since=<tx_time>&capability=<hash>`.
+///
+/// Returns atoms whose `tx_time > since` (or all when `since` is
+/// None) that the peer's pinned capability authorizes them to read.
+/// Capability filtering happens AT THE SOURCE — atoms outside the
+/// peer's tier or predicate scope never cross the wire.
+///
+/// The result is sorted oldest-first so the caller can advance its
+/// watermark monotonically: `new_watermark = last_returned.tx_time`.
+pub async fn handle_pull_atoms(
+    ctx: &FederationContext,
+    client_cert_fingerprint: &Multihash,
+    since: Option<&Iso8601>,
+    capability_hash: &Multihash,
+) -> Result<Vec<AtomEnvelope>, ServerError> {
+    let peer = ctx
+        .peers
+        .find_by_fingerprint(client_cert_fingerprint)
+        .await
+        .ok_or_else(|| ServerError::UnregisteredPeer(client_cert_fingerprint.to_multibase()))?;
+
+    // Look up the capability atom the peer announced. The pin on its
+    // hash makes sure a peer can't substitute a different capability
+    // mid-stream; if we cannot find the atom locally, the request is
+    // rejected (the peer's view is out of sync with ours).
+    let cap_env = ctx
+        .store
+        .get(capability_hash)
+        .map_err(|e| ServerError::Io(e.to_string()))?
+        .ok_or_else(|| ServerError::CapabilityUnknown(capability_hash.to_multibase()))?;
+    let cap = CapabilityClaim::from_envelope(&cap_env)
+        .map_err(|e| ServerError::Io(format!("malformed capability: {e}")))?;
+    if cap.grantee != peer.peer_pubkey {
+        return Err(ServerError::CapabilityMismatch);
+    }
+
+    // Walk every predicate in the capability's scope (or the
+    // responder's whole vocab when scope.predicates is None). For
+    // each, list atoms after `since` and filter by capability cover.
+    let predicates: Vec<PredicateName> = match cap.scope.predicates.clone() {
+        Some(ps) => ps,
+        None => ctx
+            .responder_vocab
+            .iter()
+            .map(|s| PredicateName::new(s.clone()))
+            .collect(),
+    };
+    let now = current_iso8601();
+    let mut out: Vec<AtomEnvelope> = Vec::new();
+    for pred in predicates {
+        let atoms = ctx
+            .store
+            .list_by_predicate(&pred, since, MAX_PULL_PAGE)
+            .map_err(|e| ServerError::Io(e.to_string()))?;
+        for env in atoms {
+            // Re-evaluate against the substrate's capability evaluator
+            // so this serves the source-of-truth check (not just a
+            // hash-equality match). Out-of-tier atoms get dropped here.
+            let target = Target {
+                predicate: env.predicate.clone(),
+                entity: env.entity.clone(),
+                classification: Some(env.classification.clone()),
+                tier: None,
+            };
+            let decision = capability::evaluate(
+                &*ctx.store,
+                &peer.peer_pubkey,
+                capability::Action::Read,
+                &target,
+                &now,
+            )
+            .map_err(|e| ServerError::Io(e.to_string()))?;
+            if matches!(decision, Decision::Allow { .. }) {
+                out.push(env);
+            }
+        }
+    }
+
+    // Sort oldest-first by tx_time so the receiver can advance its
+    // watermark monotonically; break ties on content hash for stable
+    // ordering.
+    out.sort_by(|a, b| {
+        a.tx_time.as_str().cmp(b.tx_time.as_str()).then_with(|| {
+            match (a.content_hash(), b.content_hash()) {
+                (Ok(ha), Ok(hb)) => ha.to_multibase().cmp(&hb.to_multibase()),
+                _ => std::cmp::Ordering::Equal,
+            }
+        })
+    });
+    out.truncate(MAX_PULL_PAGE);
+    Ok(out)
+}
+
+/// Handler for `GET /federation/v1/atom/<hash>`. Returns a single
+/// atom by content hash if the peer's pinned capability covers it.
+pub async fn handle_get_atom(
+    ctx: &FederationContext,
+    client_cert_fingerprint: &Multihash,
+    hash: &Multihash,
+) -> Result<Option<AtomEnvelope>, ServerError> {
+    let peer = ctx
+        .peers
+        .find_by_fingerprint(client_cert_fingerprint)
+        .await
+        .ok_or_else(|| ServerError::UnregisteredPeer(client_cert_fingerprint.to_multibase()))?;
+    let Some(env) = ctx
+        .store
+        .get(hash)
+        .map_err(|e| ServerError::Io(e.to_string()))?
+    else {
+        return Ok(None);
+    };
+    let target = Target {
+        predicate: env.predicate.clone(),
+        entity: env.entity.clone(),
+        classification: Some(env.classification.clone()),
+        tier: None,
+    };
+    let now = current_iso8601();
+    let decision = capability::evaluate(
+        &*ctx.store,
+        &peer.peer_pubkey,
+        capability::Action::Read,
+        &target,
+        &now,
+    )
+    .map_err(|e| ServerError::Io(e.to_string()))?;
+    Ok(match decision {
+        Decision::Allow { .. } => Some(env),
+        Decision::Deny { .. } => None,
+    })
+}
+
+/// Handler for `GET /federation/v1/intersection/<entity>`. Returns
+/// true iff the substrate has atoms for the entity at any classification
+/// the peer's capability authorizes. Symmetrically, when both sides
+/// return true for the same entity, the entity is in the
+/// intersection.
+///
+/// The returned shape carries the responder's pubkey so a downstream
+/// aggregator can fuse responses without losing peer attribution.
+pub async fn handle_intersection(
+    ctx: &FederationContext,
+    client_cert_fingerprint: &Multihash,
+    entity: &EntityId,
+) -> Result<IntersectionResponse, ServerError> {
+    let peer = ctx
+        .peers
+        .find_by_fingerprint(client_cert_fingerprint)
+        .await
+        .ok_or_else(|| ServerError::UnregisteredPeer(client_cert_fingerprint.to_multibase()))?;
+    let atoms = ctx
+        .store
+        .list_by_entity(entity, None, None)
+        .map_err(|e| ServerError::Io(e.to_string()))?;
+    let now = current_iso8601();
+    let mut visible = false;
+    for env in &atoms {
+        let target = Target {
+            predicate: env.predicate.clone(),
+            entity: env.entity.clone(),
+            classification: Some(env.classification.clone()),
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*ctx.store,
+            &peer.peer_pubkey,
+            capability::Action::Read,
+            &target,
+            &now,
+        )
+        .map_err(|e| ServerError::Io(e.to_string()))?;
+        if matches!(decision, Decision::Allow { .. }) {
+            visible = true;
+            break;
+        }
+    }
+    Ok(IntersectionResponse {
+        present: visible,
+        responder_pubkey: ctx.responder_pubkey.clone(),
+    })
+}
+
+/// Handler for `POST /federation/v1/revocation-notice`. The opt-in
+/// immediate-revocation push from ADR-020 — peers don't have to
+/// honor it, but accepting it cuts revocation propagation latency
+/// from heartbeat to ~seconds. MVP just records the notice via
+/// tracing; the puller already detects revocation on the next pull
+/// when the supersession lands.
+pub async fn handle_revocation_notice(
+    ctx: &FederationContext,
+    client_cert_fingerprint: &Multihash,
+    capability_hash: &Multihash,
+) -> Result<RevocationNoticeAck, ServerError> {
+    let peer = ctx
+        .peers
+        .find_by_fingerprint(client_cert_fingerprint)
+        .await
+        .ok_or_else(|| ServerError::UnregisteredPeer(client_cert_fingerprint.to_multibase()))?;
+    tracing::info!(
+        peer_id = %peer.peer_id,
+        capability = %capability_hash.to_multibase(),
+        "revocation_notice_received"
+    );
+    Ok(RevocationNoticeAck { received: true })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct IntersectionResponse {
+    pub present: bool,
+    pub responder_pubkey: PublicKey,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct RevocationNoticeAck {
+    pub received: bool,
+}
+
+fn current_iso8601() -> Iso8601 {
+    use time::format_description::well_known::Iso8601 as Fmt;
+    let now = time::OffsetDateTime::now_utc();
+    let s = now
+        .format(&Fmt::DEFAULT)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
+    Iso8601::new(s).expect("formatted ISO8601 must parse")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,12 +455,14 @@ mod tests {
         peers.upsert(peer).await.unwrap();
 
         let responder_key = SigningKey::from_bytes(&[99u8; 32]);
+        let store: Arc<dyn AtomStore> = Arc::new(ffs_core::store::MemAtomStore::new());
         let ctx = FederationContext {
             responder_pubkey: pubkey_from_key(&responder_key),
             responder_capability: fp(b"responder-cap"),
             responder_vocab: responder_vocab.into_iter().map(String::from).collect(),
             responder_anchor: ts("2026-05-27T08:00:00Z"),
             peers: peers.clone(),
+            store,
         };
         (ctx, initiator_fp, initiator_key, peers)
     }

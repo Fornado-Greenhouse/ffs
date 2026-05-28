@@ -87,6 +87,7 @@ fn setup(with_signing_key: bool) -> Harness {
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     };
     Harness {
         _dir: dir,

@@ -163,7 +163,8 @@ pub struct BridgeRotateParams {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FederationPullParams {
-    pub peer: PublicKey,
+    /// Local peer-id (matches `federation.peer.add`'s `peer_id`).
+    pub peer_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

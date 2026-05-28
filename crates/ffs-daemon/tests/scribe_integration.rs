@@ -298,6 +298,7 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     };
     Some(Harness {
         _dir: dir,

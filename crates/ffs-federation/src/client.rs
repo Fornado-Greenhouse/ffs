@@ -14,10 +14,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use ffs_core::Multihash;
+use ffs_core::{AtomEnvelope, EntityId, Iso8601, Multihash};
 
 use crate::handshake::{HandshakeRequest, HandshakeResponse, RotateRequest, RotateResponse};
-use crate::server::{FederationContext, ServerError, handle_handshake, handle_rotate};
+use crate::server::{
+    FederationContext, IntersectionResponse, RevocationNoticeAck, ServerError, handle_get_atom,
+    handle_handshake, handle_intersection, handle_pull_atoms, handle_revocation_notice,
+    handle_rotate,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FederationClientError {
@@ -52,6 +56,48 @@ pub trait FederationClient: Send + Sync {
         our_cert_fingerprint: &Multihash,
         req: RotateRequest,
     ) -> Result<RotateResponse, FederationClientError>;
+
+    /// Pull atoms from a peer after `since`, filtered by the
+    /// receiver-pinned `capability_hash`. Per ADR-020 the source
+    /// applies capability filtering; the receiver re-verifies each
+    /// returned envelope's signature before insert. Returns
+    /// oldest-first so the caller advances its watermark
+    /// monotonically.
+    async fn pull_atoms(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        since: Option<&Iso8601>,
+        capability_hash: &Multihash,
+    ) -> Result<Vec<AtomEnvelope>, FederationClientError>;
+
+    /// Fetch a single atom by content hash.
+    async fn get_atom(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        hash: &Multihash,
+    ) -> Result<Option<AtomEnvelope>, FederationClientError>;
+
+    /// Ask whether the peer holds any capability-visible atoms about
+    /// `entity`. Pairs with the local check to compute the
+    /// intersection set.
+    async fn intersection(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        entity: &EntityId,
+    ) -> Result<IntersectionResponse, FederationClientError>;
+
+    /// Best-effort revocation push. The peer is not required to
+    /// honor it; if they do, propagation latency drops from
+    /// heartbeat to seconds.
+    async fn post_revocation_notice(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        capability_hash: &Multihash,
+    ) -> Result<RevocationNoticeAck, FederationClientError>;
 }
 
 /// In-process federation transport. The registry maps each peer's
@@ -111,6 +157,61 @@ impl FederationClient for InMemoryFederationClient {
         let resp = handle_rotate(&ctx, our_cert_fingerprint, req).await?;
         Ok(resp)
     }
+
+    async fn pull_atoms(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        since: Option<&Iso8601>,
+        capability_hash: &Multihash,
+    ) -> Result<Vec<AtomEnvelope>, FederationClientError> {
+        let ctx = self.route_to(endpoint).await?;
+        let atoms = handle_pull_atoms(&ctx, our_cert_fingerprint, since, capability_hash).await?;
+        Ok(atoms)
+    }
+
+    async fn get_atom(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        hash: &Multihash,
+    ) -> Result<Option<AtomEnvelope>, FederationClientError> {
+        let ctx = self.route_to(endpoint).await?;
+        let env = handle_get_atom(&ctx, our_cert_fingerprint, hash).await?;
+        Ok(env)
+    }
+
+    async fn intersection(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        entity: &EntityId,
+    ) -> Result<IntersectionResponse, FederationClientError> {
+        let ctx = self.route_to(endpoint).await?;
+        let resp = handle_intersection(&ctx, our_cert_fingerprint, entity).await?;
+        Ok(resp)
+    }
+
+    async fn post_revocation_notice(
+        &self,
+        endpoint: &str,
+        our_cert_fingerprint: &Multihash,
+        capability_hash: &Multihash,
+    ) -> Result<RevocationNoticeAck, FederationClientError> {
+        let ctx = self.route_to(endpoint).await?;
+        let ack = handle_revocation_notice(&ctx, our_cert_fingerprint, capability_hash).await?;
+        Ok(ack)
+    }
+}
+
+impl InMemoryFederationClient {
+    async fn route_to(&self, endpoint: &str) -> Result<FederationContext, FederationClientError> {
+        let routes = self.routes.lock().await;
+        routes
+            .get(endpoint)
+            .cloned()
+            .ok_or_else(|| FederationClientError::Transport(format!("no route for {endpoint}")))
+    }
 }
 
 #[cfg(test)]
@@ -153,12 +254,15 @@ mod tests {
             })
             .await
             .unwrap();
+        let store: Arc<dyn ffs_core::store::AtomStore> =
+            Arc::new(ffs_core::store::MemAtomStore::new());
         let ctx = FederationContext {
             responder_pubkey: pubkey_from_key(&responder_key),
             responder_capability: Multihash::blake3_of(b"r-cap"),
             responder_vocab: vec!["contact.person".into()],
             responder_anchor: ts("2026-05-27T08:00:00Z"),
             peers,
+            store,
         };
         let client = InMemoryFederationClient::new();
         client.route("https://bob/", ctx).await;

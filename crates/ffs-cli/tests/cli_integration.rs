@@ -117,6 +117,7 @@ async fn spawn() -> Server {
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     });
 
     let socket = run_dir.join("ffs.sock");
@@ -298,6 +299,7 @@ async fn cli_capability_denied_exits_with_code_two() {
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     });
     let socket = run_dir.join("ffs.sock");
     let cancel = CancellationToken::new();

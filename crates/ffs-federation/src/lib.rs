@@ -21,6 +21,8 @@
 pub mod cert;
 pub mod client;
 pub mod handshake;
+pub mod mount;
+pub mod scheduler;
 pub mod server;
 
 pub use cert::{CertError, SubstrateCertificate, fingerprint_der, generate_from_signing_key};
@@ -28,7 +30,16 @@ pub use client::{FederationClient, FederationClientError, InMemoryFederationClie
 pub use handshake::{
     HandshakeError, HandshakeRequest, HandshakeResponse, RotateRequest, RotateResponse,
 };
-pub use server::{FederationContext, ServerError, handle_handshake, handle_rotate};
+pub use mount::{InMemoryPeerMount, PeerMountStore};
+pub use scheduler::{
+    BACKOFF_CAP, BACKOFF_INITIAL, DEFAULT_HEARTBEAT, PullOutcome, PullScheduler, SchedulerError,
+    next_backoff, tick_once_for_peer,
+};
+pub use server::{
+    FederationContext, IntersectionResponse, RevocationNoticeAck, ServerError, handle_get_atom,
+    handle_handshake, handle_intersection, handle_pull_atoms, handle_revocation_notice,
+    handle_rotate,
+};
 
 /// Workspace marker exposed so smoke tests can confirm the crate links.
 pub const CRATE_NAME: &str = "ffs-federation";

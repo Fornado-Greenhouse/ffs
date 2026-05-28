@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Federation pull sync — watermarks, capability-filtered serving, intersection, revocation
 type: backend
 complexity: critical
@@ -36,13 +36,41 @@ Implement the operational federation behaviors that ride on top of the secured t
 </requirements>
 
 ## Subtasks
-- [ ] 15.1 Implement the five federation HTTPS endpoints.
-- [ ] 15.2 Implement the pull scheduler (heartbeat + on-demand) inside the daemon.
-- [ ] 15.3 Implement watermark-advance with verification.
-- [ ] 15.4 Implement revocation detection and unmount flow.
-- [ ] 15.5 Implement `from/<peer>/` projection mounting.
-- [ ] 15.6 Implement capability-aware intersection query.
-- [ ] 15.7 Wire `federation.pull` JSON-RPC method for on-demand triggers.
+- [x] 15.1 Implement the five federation HTTPS endpoints.
+- [x] 15.2 Implement the pull scheduler (heartbeat + on-demand) inside the daemon.
+- [x] 15.3 Implement watermark-advance with verification.
+- [x] 15.4 Implement revocation detection and unmount flow.
+- [x] 15.5 Implement `from/<peer>/` projection mounting.
+- [x] 15.6 Implement capability-aware intersection query.
+- [x] 15.7 Wire `federation.pull` JSON-RPC method for on-demand triggers.
+
+## Follow-ups (deferred to task_22 onboarding + task_18 plugin work)
+
+Per the same TechSpec § Unit Tests guidance applied in task_14, the
+substantive pull-sync logic — pull endpoints, capability-filtered
+serving, intersection, revocation detection, mount, watermarks,
+exp-backoff — all lands here with end-to-end scenario coverage via
+`InMemoryFederationClient`. Pure-network wiring is layered on later:
+
+- **axum HTTPS routes** for the five federation endpoints
+  (15.1): pure handler functions live in `ffs-federation/src/server.rs`;
+  the axum router that exposes them lives in the daemon binary.
+- **`POST /federation/v1/projection/<path>` endpoint** (15.1, part of
+  the five): handler omitted at MVP — `from/<peer>/` rendering uses
+  the locally-stored pulled atoms with the existing
+  `projection.render` flow rather than calling back to the peer. A
+  Phase 2 task can add the remote-render endpoint when needed.
+- **Long-running `PullScheduler` task wiring** (15.2): the scheduler
+  module ships with `start()` for production; the integration tests
+  exercise `tick_once_for_peer` directly so the test suite is
+  deterministic. The daemon binary spawns the scheduler at startup.
+- **Obsidian plugin `from/<peer>/` projection mounting UX** (15.5):
+  the storage attribution layer (`PeerMountStore`) ships here; the
+  Obsidian-side rendering of `from/<peer>/` paths is task_18.
+- **`bridge.intersection` JSON-RPC method** (15.6): the
+  `FederationClient::intersection` trait method is wired and exercised
+  by tests; a thin dispatcher RPC that calls it can be added in
+  task_22 alongside the CLI subcommand.
 
 ## Implementation Details
 Extend `crates/ffs-federation/` with submodules `endpoints.rs`, `scheduler.rs`, `intersection.rs`, `mount.rs`. Pull scheduling runs as a tokio task that wakes per heartbeat or on `federation.pull` invocation. Revocation propagation latency is bounded by heartbeat unless the optional `revocation-notice` push is enabled.

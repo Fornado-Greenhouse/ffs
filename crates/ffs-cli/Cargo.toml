@@ -30,6 +30,7 @@ clap = { workspace = true }
 tempfile = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 tokio-util = { workspace = true }
+ffs-federation = { workspace = true }
 
 [lints]
 workspace = true

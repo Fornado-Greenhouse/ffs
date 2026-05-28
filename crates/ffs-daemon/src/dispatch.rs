@@ -27,6 +27,8 @@ use ffs_core::{
 use ffs_federation::client::FederationClient;
 use ffs_federation::handshake::rotation_signing_bytes;
 use ffs_federation::handshake::{HANDSHAKE_PROTOCOL_VERSION, HandshakeRequest, RotateRequest};
+use ffs_federation::mount::PeerMountStore;
+use ffs_federation::scheduler::tick_once_for_peer;
 
 use crate::api::*;
 use crate::notify::EventPublisher;
@@ -73,6 +75,11 @@ pub struct Dispatcher {
     /// so they can pin us at the TLS layer. `None` until the
     /// daemon has generated its cert at startup.
     pub our_cert_fingerprint: Option<Multihash>,
+    /// Per-peer mount tracking: which atoms came from which peer.
+    /// Used by federation.pull + the `from/<peer>/` projection to
+    /// attribute atoms back to their source, and by revocation to
+    /// drop a peer's mount when their capability is rescinded.
+    pub peer_mounts: Arc<dyn PeerMountStore>,
 }
 
 /// Abstraction over the scribe extractor. The daemon binary wires
@@ -122,7 +129,7 @@ impl Dispatcher {
             "federation.peer.list" => self.federation_peer_list().await,
             "bridge.establish" => self.bridge_establish(req.params).await,
             "bridge.rotate" => self.bridge_rotate(req.params).await,
-            "federation.pull" => stub_not_implemented("task_15"),
+            "federation.pull" => self.federation_pull(req.params).await,
             "predicate.inspect" => self.predicate_inspect(req.params).await,
             "health.summary" => self.health_summary().await,
             "working_set.list" => self.working_set_list().await,
@@ -537,6 +544,43 @@ impl Dispatcher {
     async fn federation_peer_list(&self) -> Result<Value, ApiError> {
         let peers = self.federation_peers.list().await;
         to_value(&peers)
+    }
+
+    /// On-demand pull from a specific peer. Calls
+    /// `tick_once_for_peer` which: pulls atoms after the stored
+    /// watermark, verifies each (signature + content hash), inserts
+    /// verified atoms, attributes them in the mount, and advances
+    /// the watermark. Returns the pull telemetry so the caller can
+    /// surface results (atoms_pulled / revoked / new_watermark).
+    async fn federation_pull(&self, params: Value) -> Result<Value, ApiError> {
+        let p: FederationPullParams = parse_params(params)?;
+        let client = self.federation_client.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "federation.pull requires a configured federation client".into(),
+            data: None,
+        })?;
+        let our_fp = self.our_cert_fingerprint.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "federation.pull requires our_cert_fingerprint to be configured".into(),
+            data: None,
+        })?;
+
+        let outcome = tick_once_for_peer(
+            &p.peer_id,
+            &self.federation_peers,
+            client,
+            our_fp,
+            &self.store,
+            &self.peer_mounts,
+            "default",
+        )
+        .await
+        .map_err(|e| ApiError {
+            code: ERR_INTERNAL,
+            message: format!("federation.pull: {e}"),
+            data: None,
+        })?;
+        to_value(&outcome)
     }
 
     /// Initiate the in-band handshake with an already-pinned peer.

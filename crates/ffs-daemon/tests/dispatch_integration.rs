@@ -116,6 +116,7 @@ fn setup() -> Harness {
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     });
     Harness {
         _dir: dir,
@@ -280,17 +281,19 @@ async fn ingest_submit_returns_submission_id_without_scribe_configured() {
 }
 
 #[tokio::test]
-async fn federation_pull_is_stubbed_with_not_implemented() {
-    // task_14 implemented federation.peer.add / federation.peer.list
-    // and bridge.establish / bridge.rotate. federation.pull is still
-    // a task_15 stub (the pull-sync engine).
+async fn federation_pull_without_client_returns_not_implemented() {
+    // task_15 implemented federation.pull. Without a configured
+    // federation_client on the dispatcher (read-only test harness),
+    // the handler degrades to ERR_NOT_IMPLEMENTED rather than
+    // panicking — the full pull is exercised in
+    // federation_pull_integration.rs.
     let h = setup();
     let resp = h
         .dispatcher
         .handle(req(
             6,
             "federation.pull",
-            serde_json::json!({"peer": owner_pk()}),
+            serde_json::json!({"peer_id": "alice"}),
         ))
         .await;
     assert_eq!(error_code(&resp), Some(ERR_NOT_IMPLEMENTED));
@@ -455,6 +458,7 @@ async fn spawn_server() -> (
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     });
 
     let socket = run_dir.join("ffs.sock");
