@@ -141,6 +141,10 @@ impl Dispatcher {
             "working_set.evict_to_cap" => self.working_set_evict_to_cap(req.params).await,
             "audit.publish_summary" => self.audit_publish_summary(req.params).await,
             "audit.query" => self.audit_query(req.params).await,
+            "ingest.list_pending" => self.ingest_list_pending().await,
+            "ingest.accept" => self.ingest_accept(req.params).await,
+            "ingest.reject" => self.ingest_reject(req.params).await,
+            "entity.search" => self.entity_search(req.params).await,
             other => Err(ApiError {
                 code: ERR_METHOD_NOT_FOUND,
                 message: format!("unknown method: {other}"),
@@ -313,6 +317,193 @@ impl Dispatcher {
         }
 
         to_value(&IngestSubmitResult { submission_id: id })
+    }
+
+    /// List submissions waiting for user action (status == Extracted).
+    /// The daily-summary panel calls this to render the accept/reject
+    /// queue.
+    async fn ingest_list_pending(&self) -> Result<Value, ApiError> {
+        let subs = self
+            .quarantine
+            .list(Some(SubmissionStatus::Extracted))
+            .await;
+        to_value(&subs)
+    }
+
+    /// Accept a quarantined submission's proposals: sign each as an
+    /// atom with the daemon's signing key and insert into the store.
+    /// Records the inserted atom hashes on the submission and flips
+    /// its status to `Accepted`. Capability-checks `Write` on the
+    /// owner (per the existing ingest pipeline convention).
+    async fn ingest_accept(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestAcceptParams = parse_params(params)?;
+        let key = self.signing_key.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "ingest.accept requires a configured daemon signing key".into(),
+            data: None,
+        })?;
+
+        // Capability check on the substrate's write surface — the
+        // user's daily-summary action authors atoms, so the same
+        // Write capability that gates ingest.submit gates this.
+        let now = current_iso8601();
+        let target = Target {
+            predicate: PredicateName::new("note"),
+            entity: EntityId::new("ingest"),
+            classification: None,
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Write,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+
+        let sub = self
+            .quarantine
+            .get(&p.submission_id)
+            .await
+            .ok_or_else(|| ApiError {
+                code: ERR_NOT_FOUND,
+                message: format!("submission not found: {}", p.submission_id),
+                data: None,
+            })?;
+        if sub.status != SubmissionStatus::Extracted {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!(
+                    "submission {} is not in Extracted state (got {:?})",
+                    p.submission_id, sub.status
+                ),
+                data: None,
+            });
+        }
+
+        let mut hashes: Vec<Multihash> = Vec::with_capacity(sub.proposals.len());
+        for proposal in &sub.proposals {
+            let tmpl = AtomTemplate {
+                v: 1,
+                entity: proposal
+                    .claim
+                    .get("display_name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| EntityId::new(s.replace(' ', "_")))
+                    .unwrap_or_else(|| EntityId::new(format!("from-{}", &sub.id))),
+                predicate: proposal.predicate.clone(),
+                claim: proposal.claim.clone(),
+                valid_from: now.clone(),
+                valid_to: None,
+                tx_time: now.clone(),
+                classification: Tier::new("existence"),
+                supersedes: None,
+                provenance: proposal.provenance.clone(),
+            };
+            let env = tmpl.sign(key).map_err(|e| ApiError {
+                code: ERR_INTERNAL,
+                message: format!("sign: {e}"),
+                data: None,
+            })?;
+            let h = self.store.insert(&env).map_err(store_err)?;
+            hashes.push(h);
+        }
+
+        self.quarantine
+            .accept(&p.submission_id, hashes.clone())
+            .await
+            .map_err(quarantine_err)?;
+        to_value(&serde_json::json!({"accepted_atom_hashes": hashes}))
+    }
+
+    /// Reject a quarantined submission. No atoms are authored; the
+    /// submission stays in the quarantine for the audit trail with
+    /// status `Rejected`.
+    async fn ingest_reject(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestRejectParams = parse_params(params)?;
+        self.quarantine
+            .reject(&p.submission_id)
+            .await
+            .map_err(quarantine_err)?;
+        to_value(&serde_json::json!({"rejected": p.submission_id}))
+    }
+
+    /// Search entities by name across loaded predicates. Returns
+    /// matches (case-insensitive substring on the canonical name
+    /// field) capped at `limit` (default 50). Mirrors the entity-
+    /// name search hook in the Obsidian quick-switcher.
+    async fn entity_search(&self, params: Value) -> Result<Value, ApiError> {
+        let params = if params.is_null() {
+            serde_json::json!({})
+        } else {
+            params
+        };
+        let p: EntitySearchParams = parse_params(params)?;
+        let needle = p.query.trim().to_lowercase();
+        if needle.is_empty() {
+            return to_value(&serde_json::json!({"results": Vec::<Value>::new()}));
+        }
+        let limit = p.limit.unwrap_or(50).min(1000);
+
+        // Iterate the registry's known predicates; for each, list
+        // atoms and filter on the canonical name field (which
+        // depends on the predicate: contact.person + person.generic
+        // use `display_name`; note uses `title`).
+        let mut results: Vec<EntitySearchHit> = Vec::new();
+        let now = current_iso8601();
+        for name in self.registry.names() {
+            let pred = PredicateName::new(&name);
+            let atoms = self
+                .store
+                .list_by_predicate(&pred, None, limit)
+                .map_err(store_err)?;
+            for env in atoms {
+                if results.len() >= limit {
+                    break;
+                }
+                let name_field = match env.predicate.as_str() {
+                    "note" => "title",
+                    _ => "display_name",
+                };
+                let Some(display) = env.claim.get(name_field).and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                if !display.to_lowercase().contains(&needle) {
+                    continue;
+                }
+                // Capability-filter so unauthorized hits don't leak.
+                let target = Target {
+                    predicate: env.predicate.clone(),
+                    entity: env.entity.clone(),
+                    classification: Some(env.classification.clone()),
+                    tier: None,
+                };
+                let decision = capability::evaluate(
+                    &*self.store,
+                    &self.owner,
+                    capability::Action::Read,
+                    &target,
+                    &now,
+                )
+                .map_err(eval_err)?;
+                if !matches!(decision, Decision::Allow { .. }) {
+                    continue;
+                }
+                results.push(EntitySearchHit {
+                    entity: env.entity.clone(),
+                    predicate: env.predicate.clone(),
+                    display_name: display.to_string(),
+                });
+            }
+            if results.len() >= limit {
+                break;
+            }
+        }
+        to_value(&serde_json::json!({"results": results}))
     }
 
     async fn capability_evaluate(&self, params: Value) -> Result<Value, ApiError> {

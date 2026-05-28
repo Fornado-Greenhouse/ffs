@@ -36,6 +36,15 @@ pub enum SubmissionStatus {
     Extracted,
     /// Scribe failed (crash, timeout, malformed output).
     Failed,
+    /// User accepted the proposals via the daily-health-summary
+    /// panel; the daemon signed them and inserted them into the
+    /// store. The submission stays in the quarantine for audit
+    /// trail purposes — `accepted_atom_hashes` records what landed.
+    Accepted,
+    /// User rejected the proposals. The submission stays in the
+    /// quarantine for the audit trail; the proposals never become
+    /// atoms.
+    Rejected,
 }
 
 /// A single proposed atom produced by the scribe from a submission.
@@ -66,6 +75,10 @@ pub struct Submission {
     pub proposals: Vec<Proposal>,
     /// Set when status == Failed. Free-form description.
     pub failure_reason: Option<String>,
+    /// Set when status == Accepted. Lists the content hashes of the
+    /// atoms the daemon signed + inserted on acceptance.
+    #[serde(default)]
+    pub accepted_atom_hashes: Vec<Multihash>,
 }
 
 /// Storage trait for the ingest quarantine. Methods are async so a
@@ -83,6 +96,13 @@ pub trait IngestQuarantine: Send + Sync {
     async fn complete(&self, id: &str, proposals: Vec<Proposal>) -> Result<(), QuarantineError>;
     /// Transition `Pending` → `Failed` with a reason string.
     async fn fail(&self, id: &str, reason: String) -> Result<(), QuarantineError>;
+    /// Transition `Extracted` → `Accepted`, recording which atom
+    /// hashes the daemon signed and inserted. Caller is responsible
+    /// for doing the signing + insertion; this just flips the status.
+    async fn accept(&self, id: &str, atom_hashes: Vec<Multihash>) -> Result<(), QuarantineError>;
+    /// Transition `Extracted` → `Rejected`. The proposals never
+    /// become atoms; the submission stays for the audit trail.
+    async fn reject(&self, id: &str) -> Result<(), QuarantineError>;
 }
 
 /// In-memory quarantine. The default backend; sufficient for MVP and
@@ -125,6 +145,7 @@ impl IngestQuarantine for InMemoryQuarantine {
             status: SubmissionStatus::Pending,
             proposals: Vec::new(),
             failure_reason: None,
+            accepted_atom_hashes: Vec::new(),
         };
         self.submissions.lock().await.insert(id.clone(), sub);
         Ok(id)
@@ -178,6 +199,37 @@ impl IngestQuarantine for InMemoryQuarantine {
         }
         sub.status = SubmissionStatus::Failed;
         sub.failure_reason = Some(reason);
+        Ok(())
+    }
+
+    async fn accept(&self, id: &str, atom_hashes: Vec<Multihash>) -> Result<(), QuarantineError> {
+        let mut guard = self.submissions.lock().await;
+        let sub = guard
+            .get_mut(id)
+            .ok_or_else(|| QuarantineError::NotFound(id.to_string()))?;
+        if sub.status != SubmissionStatus::Extracted {
+            return Err(QuarantineError::BadTransition {
+                from: format!("{:?}", sub.status).to_lowercase(),
+                to: "accepted".into(),
+            });
+        }
+        sub.status = SubmissionStatus::Accepted;
+        sub.accepted_atom_hashes = atom_hashes;
+        Ok(())
+    }
+
+    async fn reject(&self, id: &str) -> Result<(), QuarantineError> {
+        let mut guard = self.submissions.lock().await;
+        let sub = guard
+            .get_mut(id)
+            .ok_or_else(|| QuarantineError::NotFound(id.to_string()))?;
+        if sub.status != SubmissionStatus::Extracted {
+            return Err(QuarantineError::BadTransition {
+                from: format!("{:?}", sub.status).to_lowercase(),
+                to: "rejected".into(),
+            });
+        }
+        sub.status = SubmissionStatus::Rejected;
         Ok(())
     }
 }
@@ -267,5 +319,45 @@ mod tests {
         assert_eq!(extracted.len(), 1);
         let all = q.list(None).await;
         assert_eq!(all.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn accept_flips_extracted_to_accepted_and_records_hashes() {
+        let q = InMemoryQuarantine::new();
+        let id = q
+            .submit("file:///a.md".into(), b"x".to_vec())
+            .await
+            .unwrap();
+        q.complete(&id, vec![]).await.unwrap();
+        let h1 = Multihash::blake3_of(b"atom-1");
+        let h2 = Multihash::blake3_of(b"atom-2");
+        q.accept(&id, vec![h1.clone(), h2.clone()]).await.unwrap();
+        let sub = q.get(&id).await.unwrap();
+        assert_eq!(sub.status, SubmissionStatus::Accepted);
+        assert_eq!(sub.accepted_atom_hashes, vec![h1, h2]);
+    }
+
+    #[tokio::test]
+    async fn reject_flips_extracted_to_rejected() {
+        let q = InMemoryQuarantine::new();
+        let id = q
+            .submit("file:///a.md".into(), b"x".to_vec())
+            .await
+            .unwrap();
+        q.complete(&id, vec![]).await.unwrap();
+        q.reject(&id).await.unwrap();
+        let sub = q.get(&id).await.unwrap();
+        assert_eq!(sub.status, SubmissionStatus::Rejected);
+    }
+
+    #[tokio::test]
+    async fn cannot_accept_a_pending_submission() {
+        let q = InMemoryQuarantine::new();
+        let id = q
+            .submit("file:///a.md".into(), b"x".to_vec())
+            .await
+            .unwrap();
+        let err = q.accept(&id, vec![]).await.unwrap_err();
+        assert!(matches!(err, QuarantineError::BadTransition { .. }));
     }
 }

@@ -19,11 +19,13 @@ import { DaemonClient } from "./client.js";
 import { enumerateFolder, decorateProjectionFile } from "./folder.js";
 import { ProjectionSubscription, renderProjection } from "./projection.js";
 import { applyOptimistically, routeEdit } from "./editing.js";
+import { EntitySearch } from "./search.js";
 import {
   DEFAULT_SETTINGS,
   FfsPluginSettings,
   FfsSettingTab,
 } from "./settings.js";
+import { SummaryPanelModel } from "./summary.js";
 
 export default class FfsPlugin extends Plugin {
   settings: FfsPluginSettings = DEFAULT_SETTINGS;
@@ -31,10 +33,14 @@ export default class FfsPlugin extends Plugin {
   private statusEl: HTMLElement | null = null;
   /** Live-update subscription for the currently-open projection. */
   private projectionSub: ProjectionSubscription | null = null;
+  /** Daily-health-summary panel model (task_19). */
+  summary!: SummaryPanelModel;
+  /** Entity-name search backing the quick-switcher hook (task_19). */
+  search!: EntitySearch;
   /**
-   * Exposed for downstream task work (folder enumeration UI in
-   * task_19) so plugin subsystems can call into the read/edit
-   * pipeline without re-importing the daemon client.
+   * Exposed for downstream task work so plugin subsystems can call
+   * into the read/edit pipeline without re-importing the daemon
+   * client.
    */
   enumerateFolder = (path: string, page = 0) =>
     enumerateFolder(this.client, path, page);
@@ -74,12 +80,49 @@ export default class FfsPlugin extends Plugin {
       },
     );
 
+    // Summary panel model — wires `audit.query` + `ingest.list_pending`
+    // and refreshes on `event.atom.committed` for auditor atoms.
+    this.summary = new SummaryPanelModel(this.client);
+
+    // Entity-name search backing the quick-switcher hook. Results
+    // arrive in `onResults`; production wires this into Obsidian's
+    // suggester. The 200ms debounce default protects the daemon
+    // from per-keystroke traffic.
+    this.search = new EntitySearch(this.client, (hits, query) => {
+      console.info(`[ffs] entity search ${query} → ${hits.length} hits`);
+    });
+
+    // Keyboard shortcuts (SHOULD per the task spec). Production
+    // binds these to UI commands; the registrations stay in
+    // main.ts so the keymap is visible to users in Obsidian's
+    // Hotkeys settings.
+    this.addCommand({
+      id: "ffs-refresh-summary",
+      name: "Refresh daily health summary",
+      callback: () => {
+        void this.summary.refresh().catch((err) => {
+          console.warn("[ffs] summary refresh failed:", err);
+        });
+      },
+    });
+    this.addCommand({
+      id: "ffs-focus-entity-search",
+      name: "Search FFS entities by name…",
+      callback: () => {
+        // The production binding opens a suggester. The plugin's
+        // `this.search.pushQuery(input)` drives it.
+        console.info("[ffs] entity-search command invoked");
+      },
+    });
+
     // Register the settings tab using the Obsidian-runtime
     // wrapper. Direct subclassing keeps Obsidian's discovery happy.
     this.addSettingTab(new FfsSettingsTabImpl(this.app, this));
   }
 
   async onunload(): Promise<void> {
+    this.search?.cancel();
+    this.summary?.dispose();
     this.projectionSub?.dispose();
     this.projectionSub = null;
     this.client?.close();

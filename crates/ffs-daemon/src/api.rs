@@ -187,6 +187,30 @@ pub struct IngestSubmitResult {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct IngestAcceptParams {
+    pub submission_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IngestRejectParams {
+    pub submission_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EntitySearchParams {
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EntitySearchHit {
+    pub entity: EntityId,
+    pub predicate: PredicateName,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct WorkingSetTouchParams {
     pub path: String,
 }
