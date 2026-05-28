@@ -14,3 +14,15 @@ __pycache__/
 **/.pytest_cache/
 *.egg-info/
 **/*.egg-info/
+
+# TypeScript / Node dev environment for the Obsidian plugin
+# (and any future TS components). node_modules/ is per-project per
+# the Obsidian convention — gitignored at every level so a stray
+# `npm install` inside a sub-tree does not pollute the tree.
+# The bundled `main.js` is a build artifact and lives next to the
+# manifest in production installs, but stays out of git so the
+# committed source is the source of truth.
+node_modules/
+**/node_modules/
+obsidian-plugin/main.js
+obsidian-plugin/main.js.map

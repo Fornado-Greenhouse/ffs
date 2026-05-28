@@ -73,6 +73,46 @@ python3 -m venv .venv
 
 ---
 
+## Obsidian-plugin tests
+
+The Obsidian plugin (`obsidian-plugin/`) is a TypeScript project with
+its own `package.json` per the Obsidian plugin convention. Its tests
+run via vitest from inside that directory.
+
+### Setup (one-time)
+
+```sh
+cd obsidian-plugin
+npm install
+```
+
+`node_modules/` is gitignored at every level; never commit it.
+
+### Canonical commands
+
+| What | Command |
+|---|---|
+| All plugin tests | `npm test` (from `obsidian-plugin/`) |
+| Bundle the plugin to `main.js` | `npm run build` |
+| Watch-build during development | `node esbuild.config.mjs --watch` |
+
+### Rules
+
+- **Never run `npm install -g`** for anything. Per-project deps only;
+  no shared global toolchain.
+- **Plugin source has no FFS-specific Node runtime deps.** The runtime
+  side talks to the daemon over UDS (`node:net`) or via the `ffs` CLI
+  subprocess (`node:child_process`); both are Node built-ins.
+- **vitest mocks Obsidian at test time** via the alias in
+  `vitest.config.mts` → `tests/obsidian-shim.ts`. Production gets the
+  real `obsidian` runtime; tests get a minimal stub of just the API
+  surface we touch. Never `import obsidian` in `client.ts`,
+  `events.ts`, `backoff.ts`, or the testable half of `settings.ts` —
+  only the `main.ts` entrypoint and the Obsidian-runtime wrapper in
+  `settings.ts` are allowed to depend on it.
+
+---
+
 ## Shell tool discipline
 
 Default to dedicated tools, not shell text-munging:

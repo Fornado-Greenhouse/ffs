@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Obsidian plugin — scaffolding + UDS / named pipe client + event subscription
 type: frontend
 complexity: medium
@@ -32,13 +32,29 @@ Establish the Obsidian plugin's TypeScript foundation: project scaffolding, buil
 </requirements>
 
 ## Subtasks
-- [ ] 17.1 Scaffold the plugin (manifest.json, main.ts, settings.ts, esbuild config).
-- [ ] 17.2 Implement the JSON-RPC client over UDS / named pipe.
-- [ ] 17.3 Implement notification subscription and an internal event emitter.
-- [ ] 17.4 Implement reconnection with exponential backoff.
-- [ ] 17.5 Add the daemon-offline indicator to the plugin UI.
-- [ ] 17.6 Implement the CLI-subprocess fallback.
-- [ ] 17.7 Write the settings panel for socket path + identity key.
+- [x] 17.1 Scaffold the plugin (manifest.json, main.ts, settings.ts, esbuild config).
+- [x] 17.2 Implement the JSON-RPC client over UDS / named pipe.
+- [x] 17.3 Implement notification subscription and an internal event emitter.
+- [x] 17.4 Implement reconnection with exponential backoff.
+- [x] 17.5 Add the daemon-offline indicator to the plugin UI.
+- [x] 17.6 Implement the CLI-subprocess fallback.
+- [x] 17.7 Write the settings panel for socket path + identity key.
+
+## Follow-ups (deferred to task_22 onboarding)
+
+- **Loads-in-Obsidian smoke test on 3 OSes**: the plugin builds to
+  `main.js` and the trait surface is exercised end-to-end via the
+  in-memory mocks, but spinning up a real Obsidian + dropping the
+  plugin into a test vault on Linux / macOS / Windows belongs to
+  the onboarding scripts in task_22.
+- **Live-daemon integration**: the daemon binary itself is a stub
+  until task_22 wires its full subsystems. Once that lands, an
+  integration test can boot the daemon + the plugin (or a headless
+  client speaking the same wire protocol) and exercise the read
+  path. The plugin's `DaemonClient` already speaks the
+  daemon's wire shape so no further plugin-side work is required.
+- **1-hour live-connection stability target**: deferred to
+  manual / nightly QA once the daemon is runnable end-to-end.
 
 ## Implementation Details
 Create `obsidian-plugin/` at the repo root with `manifest.json`, `package.json`, `src/main.ts`, `src/client.ts`, `src/settings.ts`, etc. Use TypeScript and esbuild per the Obsidian plugin standard. The JSON-RPC client speaks the same wire protocol the CLI uses (task 08).

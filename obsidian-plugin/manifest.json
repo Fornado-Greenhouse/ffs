@@ -1,0 +1,10 @@
+{
+  "id": "ffs",
+  "name": "FFS — Foley File System",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Records-shaped substrate for personal knowledge: signed, classified, bitemporal atoms surfaced as projection files Obsidian can open and edit.",
+  "author": "Wes Foley + FFS Contributors",
+  "authorUrl": "https://github.com/Fornado-Greenhouse/ffs",
+  "isDesktopOnly": true
+}
