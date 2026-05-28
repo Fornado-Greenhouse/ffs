@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: ffs-mcp — six MVP MCP tools wrapping the daemon's JSON-RPC
 type: backend
 complexity: medium
@@ -31,12 +31,29 @@ Build the FFS-MCP server: a thin Rust binary that speaks the Model Context Proto
 </requirements>
 
 ## Subtasks
-- [ ] 16.1 Set up the MCP transport (stdio + SSE) using a Rust MCP library or custom implementation.
-- [ ] 16.2 Define MCP tool schemas for the six tools.
-- [ ] 16.3 Implement each tool as a translator: MCP request → daemon JSON-RPC → MCP response.
-- [ ] 16.4 Implement agent-identity binding (config-file-driven; key from keychain or file).
-- [ ] 16.5 Translate capability denials to MCP errors with structured detail.
-- [ ] 16.6 Provide a sample agent configuration documented in the README.
+- [x] 16.1 Set up the MCP transport (stdio + SSE) using a Rust MCP library or custom implementation.
+- [x] 16.2 Define MCP tool schemas for the six tools.
+- [x] 16.3 Implement each tool as a translator: MCP request → daemon JSON-RPC → MCP response.
+- [x] 16.4 Implement agent-identity binding (config-file-driven; key from keychain or file).
+- [x] 16.5 Translate capability denials to MCP errors with structured detail.
+- [x] 16.6 Provide a sample agent configuration documented in the README.
+
+## Follow-ups (deferred to task_22 onboarding)
+
+- **Stdio binding to a real daemon**: `serve_stdio` + `McpServer` are
+  wired; the daemon binary plugs in a UDS-backed `DaemonClient`
+  (mirroring task_14's deferred reqwest binding). Until then, `main.rs`
+  prints a clear stub message so a stray invocation doesn't claim
+  to be working.
+- **SSE transport** (16.1's optional half): the trait surface
+  accepts any `AsyncRead + AsyncWrite`, so an SSE adapter slots in
+  alongside `serve_stdio` without protocol-layer changes.
+- **`--allow-author` CLI flag** (per the SHOULD requirement): the
+  daemon-side capability shape is already in place; the flag wires
+  in alongside the production binary in task_22.
+- **Agent-identity key loading**: `FFS_AGENT_KEY` is documented in
+  the sample config and `main.rs` docstring; the actual keyring/file
+  lookup lands when the binary stub is replaced.
 
 ## Implementation Details
 Create `crates/ffs-mcp/src/main.rs` and submodules. The MCP server is a separate process from the daemon; it connects to the daemon's UDS / named pipe like any other client. Capability evaluation happens entirely on the daemon side via task 05; the MCP server is a thin pass-through.

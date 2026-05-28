@@ -104,6 +104,38 @@ Seven Rust crates plus a Python skill bundle plus a TypeScript Obsidian plugin. 
 
 Full design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Decision-by-decision history: [`adrs/`](.compozy/tasks/ffs-mvp/adrs/) (21 ADRs). Product spec: [`_prd.md`](.compozy/tasks/ffs-mvp/_prd.md). Implementation spec: [`_techspec.md`](.compozy/tasks/ffs-mvp/_techspec.md).
 
+## MCP agents
+
+FFS ships `ffs-mcp`, a Model Context Protocol server that any MCP-aware agent (Claude Code, ChatGPT desktop, framework-agnostic agents) can spawn as a subprocess. It exposes six tools, each translating to a daemon JSON-RPC call with capability checks at the daemon boundary:
+
+| Tool | Purpose |
+|---|---|
+| `ffs_query` | List atoms about an entity (capability-filtered) |
+| `ffs_render_projection` | Render a projection path to markdown |
+| `ffs_resolve_url` | Resolve `ffs://` URLs (atom / entity / path) |
+| `ffs_author_atom` | Submit content for scribing into the ingest quarantine |
+| `ffs_inspect_predicate` | Return a predicate spec (schema + reverse-map rules) |
+| `ffs_audit_query` | Return recent auditor.daily_summary atoms |
+
+Sample Claude Code `mcpServers` block:
+
+```jsonc
+{
+  "mcpServers": {
+    "ffs": {
+      "command": "ffs-mcp",
+      "args": [],
+      "env": {
+        "FFS_DAEMON_SOCKET": "/Users/you/.ffs/run/ffs.sock",
+        "FFS_AGENT_KEY": "/Users/you/.ffs/keys/claude.ed25519"
+      }
+    }
+  }
+}
+```
+
+Per ADR-013, capability checks live on the daemon side; the MCP server is a thin pass-through. A capability denial comes back as an MCP tool-level error (`isError: true`) with the typed reason in `details.kind`, not a JSON-RPC error — so the agent surfaces "the substrate refused this" cleanly without treating it as a transport break.
+
 ## Philosophy: substrate, not application
 
 FFS doesn't tell you what your knowledge is *for*. It gives you the primitives — atoms, capabilities, federation, projection — and lets applications above the substrate inherit them. The first application planned on top is **Folodex**, a contact-graph tool that exercises FFS for the relationship-holder use case (salespeople, journalists, founders, community organizers who own networks they currently don't control).

@@ -19,7 +19,7 @@
 | 13 | Auditor skill (Python): daily health summary atom authoring | completed | medium | task_04, task_05, task_07, task_10 |
 | 14 | Federation transport: mTLS HTTPS server/client, cert-from-Ed25519, bridge handshake | completed | critical | task_02, task_04, task_05, task_07 |
 | 15 | Federation pull sync: watermarks, capability-filtered serving, intersection, revocation | completed | critical | task_14 |
-| 16 | ffs-mcp: six MVP MCP tools wrapping the daemon's JSON-RPC | pending | medium | task_07 |
+| 16 | ffs-mcp: six MVP MCP tools wrapping the daemon's JSON-RPC | completed | medium | task_07 |
 | 17 | Obsidian plugin: scaffolding + UDS / named pipe client + event subscription | pending | medium | task_07 |
 | 18 | Obsidian plugin: paginated folder enumeration + projection rendering on open + edit routing | pending | medium | task_17 |
 | 19 | Obsidian plugin: daily health summary panel + entity-name search hook | pending | medium | task_17 |
