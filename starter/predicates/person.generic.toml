@@ -1,0 +1,72 @@
+# person.generic — the substrate's general-purpose person reference.
+#
+# Atoms with this predicate represent people you encounter in
+# narrative content (meeting notes, decisions, project records) who
+# aren't full contact-graph entries. Lighter than `contact.person`:
+# no email / phone fields, but enough structure (role, team,
+# location) to disambiguate "Sara from product" from "Sara from
+# legal" when an LLM agent extracts entities from a document.
+#
+# Promoting a person.generic to a contact.person is a separate
+# user action — the auditor surfaces candidates in the daily
+# health summary. See PRD § Open Questions for the promotion flow.
+
+name = "person.generic"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["display_name"]
+
+[claim_schema.properties]
+display_name = { type = "string" }
+role = { type = "string" }
+team = { type = "string" }
+location = { type = "string" }
+pronouns = { type = "string" }
+bio = { type = "array", items = { type = "string" } }
+
+[rendering]
+template = "person-generic.md.tera"
+frontmatter_fields = ["display_name", "role", "team", "location", "pronouns"]
+body_sections = ["Bio"]
+additive_sections = ["Bio"]
+
+# -------- reverse-map rules (6) --------
+
+[[reverse_map]]
+output = "frontmatter.display_name"
+atom_field = "claim.display_name"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.role"
+atom_field = "claim.role"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.team"
+atom_field = "claim.team"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.location"
+atom_field = "claim.location"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.pronouns"
+atom_field = "claim.pronouns"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "section.Bio.list_item"
+atom_field = "claim.bio[]"
+edit_kind = "additive_section"
+
+# -------- pagination --------
+
+[pagination]
+strategy = "alphabetical_first_letter"
+group_field = "display_name"

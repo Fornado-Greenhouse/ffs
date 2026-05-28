@@ -1,0 +1,115 @@
+# contact.person — the substrate's primary contact-graph predicate.
+#
+# Atoms with this predicate represent a person you have a relationship
+# with: their display name, contact methods (work + personal email,
+# phone), organization, and free-form notes you've accumulated.
+#
+# Tier classification: the predicate itself is tier-agnostic; the
+# atom's `classification` field carries the tier ("existence",
+# "work_email", "personal_email", "notes", etc.) so capabilities can
+# scope sharing per ADR-007 + ADR-020.
+#
+# Reverse-map shape (per ADR-014):
+#   - single_line_text     — free-form text fields (names, emails)
+#   - frontmatter_value    — constrained-vocab fields (tier, pronouns)
+#   - additive_section     — list items in Notes / Tags sections
+#
+# See `README.md` in this directory for usage and ADR-021 for the
+# spec format.
+
+name = "contact.person"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["display_name"]
+
+[claim_schema.properties]
+display_name = { type = "string" }
+work_email = { type = "string", format = "email" }
+personal_email = { type = "string", format = "email" }
+phone = { type = "string" }
+organization = { type = "string" }
+role = { type = "string" }
+tier = { type = "string", enum = ["existence", "introducible", "discreet", "confidential"] }
+pronouns = { type = "string" }
+notes = { type = "array", items = { type = "string" } }
+tags = { type = "array", items = { type = "string" } }
+
+[rendering]
+template = "contact-person.md.tera"
+frontmatter_fields = [
+    "display_name",
+    "work_email",
+    "personal_email",
+    "phone",
+    "organization",
+    "role",
+    "tier",
+    "pronouns",
+]
+body_sections = ["Notes", "Tags"]
+additive_sections = ["Notes", "Tags"]
+
+# -------- reverse-map rules (10) --------
+
+[[reverse_map]]
+output = "frontmatter.display_name"
+atom_field = "claim.display_name"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.work_email"
+atom_field = "claim.work_email"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.personal_email"
+atom_field = "claim.personal_email"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.phone"
+atom_field = "claim.phone"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.organization"
+atom_field = "claim.organization"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.role"
+atom_field = "claim.role"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.tier"
+atom_field = "claim.tier"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.pronouns"
+atom_field = "claim.pronouns"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "section.Notes.list_item"
+atom_field = "claim.notes[]"
+edit_kind = "additive_section"
+
+[[reverse_map]]
+output = "section.Tags.list_item"
+atom_field = "claim.tags[]"
+edit_kind = "additive_section"
+
+# -------- pagination --------
+#
+# Contacts list under `contacts/by-name/<letter>/` — first-letter of
+# display_name groups entries alphabetically. `contacts/recent/`
+# falls back to atom tx_time recency.
+
+[pagination]
+strategy = "alphabetical_first_letter"
+group_field = "display_name"

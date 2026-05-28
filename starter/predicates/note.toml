@@ -1,0 +1,70 @@
+# note — the substrate's catch-all narrative-text predicate.
+#
+# Atoms with this predicate hold unstructured-but-tagged markdown:
+# meeting notes, reading notes, daily reflections, anything that
+# doesn't fit a more specific predicate. The scribe falls back to
+# `note` whenever a markdown input has body content but no
+# structural signal for a contact / person extraction (see
+# `skills/scribe/extraction.py`).
+#
+# `status` is a constrained vocabulary — useful for filtering the
+# `notes/recent/` view to "drafts only" or "published only" once
+# the Obsidian plugin surfaces the filter.
+
+name = "note"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["title"]
+
+[claim_schema.properties]
+title = { type = "string" }
+author = { type = "string" }
+status = { type = "string", enum = ["draft", "published", "archived"] }
+body = { type = "string" }
+tags = { type = "array", items = { type = "string" } }
+references = { type = "array", items = { type = "string" } }
+
+[rendering]
+template = "note.md.tera"
+frontmatter_fields = ["title", "author", "status"]
+body_sections = ["Body", "Tags", "References"]
+additive_sections = ["Tags", "References"]
+
+# -------- reverse-map rules (5) --------
+
+[[reverse_map]]
+output = "frontmatter.title"
+atom_field = "claim.title"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.author"
+atom_field = "claim.author"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.status"
+atom_field = "claim.status"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "section.Tags.list_item"
+atom_field = "claim.tags[]"
+edit_kind = "additive_section"
+
+[[reverse_map]]
+output = "section.References.list_item"
+atom_field = "claim.references[]"
+edit_kind = "additive_section"
+
+# -------- pagination --------
+#
+# Notes are pulled by recency in MVP — the by-name listing under
+# `notes/by-name/<letter>/` still works (titles get alphabetized)
+# but `notes/recent/` is the primary surface.
+
+[pagination]
+strategy = "recency"
