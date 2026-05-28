@@ -23,7 +23,7 @@
 | 17 | Obsidian plugin: scaffolding + UDS / named pipe client + event subscription | pending | medium | task_07 |
 | 18 | Obsidian plugin: paginated folder enumeration + projection rendering on open + edit routing | pending | medium | task_17 |
 | 19 | Obsidian plugin: daily health summary panel + entity-name search hook | pending | medium | task_17 |
-| 20 | Starter predicate-spec library (contact.person, person.generic, note) | pending | low | task_03 |
+| 20 | Starter predicate-spec library (contact.person, person.generic, note) | completed | low | task_03 |
 | 21 | Starter Tera template library for the three MVP predicate types | pending | low | task_06, task_20 |
 | 22 | Cross-platform installer scripts for Linux, macOS, Windows | pending | medium | task_08, task_17 |
 | 23 | Onboarding documentation: technical-friend checklist and first-use guide | pending | low | task_22 |

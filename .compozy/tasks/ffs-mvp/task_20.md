@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Starter predicate-spec library — contact.person, person.generic, note
 type: chore
 complexity: low
@@ -32,12 +32,12 @@ Author the three TOML predicate-spec files that ship as the MVP starter library.
 </requirements>
 
 ## Subtasks
-- [ ] 20.1 Author `contact.person.toml` with full claim_schema, rendering, reverse-map, pagination.
-- [ ] 20.2 Author `person.generic.toml`.
-- [ ] 20.3 Author `note.toml`.
-- [ ] 20.4 Verify all three specs load cleanly via the predicate-spec loader (task 03).
-- [ ] 20.5 Verify reverse-map rules cover the three MVP edit categories for each predicate.
-- [ ] 20.6 Document each predicate's intended use in a `README.md` alongside the specs.
+- [x] 20.1 Author `contact.person.toml` with full claim_schema, rendering, reverse-map, pagination.
+- [x] 20.2 Author `person.generic.toml`.
+- [x] 20.3 Author `note.toml`.
+- [x] 20.4 Verify all three specs load cleanly via the predicate-spec loader (task 03).
+- [x] 20.5 Verify reverse-map rules cover the three MVP edit categories for each predicate.
+- [x] 20.6 Document each predicate's intended use in a `README.md` alongside the specs.
 
 ## Implementation Details
 Create `starter/predicates/contact.person.toml`, `starter/predicates/person.generic.toml`, `starter/predicates/note.toml`, and `starter/predicates/README.md`. These files are bundled with the installer (task 22) and copied to `~/.ffs/config/predicates/` on first run.
