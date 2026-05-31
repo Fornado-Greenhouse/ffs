@@ -36,7 +36,7 @@ field), not the predicate level — a `contact.person` atom can be
 classified `existence`, `work_email`, `personal_email`, etc. so
 federation capabilities scope sharing per ADR-020.
 
-**10 reverse-map rules** covering all three edit categories:
+**12 reverse-map rules** covering all three edit categories:
 
 | Output | Atom field | Edit kind |
 |---|---|---|
@@ -50,6 +50,14 @@ federation capabilities scope sharing per ADR-020.
 | `frontmatter.pronouns` | `claim.pronouns` | `frontmatter_value` |
 | `section.Notes.list_item` | `claim.notes[]` | `additive_section` |
 | `section.Tags.list_item` | `claim.tags[]` | `additive_section` |
+| `section.Organizations.list_item` | `claim.organizations[]` | `additive_section` |
+| `section.History.list_item` | `claim.history[]` | `additive_section` |
+
+Note on `organization` vs `organizations`: the singular
+`frontmatter.organization` carries the contact's *current primary*
+affiliation; the plural `claim.organizations[]` list section
+accumulates the full set across time (past employers, volunteer
+roles). The `## History` section is a free-form interaction log.
 
 Pagination: `alphabetical_first_letter` grouped on `display_name`
 — populates `contacts/by-name/<letter>/`.
@@ -92,10 +100,10 @@ Pagination: `recency` — `notes/recent/` is the primary surface.
 
 | Predicate | Reverse-map rules |
 |---|---|
-| `contact.person` | 10 |
+| `contact.person` | 12 |
 | `person.generic` | 6 |
 | `note` | 5 |
-| **Total** | **21** |
+| **Total** | **23** |
 
 Within the 15-25 range ADR-014 estimates for an MVP starter
 library.

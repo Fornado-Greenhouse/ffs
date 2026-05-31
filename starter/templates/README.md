@@ -44,9 +44,10 @@ Three constraints apply to every template here:
 
 ### `contact-person.md.tera`
 
-10 frontmatter fields (display_name, work_email, personal_email,
+8 frontmatter fields (display_name, work_email, personal_email,
 phone, organization, role, tier, pronouns — emitted only when
-present) + two additive sections (`## Notes`, `## Tags`).
+present) + four additive sections (`## Notes`, `## Tags`,
+`## Organizations`, `## History`).
 
 ### `person-generic.md.tera`
 

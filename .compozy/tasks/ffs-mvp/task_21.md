@@ -40,23 +40,26 @@ Author the Tera markdown templates referenced by the starter predicate specs. Th
 
 ## Notes on the spec ↔ template alignment
 
-The task spec lists `contact-person` body sections as "Notes,
-Organizations, History"; the actual ship sections are
-"Notes, Tags" — the shape declared by
-`starter/predicates/contact.person.toml` from task_20. Two reasons:
+The `contact-person` template now ships four additive body
+sections — `## Notes`, `## Tags`, `## Organizations`, `## History` —
+satisfying both this task's enumeration (Notes, Organizations,
+History per the requirements block) and task_20's `Tags` section
+already in place. Both new sections route through the fast-path
+classifier via matching reverse-map rules:
 
-- Reverse-map rules must reference defined rendering elements
-  (`additive_sections`); the canonical contract is the spec, not
-  the task description.
-- "Organizations" + "History" weren't requested elsewhere; they'd
-  also need `additive_sections` entries + matching reverse-map
-  rules. The current shape (Notes for free-form notes, Tags for
-  bullet-list classification) covers both edit categories of
-  ADR-014.
+- `section.Organizations.list_item` → `claim.organizations[]`
+- `section.History.list_item` → `claim.history[]`
 
-If a future task wants History/Organizations specifically, add them
-to both the predicate spec and the template; the round-trip test
-guards alignment.
+The `frontmatter.organization` field (singular, scalar) and the
+`claim.organizations[]` body section (plural, list) coexist: the
+frontmatter carries the contact's current primary affiliation;
+the body section accumulates the full set across time. `## History`
+is a free-form interaction log — lines stay raw text; the substrate
+doesn't try to parse dates at MVP.
+
+Total contact.person reverse-map rules: 12 (was 10 in task_20).
+Starter library total: 12 + 6 + 5 = 23 — still within ADR-014's
+15-25 envelope.
 
 ## Implementation Details
 Create `starter/templates/contact-person.md.tera`, `starter/templates/person-generic.md.tera`, `starter/templates/note.md.tera`. These files are bundled with the installer (task 22) and copied to `~/.ffs/config/templates/` on first run. The renderer (task 06) loads templates by name as referenced from predicate specs (task 20).

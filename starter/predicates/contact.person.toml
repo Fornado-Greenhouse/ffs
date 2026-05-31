@@ -12,7 +12,8 @@
 # Reverse-map shape (per ADR-014):
 #   - single_line_text     — free-form text fields (names, emails)
 #   - frontmatter_value    — constrained-vocab fields (tier, pronouns)
-#   - additive_section     — list items in Notes / Tags sections
+#   - additive_section     — list items in Notes / Tags / Organizations
+#                            / History sections
 #
 # See `README.md` in this directory for usage and ADR-021 for the
 # spec format.
@@ -36,6 +37,17 @@ tier = { type = "string", enum = ["existence", "introducible", "discreet", "conf
 pronouns = { type = "string" }
 notes = { type = "array", items = { type = "string" } }
 tags = { type = "array", items = { type = "string" } }
+# `organizations` is a list of organizational affiliations across
+# time — past employers, volunteer roles, project crews. The
+# `organization` frontmatter field above stays distinct: it carries
+# the *current* primary affiliation; `organizations` accumulates
+# the full set.
+organizations = { type = "array", items = { type = "string" } }
+# `history` is a chronological interaction log — "first met at the
+# 2024 SDF picnic", "last sync on 2026-03-12 about the greenhouse
+# build". Lines stay free-form; the substrate doesn't try to parse
+# dates out for MVP.
+history = { type = "array", items = { type = "string" } }
 
 [rendering]
 template = "contact-person.md.tera"
@@ -49,10 +61,10 @@ frontmatter_fields = [
     "tier",
     "pronouns",
 ]
-body_sections = ["Notes", "Tags"]
-additive_sections = ["Notes", "Tags"]
+body_sections = ["Notes", "Tags", "Organizations", "History"]
+additive_sections = ["Notes", "Tags", "Organizations", "History"]
 
-# -------- reverse-map rules (10) --------
+# -------- reverse-map rules (12) --------
 
 [[reverse_map]]
 output = "frontmatter.display_name"
@@ -102,6 +114,16 @@ edit_kind = "additive_section"
 [[reverse_map]]
 output = "section.Tags.list_item"
 atom_field = "claim.tags[]"
+edit_kind = "additive_section"
+
+[[reverse_map]]
+output = "section.Organizations.list_item"
+atom_field = "claim.organizations[]"
+edit_kind = "additive_section"
+
+[[reverse_map]]
+output = "section.History.list_item"
+atom_field = "claim.history[]"
 edit_kind = "additive_section"
 
 # -------- pagination --------

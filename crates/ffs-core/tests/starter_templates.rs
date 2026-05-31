@@ -119,6 +119,8 @@ fn contact_person_renders_canonical_atom_into_expected_markdown() {
             "tier": "introducible",
             "notes": ["met at gardening conference", "passionate about heirlooms"],
             "tags": ["plants", "open-source"],
+            "organizations": ["Foley Greenhouse", "SDF Picnic Crew"],
+            "history": ["first met at the 2024 SDF picnic", "last sync 2026-03-12"],
         }),
         "2026-05-27T08:00:00Z",
     );
@@ -135,7 +137,15 @@ fn contact_person_renders_canonical_atom_into_expected_markdown() {
                     \n\
                     ## Tags\n\
                     - plants\n\
-                    - open-source\n";
+                    - open-source\n\
+                    \n\
+                    ## Organizations\n\
+                    - Foley Greenhouse\n\
+                    - SDF Picnic Crew\n\
+                    \n\
+                    ## History\n\
+                    - first met at the 2024 SDF picnic\n\
+                    - last sync 2026-03-12\n";
     assert_eq!(md, expected, "rendered:\n---\n{md}\n---");
 }
 

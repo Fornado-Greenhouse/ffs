@@ -36,3 +36,15 @@ pronouns: {{ claim.pronouns }}
 - {{ tag }}
 {% endfor -%}
 {% endif -%}
+{% if claim.organizations and claim.organizations | length > 0 %}
+## Organizations
+{% for org in claim.organizations -%}
+- {{ org }}
+{% endfor -%}
+{% endif -%}
+{% if claim.history and claim.history | length > 0 %}
+## History
+{% for entry in claim.history -%}
+- {{ entry }}
+{% endfor -%}
+{% endif -%}
