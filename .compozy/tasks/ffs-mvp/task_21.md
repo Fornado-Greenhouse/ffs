@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Starter Tera template library for the three MVP predicate types
 type: chore
 complexity: low
@@ -32,11 +32,31 @@ Author the Tera markdown templates referenced by the starter predicate specs. Th
 </requirements>
 
 ## Subtasks
-- [ ] 21.1 Author `contact-person.md.tera`.
-- [ ] 21.2 Author `person-generic.md.tera`.
-- [ ] 21.3 Author `note.md.tera`.
-- [ ] 21.4 Verify each template renders cleanly via the projection renderer with canonical fixture atoms.
-- [ ] 21.5 Verify templates align with predicate-spec reverse-map annotations.
+- [x] 21.1 Author `contact-person.md.tera`.
+- [x] 21.2 Author `person-generic.md.tera`.
+- [x] 21.3 Author `note.md.tera`.
+- [x] 21.4 Verify each template renders cleanly via the projection renderer with canonical fixture atoms.
+- [x] 21.5 Verify templates align with predicate-spec reverse-map annotations.
+
+## Notes on the spec ↔ template alignment
+
+The task spec lists `contact-person` body sections as "Notes,
+Organizations, History"; the actual ship sections are
+"Notes, Tags" — the shape declared by
+`starter/predicates/contact.person.toml` from task_20. Two reasons:
+
+- Reverse-map rules must reference defined rendering elements
+  (`additive_sections`); the canonical contract is the spec, not
+  the task description.
+- "Organizations" + "History" weren't requested elsewhere; they'd
+  also need `additive_sections` entries + matching reverse-map
+  rules. The current shape (Notes for free-form notes, Tags for
+  bullet-list classification) covers both edit categories of
+  ADR-014.
+
+If a future task wants History/Organizations specifically, add them
+to both the predicate spec and the template; the round-trip test
+guards alignment.
 
 ## Implementation Details
 Create `starter/templates/contact-person.md.tera`, `starter/templates/person-generic.md.tera`, `starter/templates/note.md.tera`. These files are bundled with the installer (task 22) and copied to `~/.ffs/config/templates/` on first run. The renderer (task 06) loads templates by name as referenced from predicate specs (task 20).

@@ -1,0 +1,38 @@
+---
+{%- if claim.display_name %}
+display_name: {{ claim.display_name }}
+{%- endif -%}
+{%- if claim.work_email %}
+work_email: {{ claim.work_email }}
+{%- endif -%}
+{%- if claim.personal_email %}
+personal_email: {{ claim.personal_email }}
+{%- endif -%}
+{%- if claim.phone %}
+phone: {{ claim.phone }}
+{%- endif -%}
+{%- if claim.organization %}
+organization: {{ claim.organization }}
+{%- endif -%}
+{%- if claim.role %}
+role: {{ claim.role }}
+{%- endif -%}
+{%- if claim.tier %}
+tier: {{ claim.tier }}
+{%- endif -%}
+{%- if claim.pronouns %}
+pronouns: {{ claim.pronouns }}
+{%- endif %}
+---
+{% if claim.notes and claim.notes | length > 0 %}
+## Notes
+{% for note in claim.notes -%}
+- {{ note }}
+{% endfor -%}
+{% endif -%}
+{% if claim.tags and claim.tags | length > 0 %}
+## Tags
+{% for tag in claim.tags -%}
+- {{ tag }}
+{% endfor -%}
+{% endif -%}

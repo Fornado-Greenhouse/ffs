@@ -1,0 +1,23 @@
+---
+{%- if claim.display_name %}
+display_name: {{ claim.display_name }}
+{%- endif -%}
+{%- if claim.role %}
+role: {{ claim.role }}
+{%- endif -%}
+{%- if claim.team %}
+team: {{ claim.team }}
+{%- endif -%}
+{%- if claim.location %}
+location: {{ claim.location }}
+{%- endif -%}
+{%- if claim.pronouns %}
+pronouns: {{ claim.pronouns }}
+{%- endif %}
+---
+{% if claim.bio and claim.bio | length > 0 %}
+## Bio
+{% for line in claim.bio -%}
+- {{ line }}
+{% endfor -%}
+{% endif -%}

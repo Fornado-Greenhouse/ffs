@@ -1,0 +1,27 @@
+---
+{%- if claim.title %}
+title: {{ claim.title }}
+{%- endif -%}
+{%- if claim.author %}
+author: {{ claim.author }}
+{%- endif -%}
+{%- if claim.status %}
+status: {{ claim.status }}
+{%- endif %}
+---
+{% if claim.body %}
+## Body
+{{ claim.body }}
+{% endif -%}
+{% if claim.tags and claim.tags | length > 0 %}
+## Tags
+{% for tag in claim.tags -%}
+- {{ tag }}
+{% endfor -%}
+{% endif -%}
+{% if claim.references and claim.references | length > 0 %}
+## References
+{% for ref in claim.references -%}
+- {{ ref }}
+{% endfor -%}
+{% endif -%}
