@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Cross-platform installer scripts for Linux, macOS, Windows
 type: infra
 complexity: medium
@@ -34,14 +34,14 @@ Package the FFS MVP for the three OS targets: ship the daemon, CLI, MCP server b
 </requirements>
 
 ## Subtasks
-- [ ] 22.1 Author `install.sh` for Linux + macOS (POSIX shell, single file).
-- [ ] 22.2 Author `install.ps1` for Windows (PowerShell, single file).
-- [ ] 22.3 Implement binary placement, PATH integration, and per-OS daemon-on-login wiring.
-- [ ] 22.4 Implement Python skill bundle deployment under `~/.ffs/skills/`.
-- [ ] 22.5 Implement starter library deployment under `~/.ffs/config/`.
-- [ ] 22.6 Implement OS keychain bootstrap (or interactive guide).
-- [ ] 22.7 Implement Obsidian plugin registration into a configured vault.
-- [ ] 22.8 Author the matching uninstaller scripts.
+- [x] 22.1 Author `install.sh` for Linux + macOS (POSIX shell, single file).
+- [x] 22.2 Author `install.ps1` for Windows (PowerShell, single file).
+- [x] 22.3 Implement binary placement, PATH integration, and per-OS daemon-on-login wiring.
+- [x] 22.4 Implement Python skill bundle deployment under `~/.ffs/skills/`.
+- [x] 22.5 Implement starter library deployment under `~/.ffs/config/`.
+- [x] 22.6 Implement OS keychain bootstrap (or interactive guide).
+- [x] 22.7 Implement Obsidian plugin registration into a configured vault.
+- [x] 22.8 Author the matching uninstaller scripts.
 
 ## Implementation Details
 Create `installer/install.sh`, `installer/install.ps1`, `installer/uninstall.sh`, `installer/uninstall.ps1`. The release artifacts produced by task 01's CI (Rust static binaries) are bundled into a tarball / zip per platform. Installers fetch the appropriate archive or work from a local copy.

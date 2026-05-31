@@ -37,6 +37,7 @@ tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
 async-trait = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
+rand = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

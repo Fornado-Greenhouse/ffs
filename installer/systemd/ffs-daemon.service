@@ -1,0 +1,28 @@
+[Unit]
+Description=Foley File System personal substrate daemon
+Documentation=https://github.com/foley/ffs
+After=default.target
+
+[Service]
+Type=simple
+# @PREFIX@ is rewritten by installer/install.sh to the user's
+# binary install prefix (default $HOME/.local). @HOME@ is rewritten
+# to the user's home directory.
+ExecStart=@PREFIX@/bin/ffs-daemon
+Environment=FFS_DATA_DIR=@HOME@/.ffs
+Environment=FFS_LOG=info
+# Restart on failure but not on clean SIGTERM (which the daemon
+# treats as a graceful shutdown signal).
+Restart=on-failure
+RestartSec=3
+# Capture stderr to the user's journal — `journalctl --user -u
+# ffs-daemon` shows recent boots.
+StandardOutput=journal
+StandardError=journal
+# Hardening — the daemon binds a UDS into ~/.ffs/run and writes
+# nowhere else; no need for capabilities, network, or root.
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ffs.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <!-- @PREFIX@ is rewritten by installer/install.sh to the
+             user's chosen binary prefix (default $HOME/.local). -->
+        <string>@PREFIX@/bin/ffs-daemon</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>FFS_DATA_DIR</key>
+        <string>@HOME@/.ffs</string>
+        <key>FFS_LOG</key>
+        <string>info</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Restart on crash, but not on clean exit (SIGTERM). -->
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>@HOME@/.ffs/log/ffs-daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@HOME@/.ffs/log/ffs-daemon.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
