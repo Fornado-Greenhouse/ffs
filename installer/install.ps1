@@ -193,3 +193,5 @@ if ($SkipPlugin) {
 
 Say "keychain bootstrap: deferred to first-run interactive (see README)"
 Say "done — try: $BinDir\ffs.exe health"
+Say "next steps — see docs\onboarding\technical-friend-checklist.md and docs\onboarding\first-use-guide.md"
+Say "trouble?  see docs\onboarding\troubleshooting.md"

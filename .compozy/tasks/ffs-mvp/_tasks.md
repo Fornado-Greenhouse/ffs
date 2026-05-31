@@ -26,4 +26,4 @@
 | 20 | Starter predicate-spec library (contact.person, person.generic, note) | completed | low | task_03 |
 | 21 | Starter Tera template library for the three MVP predicate types | completed | low | task_06, task_20 |
 | 22 | Cross-platform installer scripts for Linux, macOS, Windows | completed | medium | task_08, task_17 |
-| 23 | Onboarding documentation: technical-friend checklist and first-use guide | pending | low | task_22 |
+| 23 | Onboarding documentation: technical-friend checklist and first-use guide | completed | low | task_22 |

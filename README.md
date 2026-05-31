@@ -144,6 +144,16 @@ But Folodex is one application. The same primitives handle general knowledge cap
 
 **FFS aligns with [AARM](https://aarm.dev)** — Autonomous Action Runtime Management — an open specification for securing AI-driven actions at runtime. The mapping is by construction, not retrofit: capability-as-data is AARM's policy engine; atoms are the context accumulator; the proposal-quarantine flow is the approval service; signed-and-multihashed atoms are the receipt generator. See [`ARCHITECTURE.md` § Security model](ARCHITECTURE.md#security-model-aarm-conformant) for the component-by-component breakdown.
 
+## Onboarding
+
+The MVP closes the loop on the technical-friend-onboarding-a-non-technical-peer scenario from the PRD. Three documents under [`docs/onboarding/`](docs/onboarding/) cover the full path from install to daily use:
+
+- [**Technical-friend checklist**](docs/onboarding/technical-friend-checklist.md) — install, keychain, identity, first run, federation handshake. ~45–60 minutes.
+- [**First-use guide**](docs/onboarding/first-use-guide.md) — capture, navigate, review, edit, federate. Audience is the end-user peer; no terminal use required.
+- [**Troubleshooting**](docs/onboarding/troubleshooting.md) — every known failure mode with symptoms and fixes (SQLCipher, Windows named-pipe, federation handshake, skill subprocess hangs, capability denials).
+
+Annotated illustrations of the Obsidian-side surfaces live in [`docs/onboarding/screenshots/`](docs/onboarding/screenshots/).
+
 ## Follow along
 
 This project is being built in the open. There is nothing to install yet; the most useful things you can do today are:

@@ -361,6 +361,8 @@ main() {
     install_obsidian_plugin
     bootstrap_keychain
     say "done — try: $PREFIX/bin/ffs health"
+    say "next steps — see docs/onboarding/technical-friend-checklist.md and docs/onboarding/first-use-guide.md"
+    say "trouble?  see docs/onboarding/troubleshooting.md"
 }
 
 main

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 320" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13">
+  <rect width="560" height="320" fill="#fff" stroke="#cdd2da" stroke-width="1"/>
+  <rect x="0" y="0" width="560" height="36" fill="#f4f6fa" stroke="#cdd2da" stroke-width="1"/>
+  <text x="16" y="23" fill="#1f2329" font-weight="600">Federation bridges</text>
+
+  <!-- bridge 1 -->
+  <rect x="14" y="56" width="532" height="92" fill="#fafbfd" stroke="#e1e5ec" stroke-width="1" rx="4"/>
+  <circle cx="36" cy="84" r="6" fill="#10b981"/>
+  <text x="52" y="88" fill="#1f2329" font-weight="600">wes@gardening-coop</text>
+  <text x="52" y="106" fill="#7a8597" font-size="11">https://wes.example:14400 · fp z6Mkr4w…hX2T · last pull 2026-05-31 07:14</text>
+  <text x="52" y="124" fill="#3a4253" font-size="12">Outgoing: existence, work_email · Incoming: full notes · contacts/from/wes/</text>
+  <rect x="448" y="98" width="84" height="28" fill="#fff" stroke="#dc2626" stroke-width="1" rx="4"/>
+  <text x="490" y="116" fill="#dc2626" text-anchor="middle" font-weight="500">Revoke</text>
+
+  <!-- bridge 2 -->
+  <rect x="14" y="160" width="532" height="92" fill="#fafbfd" stroke="#e1e5ec" stroke-width="1" rx="4"/>
+  <circle cx="36" cy="188" r="6" fill="#10b981"/>
+  <text x="52" y="192" fill="#1f2329" font-weight="600">alex@platform-team</text>
+  <text x="52" y="210" fill="#7a8597" font-size="11">https://alex.internal:14400 · fp z6Mkj9p…X4mA · last pull 2026-05-31 06:42</text>
+  <text x="52" y="228" fill="#3a4253" font-size="12">Outgoing: existence · Incoming: existence · contacts/from/alex/</text>
+  <rect x="448" y="202" width="84" height="28" fill="#fff" stroke="#dc2626" stroke-width="1" rx="4"/>
+  <text x="490" y="220" fill="#dc2626" text-anchor="middle" font-weight="500">Revoke</text>
+
+  <!-- add bridge -->
+  <rect x="14" y="264" width="532" height="40" fill="#fff" stroke="#cdd2da" stroke-dasharray="4,4" stroke-width="1" rx="4"/>
+  <text x="280" y="288" fill="#3b82f6" text-anchor="middle" font-weight="500">+ Add federation bridge</text>
+</svg>

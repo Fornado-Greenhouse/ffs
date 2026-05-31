@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13">
+  <rect width="560" height="360" fill="#f4f6fa"/>
+  <!-- modal -->
+  <rect x="60" y="50" width="440" height="260" fill="#fff" stroke="#cdd2da" stroke-width="1" rx="8"/>
+  <!-- input -->
+  <rect x="80" y="74" width="400" height="40" fill="#fafbfd" stroke="#3b82f6" stroke-width="2" rx="6"/>
+  <text x="92" y="100" fill="#1f2329" font-weight="500">Sara|</text>
+  <text x="468" y="100" fill="#7a8597" font-size="11" text-anchor="end">debouncing 200ms…</text>
+
+  <!-- results -->
+  <text x="80" y="142" fill="#586073" font-weight="600" font-size="11" letter-spacing="0.5">RESULTS · 3</text>
+
+  <rect x="80" y="152" width="400" height="44" fill="#dbeafe" stroke="#3b82f6" stroke-width="1" rx="4"/>
+  <text x="92" y="172" fill="#1f2329" font-weight="600">Sara Chen</text>
+  <text x="92" y="188" fill="#7a8597" font-size="11">contact.person · contacts/by-name/S/Sara_Chen.md</text>
+
+  <rect x="80" y="202" width="400" height="44" fill="#fff" stroke="#e1e5ec" stroke-width="1" rx="4"/>
+  <text x="92" y="222" fill="#1f2329">Sarah Chen</text>
+  <text x="92" y="238" fill="#7a8597" font-size="11">contact.person · contacts/by-name/S/Sarah_Chen.md</text>
+
+  <rect x="80" y="252" width="400" height="44" fill="#fff" stroke="#e1e5ec" stroke-width="1" rx="4"/>
+  <text x="92" y="272" fill="#1f2329">Sara Park</text>
+  <text x="92" y="288" fill="#7a8597" font-size="11">person.generic · people/by-name/S/Sara_Park.md</text>
+
+  <!-- footer hint -->
+  <text x="280" y="338" fill="#7a8597" font-size="11" text-anchor="middle">↑↓ to navigate · Enter to open · Esc to dismiss</text>
+</svg>

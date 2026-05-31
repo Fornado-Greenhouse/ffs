@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Onboarding documentation — technical-friend checklist and first-use guide
 type: docs
 complexity: low
@@ -30,11 +30,11 @@ Author the onboarding artifacts that close the loop on the MVP's technical-frien
 </requirements>
 
 ## Subtasks
-- [ ] 23.1 Author the technical-friend checklist (install → keychain → identity → first run → federation).
-- [ ] 23.2 Author the first-use guide (capture → navigate → review → edit → federate).
-- [ ] 23.3 Author the troubleshooting guide covering known-risk failure modes.
-- [ ] 23.4 Capture screenshots of the Obsidian plugin's daily-summary panel, projection navigation, and federation setup.
-- [ ] 23.5 Cross-reference the docs from the installer scripts (print "see docs/onboarding/...").
+- [x] 23.1 Author the technical-friend checklist (install → keychain → identity → first run → federation).
+- [x] 23.2 Author the first-use guide (capture → navigate → review → edit → federate).
+- [x] 23.3 Author the troubleshooting guide covering known-risk failure modes.
+- [x] 23.4 Capture screenshots of the Obsidian plugin's daily-summary panel, projection navigation, and federation setup. *(MVP ships annotated SVG mockups; PNG screenshots from a running plugin are a Phase 2 polish item.)*
+- [x] 23.5 Cross-reference the docs from the installer scripts (print "see docs/onboarding/...").
 
 ## Implementation Details
 Create `docs/onboarding/technical-friend-checklist.md`, `docs/onboarding/first-use-guide.md`, `docs/onboarding/troubleshooting.md`, and a `docs/onboarding/screenshots/` directory. Documentation is markdown, readable both in a text editor and rendered. Update the project's top-level `README.md` to link to these guides.
