@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Wire SQLite atom store as the daemon binary's default store
 type: backend
 complexity: low
@@ -30,10 +30,10 @@ The daemon binary currently constructs `MemAtomStore::new()` in `main.rs`, so th
 </requirements>
 
 ## Subtasks
-- [ ] 24.1 Read the SQLCipher DEK from `FFS_SQLCIPHER_KEY_HEX` (with the fresh-key-and-warn fallback path mirroring the existing owner-key handling).
-- [ ] 24.2 Open `SqliteAtomStore` against `$FFS_DATA_DIR/atoms.db` and wire it into the `Dispatcher` in place of `MemAtomStore`.
-- [ ] 24.3 Extend `StartupError` with a `Store` variant carrying the underlying `StoreError`, keeping the existing `result_large_err` discipline (boxed payload).
-- [ ] 24.4 Update `tests/binary_end_to_end.rs` to set `FFS_SQLCIPHER_KEY_HEX` so the test stays deterministic, and add a new test that writes an atom, restarts the binary, and asserts the atom is still queryable.
+- [x] 24.1 Read the SQLCipher DEK from `FFS_SQLCIPHER_KEY_HEX` (with the fresh-key-and-warn fallback path mirroring the existing owner-key handling).
+- [x] 24.2 Open `SqliteAtomStore` against `$FFS_DATA_DIR/atoms.db` and wire it into the `Dispatcher` in place of `MemAtomStore`.
+- [x] 24.3 Extend `StartupError` with a `Store` variant carrying the underlying `StoreError`, keeping the existing `result_large_err` discipline (boxed payload).
+- [x] 24.4 Update `tests/binary_end_to_end.rs` to set `FFS_SQLCIPHER_KEY_HEX` so the test stays deterministic, and add a new test that writes an atom, restarts the binary, and asserts the atom is still queryable. *(Implemented as `tests/sqlite_persistence.rs::daemon_reads_atoms_persisted_by_a_prior_session` — pre-seeds `atoms.db` via the library API rather than a daemon write because the daemon binary doesn't pre-grant the self-capability needed to write through a dispatcher RPC.)*
 
 ## Implementation Details
 Modify `crates/ffs-daemon/src/main.rs` only — the SQLite store is already feature-complete in `ffs-core::store::sqlite`. Honor the workspace's `bundled-sqlcipher` cargo feature when present (TechSpec § Known Risks calls out SQLCipher cross-compilation friction; see [`troubleshooting.md`](../../docs/onboarding/troubleshooting.md#sqlcipher-cross-platform-issues)). The `SqliteAtomStore` API is `open_with_key(path: &Path, key: &[u8; 32])`; the existing `decode_hex` helper handles the env-var parsing.

@@ -120,11 +120,16 @@ async fn daemon_binary_starts_serves_rpc_then_shuts_down_on_sigterm() {
     let bin = env!("CARGO_BIN_EXE_ffs-daemon");
     let mut child = Command::new(bin)
         .env("FFS_DATA_DIR", &data_dir)
-        // Pin the signing key so the warn log is suppressed and the
-        // public-key fp is deterministic per test run.
+        // Pin the signing key and the SQLCipher DEK so warn logs
+        // are suppressed and the test is reproducible — without
+        // these envs the daemon generates fresh values per boot.
         .env(
             "FFS_OWNER_KEY_HEX",
             "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        )
+        .env(
+            "FFS_SQLCIPHER_KEY_HEX",
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
         )
         .env("FFS_LOG", "warn")
         .stdin(Stdio::null())

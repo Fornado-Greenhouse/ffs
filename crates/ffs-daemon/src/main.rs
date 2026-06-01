@@ -16,16 +16,22 @@
 //! - `FFS_DATA_DIR` — root of the per-user `~/.ffs/` tree (default
 //!   `$HOME/.ffs`). Predicates load from `$FFS_DATA_DIR/config/predicates/`,
 //!   templates from `$FFS_DATA_DIR/config/templates/`, the socket
-//!   lands at `$FFS_DATA_DIR/run/ffs.sock`.
+//!   lands at `$FFS_DATA_DIR/run/ffs.sock`, and the SQLCipher
+//!   atom-store database lands at `$FFS_DATA_DIR/atoms.db`.
 //! - `FFS_OWNER_KEY_HEX` — 64-hex-character Ed25519 signing key seed.
 //!   Production wires this from the OS keychain; for MVP an inline
 //!   env-var bootstrap keeps the daemon self-contained. When unset,
 //!   the daemon generates a fresh key and warns — fine for a fresh
 //!   substrate, problematic for an existing one (the new key won't
 //!   verify atoms signed by the old key).
+//! - `FFS_SQLCIPHER_KEY_HEX` — 64-hex-character SQLCipher data-
+//!   encryption key (DEK). Same fresh-and-warn fallback as
+//!   `FFS_OWNER_KEY_HEX`. When the existing `atoms.db` was written
+//!   with a different DEK the daemon refuses to open and exits 1.
+//!   Keychain-pull lands in task_27.
 //! - `FFS_LOG` — `tracing-subscriber` env filter (default `info`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -36,27 +42,32 @@ use ffs_core::multihash::Multihash;
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
 use ffs_core::quarantine::InMemoryQuarantine;
-use ffs_core::store::{AtomStore, MemAtomStore};
+use ffs_core::store::{AtomStore, SqliteAtomStore, StoreError};
 use ffs_core::working_set::InMemoryWorkingSet;
 
 use ffs_daemon::{Dispatcher, EventPublisher, transport};
 
-// The `SpecError` and `RenderError` payloads are large enough to
-// trigger the `result_large_err` lint when carried inline. Box them
-// so `Result<(), StartupError>` stays compact and clippy stays
-// happy without forcing every call site to box separately.
+// The `SpecError`, `RenderError`, and `StoreError` payloads are
+// large enough to trigger the `result_large_err` lint when carried
+// inline. Box them so `Result<(), StartupError>` stays compact and
+// clippy stays happy without forcing every call site to box
+// separately.
 #[derive(Debug, thiserror::Error)]
 enum StartupError {
     #[error("FFS_DATA_DIR is unset and $HOME is not available; pass FFS_DATA_DIR=/path explicitly")]
     NoDataDir,
     #[error("invalid FFS_OWNER_KEY_HEX: {0}")]
     BadKey(String),
+    #[error("invalid FFS_SQLCIPHER_KEY_HEX: {0}")]
+    BadDek(String),
     #[error("predicate dir {0}: {1}")]
     PredicateDir(PathBuf, Box<ffs_core::predicate::SpecError>),
     #[error("templates dir {0}: not found (run the installer to seed it)")]
     NoTemplates(PathBuf),
     #[error("renderer: {0}")]
     Renderer(Box<ffs_core::projection::RenderError>),
+    #[error("atom store {0}: {1}")]
+    Store(PathBuf, Box<StoreError>),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -93,9 +104,12 @@ async fn run() -> Result<(), StartupError> {
 
     let signing_key = load_or_generate_owner_key()?;
     let owner_pubkey = PublicKey::from_verifying(&signing_key.verifying_key());
+    let dek = load_or_generate_dek(&data_dir)?;
+    let db_path = data_dir.join("atoms.db");
 
     tracing::info!(
         data_dir = %data_dir.display(),
+        db_path = %db_path.display(),
         owner = %owner_pubkey.to_multibase(),
         "ffs-daemon starting"
     );
@@ -111,11 +125,14 @@ async fn run() -> Result<(), StartupError> {
         return Err(StartupError::NoTemplates(templates_dir));
     }
 
-    // In-memory backends across the board for MVP: SQLite atom-store
-    // wiring is documented but not flipped on here (the in-memory
-    // store is functionally complete and exercised by the workspace
-    // test suite). A `--persist` flag is a Phase 2 add.
-    let store: Arc<dyn AtomStore> = Arc::new(MemAtomStore::new());
+    // SQLCipher-backed atom store at $FFS_DATA_DIR/atoms.db. Wrong
+    // DEK against an existing database surfaces here as a startup
+    // error and a non-zero exit, surfacing key drift loudly instead
+    // of silently masking it.
+    let store: Arc<dyn AtomStore> = Arc::new(
+        SqliteAtomStore::open_with_key(&db_path, &dek)
+            .map_err(|e| StartupError::Store(db_path.clone(), Box::new(e)))?,
+    );
     let renderer = Arc::new(
         ProjectionRenderer::new(store.clone(), registry.clone(), &templates_dir)
             .map_err(|e| StartupError::Renderer(Box::new(e)))?,
@@ -169,15 +186,7 @@ fn resolve_data_dir() -> Result<PathBuf, StartupError> {
 
 fn load_or_generate_owner_key() -> Result<SigningKey, StartupError> {
     if let Ok(hex_seed) = std::env::var("FFS_OWNER_KEY_HEX") {
-        let bytes = decode_hex(&hex_seed).map_err(StartupError::BadKey)?;
-        if bytes.len() != 32 {
-            return Err(StartupError::BadKey(format!(
-                "expected 32 bytes (64 hex chars), got {}",
-                bytes.len()
-            )));
-        }
-        let mut seed = [0u8; 32];
-        seed.copy_from_slice(&bytes);
+        let seed = decode_hex_32(&hex_seed).map_err(StartupError::BadKey)?;
         return Ok(SigningKey::from_bytes(&seed));
     }
     // No env-var seed: generate a fresh key and warn. This is fine
@@ -195,6 +204,57 @@ fn load_or_generate_owner_key() -> Result<SigningKey, StartupError> {
          Set FFS_OWNER_KEY_HEX=<64 hex chars> to pin a stable identity."
     );
     Ok(key)
+}
+
+/// Load the SQLCipher DEK from `FFS_SQLCIPHER_KEY_HEX`, or generate
+/// a fresh one and warn — same shape as `load_or_generate_owner_key`.
+/// The fresh-key path adds an extra warning when `atoms.db` already
+/// exists on disk, because in that case the upcoming
+/// `SqliteAtomStore::open_with_key` is guaranteed to fail and the
+/// user will lose access to their substrate unless they restore the
+/// original DEK.
+fn load_or_generate_dek(data_dir: &Path) -> Result<[u8; 32], StartupError> {
+    if let Ok(hex_seed) = std::env::var("FFS_SQLCIPHER_KEY_HEX") {
+        return decode_hex_32(&hex_seed).map_err(StartupError::BadDek);
+    }
+    use rand::RngCore;
+    let mut dek = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut dek);
+    let db_path = data_dir.join("atoms.db");
+    if db_path.exists() {
+        tracing::warn!(
+            db_path = %db_path.display(),
+            "FFS_SQLCIPHER_KEY_HEX not set but atoms.db already exists. \
+             The fresh DEK will fail to open the existing database. \
+             Set FFS_SQLCIPHER_KEY_HEX=<64 hex chars> to the original \
+             value, or remove atoms.db to start fresh (DESTRUCTIVE)."
+        );
+    } else {
+        let fp = Multihash::blake3_of(&dek).to_multibase();
+        tracing::warn!(
+            dek_fp = %fp,
+            "FFS_SQLCIPHER_KEY_HEX not set — generated a fresh DEK. \
+             Save its value via env var or the OS keychain (task_27) \
+             before next restart, or atoms.db will be unrecoverable."
+        );
+    }
+    Ok(dek)
+}
+
+/// Decode a 64-hex-char string into a 32-byte array. Returns a
+/// human-readable `String` error suitable for wrapping in
+/// `StartupError::BadKey` / `BadDek`.
+fn decode_hex_32(hex: &str) -> Result<[u8; 32], String> {
+    let bytes = decode_hex(hex)?;
+    if bytes.len() != 32 {
+        return Err(format!(
+            "expected 32 bytes (64 hex chars), got {}",
+            bytes.len()
+        ));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
@@ -229,5 +289,39 @@ mod tests {
         assert_eq!(decode_hex("00ff").unwrap(), vec![0u8, 255u8]);
         assert!(decode_hex("00f").is_err());
         assert!(decode_hex("zz").is_err());
+    }
+
+    #[test]
+    fn decode_hex_32_accepts_64_chars() {
+        let hex: String = (0..32).map(|i| format!("{i:02x}")).collect();
+        let bytes = decode_hex_32(&hex).expect("64-char hex must decode");
+        for (i, &b) in bytes.iter().enumerate() {
+            assert_eq!(b as usize, i, "byte {i} preserved");
+        }
+    }
+
+    #[test]
+    fn decode_hex_32_rejects_short_input() {
+        // 30 bytes = 60 hex chars.
+        let hex: String = (0..30).map(|i| format!("{i:02x}")).collect();
+        let err = decode_hex_32(&hex).expect_err("short input must fail");
+        assert!(
+            err.contains("32 bytes"),
+            "error should name expected size: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_hex_32_rejects_long_input() {
+        // 40 bytes = 80 hex chars.
+        let hex: String = (0..40).map(|i| format!("{i:02x}")).collect();
+        let err = decode_hex_32(&hex).expect_err("long input must fail");
+        assert!(err.contains("40"), "error should report actual size: {err}");
+    }
+
+    #[test]
+    fn decode_hex_32_rejects_non_hex() {
+        let bad: String = "z".repeat(64);
+        assert!(decode_hex_32(&bad).is_err());
     }
 }
