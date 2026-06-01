@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Working-set materializer — render projection files to disk on atom commit
 type: backend
 complexity: medium
@@ -33,11 +33,11 @@ The projection renderer (task_06) produces markdown in memory; nothing currently
 </requirements>
 
 ## Subtasks
-- [ ] 25.1 Add a `WorkingSetMaterializer` struct that owns the projection renderer, an `AsyncWriteCoordinator` for FS writes, and the recent-paths anti-loop marker.
-- [ ] 25.2 Subscribe to `event.atom.committed`; on each event, resolve the entity's projection path via `projection::path::resolve_for_entity` (or add a new resolver if one doesn't exist yet) and render.
-- [ ] 25.3 Write the rendered markdown atomically (temp-file-and-rename) to avoid Obsidian seeing a half-written file.
-- [ ] 25.4 Update the fast-path classifier to skip events whose source path is in the materializer's recent-writes set.
-- [ ] 25.5 Wire the materializer into the daemon binary's `main.rs` alongside the dispatcher construction.
+- [x] 25.1 Add a `WorkingSetMaterializer` struct that owns the projection renderer, an `AsyncWriteCoordinator` for FS writes, and the recent-paths anti-loop marker.
+- [x] 25.2 Subscribe to `event.atom.committed`; on each event, resolve the entity's projection path via `projection::path::resolve_for_entity` (or add a new resolver if one doesn't exist yet) and render.
+- [x] 25.3 Write the rendered markdown atomically (temp-file-and-rename) to avoid Obsidian seeing a half-written file.
+- [x] 25.4 Update the fast-path classifier to skip events whose source path is in the materializer's recent-writes set. *(Honored via the existing `SuppressionRegistry` — moved from `ffs-fastpath` to `ffs-core` so the materializer and the fast-path watcher share one instance without a dependency cycle. Hash-keyed rather than TTL-keyed, which is stronger than the spec suggested.)*
+- [x] 25.5 Wire the materializer into the daemon binary's `main.rs` alongside the dispatcher construction.
 
 ## Implementation Details
 Add a new module `crates/ffs-core/src/working_set/materializer.rs` (or `crates/ffs-daemon/src/materializer.rs` if it ends up depending on the daemon's `EventPublisher`). The path-library mapping already exists in `crates/ffs-core/src/projection/path.rs` with the `<family>/by-name/<letter>/<entity>.md` pattern.

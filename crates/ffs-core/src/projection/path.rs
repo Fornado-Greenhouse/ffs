@@ -55,6 +55,40 @@ impl PathFamily {
     }
 }
 
+/// Reverse map a predicate name to its path-library family. Returns
+/// `None` for predicates outside the MVP three-family library
+/// (e.g., `capability.grant`, `auditor.daily_summary`); those atoms
+/// are inspectable via `atom.get` but have no projection-path home
+/// in MVP.
+pub fn family_for_predicate(predicate: &PredicateName) -> Option<PathFamily> {
+    match predicate.as_str() {
+        "contact.person" => Some(PathFamily::Contacts),
+        "person.generic" => Some(PathFamily::People),
+        "note" => Some(PathFamily::Notes),
+        _ => None,
+    }
+}
+
+/// Produce the canonical projection path for `(family, entity)` in
+/// the form `<family>/by-name/<letter>/<entity>.md`. Returns `None`
+/// when the entity id starts with a character that has no
+/// uppercased form (e.g., an empty entity, or one whose first
+/// codepoint already has no alphabetic mapping — the path library
+/// has no destination for those at MVP).
+pub fn path_for_entity(family: PathFamily, entity: &EntityId) -> Option<String> {
+    let first = entity.as_str().chars().next()?;
+    let letter = first.to_uppercase().next()?;
+    if !letter.is_alphabetic() {
+        return None;
+    }
+    Some(format!(
+        "{}/by-name/{}/{}.md",
+        family.as_str(),
+        letter,
+        entity.as_str()
+    ))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParsedPath {
     /// `<family>/recent/`
@@ -218,5 +252,59 @@ mod tests {
             "person.generic"
         );
         assert_eq!(PathFamily::Notes.primary_predicate().as_str(), "note");
+    }
+
+    #[test]
+    fn family_for_predicate_handles_the_three_mvp_predicates() {
+        assert_eq!(
+            family_for_predicate(&PredicateName::new("contact.person")),
+            Some(PathFamily::Contacts)
+        );
+        assert_eq!(
+            family_for_predicate(&PredicateName::new("person.generic")),
+            Some(PathFamily::People)
+        );
+        assert_eq!(
+            family_for_predicate(&PredicateName::new("note")),
+            Some(PathFamily::Notes)
+        );
+    }
+
+    #[test]
+    fn family_for_predicate_returns_none_for_unmapped_predicates() {
+        assert_eq!(
+            family_for_predicate(&PredicateName::new("capability.grant")),
+            None
+        );
+        assert_eq!(
+            family_for_predicate(&PredicateName::new("auditor.daily_summary")),
+            None
+        );
+    }
+
+    #[test]
+    fn path_for_entity_produces_canonical_form() {
+        let p = path_for_entity(PathFamily::Contacts, &EntityId::new("Sara_Chen"))
+            .expect("alpha entity has a path");
+        assert_eq!(p, "contacts/by-name/S/Sara_Chen.md");
+    }
+
+    #[test]
+    fn path_for_entity_uppercases_first_letter() {
+        let p = path_for_entity(PathFamily::Notes, &EntityId::new("tuesday_standup"))
+            .expect("alpha entity has a path");
+        assert_eq!(p, "notes/by-name/T/tuesday_standup.md");
+    }
+
+    #[test]
+    fn path_for_entity_returns_none_for_non_alphabetic_first_char() {
+        assert_eq!(
+            path_for_entity(PathFamily::Contacts, &EntityId::new("123_numeric")),
+            None
+        );
+        assert_eq!(
+            path_for_entity(PathFamily::Contacts, &EntityId::new("")),
+            None
+        );
     }
 }

@@ -37,6 +37,7 @@ use std::sync::Arc;
 
 use ed25519_dalek::SigningKey;
 use ffs_core::PublicKey;
+use ffs_core::SuppressionRegistry;
 use ffs_core::federation_peers::InMemoryFederationPeerStore;
 use ffs_core::multihash::Multihash;
 use ffs_core::predicate::SpecRegistry;
@@ -45,7 +46,7 @@ use ffs_core::quarantine::InMemoryQuarantine;
 use ffs_core::store::{AtomStore, SqliteAtomStore, StoreError};
 use ffs_core::working_set::InMemoryWorkingSet;
 
-use ffs_daemon::{Dispatcher, EventPublisher, transport};
+use ffs_daemon::{Dispatcher, EventPublisher, WorkingSetMaterializer, transport};
 
 // The `SpecError`, `RenderError`, and `StoreError` payloads are
 // large enough to trigger the `result_large_err` lint when carried
@@ -138,15 +139,23 @@ async fn run() -> Result<(), StartupError> {
             .map_err(|e| StartupError::Renderer(Box::new(e)))?,
     );
 
+    // Shared singletons: the event publisher (broadcast for
+    // notifications), the working-set state, and the suppression
+    // registry (anti-loop coordination between the materializer
+    // and any future fast-path watcher).
+    let publisher = Arc::new(EventPublisher::new());
+    let working_set = Arc::new(InMemoryWorkingSet::new());
+    let suppression = Arc::new(SuppressionRegistry::new());
+
     let dispatcher = Dispatcher {
         store: store.clone(),
         registry: registry.clone(),
-        renderer,
-        notifier: Arc::new(EventPublisher::new()),
+        renderer: renderer.clone(),
+        notifier: publisher.clone(),
         owner: owner_pubkey.clone(),
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
-        working_set: Arc::new(InMemoryWorkingSet::new()),
+        working_set: working_set.clone(),
         signing_key: Some(Arc::new(signing_key)),
         federation_peers: Arc::new(InMemoryFederationPeerStore::new()),
         federation_client: None,
@@ -154,6 +163,20 @@ async fn run() -> Result<(), StartupError> {
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
     };
     let dispatcher = Arc::new(dispatcher);
+
+    // Working-set materializer: subscribes to event.atom.committed
+    // and writes rendered projections to disk under $FFS_DATA_DIR/.
+    // Spawned before the transport binds so any commit notification
+    // emitted during binding gets observed.
+    let materializer = Arc::new(WorkingSetMaterializer::new(
+        renderer.clone(),
+        working_set.clone(),
+        suppression.clone(),
+        data_dir.clone(),
+        owner_pubkey.clone(),
+    ));
+    let _materializer_handle = materializer.spawn(publisher.clone());
+    tracing::info!("working-set materializer subscribed to event.atom.committed");
 
     let socket_path = run_dir.join("ffs.sock");
     let cancel = tokio_util::sync::CancellationToken::new();

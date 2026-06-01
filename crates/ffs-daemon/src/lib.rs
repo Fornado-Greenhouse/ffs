@@ -11,9 +11,11 @@
 
 pub mod api;
 pub mod dispatch;
+pub mod materializer;
 pub mod notify;
 pub mod transport;
 
 pub use api::{ApiError, ApiPayload, ApiRequest, ApiResponse, ERR_CAPABILITY_DENIED};
 pub use dispatch::Dispatcher;
+pub use materializer::{MaterializeError, Materialized, WorkingSetMaterializer};
 pub use notify::{Event, EventPublisher};
