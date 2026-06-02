@@ -23,11 +23,27 @@ everything is auditable; you own all of it.
 You don't have to think about any of that to use it. What
 follows is what you actually do.
 
+## 0. Open your FFS vault in Obsidian (one-time, 1 min)
+
+The substrate lives at `~/.ffs/` on Linux/macOS (or
+`C:\Users\<you>\.ffs\` on Windows). That same directory is your
+Obsidian vault — there's only one root.
+
+In Obsidian: top-left vault switcher → **Open another vault** →
+**Open folder as vault** → navigate to `~/.ffs/` → Open. If a
+"trust author" dialog appears for community plugins, **Trust**.
+
+Then Settings → **Community plugins** → toggle the **FFS** plugin
+on. The Daily Summary panel appears in the right sidebar.
+
+> Why one root? FFS materializes contacts, notes, and the daily
+> summary into your vault as real Markdown files. If your vault
+> were somewhere else, Obsidian's file explorer wouldn't see them.
+
 ## 1. Capture a contact (5 min)
 
-In Obsidian, navigate to `ingest/` (it lives at the root of your
-vault, under `~/.ffs/ingest/` on Linux/macOS or `C:\Users\<you>\
-.ffs\ingest\` on Windows).
+In Obsidian, navigate to `ingest/` in the file explorer (it's at
+the top of your vault, since the vault is `~/.ffs/`).
 
 Create a new note. Type freely — names, contact details,
 anything you remember. For example:

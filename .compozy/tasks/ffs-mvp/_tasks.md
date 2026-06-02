@@ -33,4 +33,4 @@
 | 27 | OS keychain integration for owner signing key and SQLCipher DEK | pending | low | task_22, task_24 |
 | 28 | Obsidian plugin polish: unsubscribe handles and render-on-demand fallback | pending | low | task_17, task_19 |
 | 29 | SQLite-backed quarantine: persist pending submissions across daemon restarts | pending | medium | task_24, task_26 |
-| 30 | Substrate-is-vault: $FFS_DATA_DIR is the Obsidian vault root | pending | low | task_22, task_25 |
+| 30 | Substrate-is-vault: $FFS_DATA_DIR is the Obsidian vault root | completed | low | task_22, task_25 |

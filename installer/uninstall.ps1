@@ -31,17 +31,24 @@ foreach ($name in @('ffs.exe', 'ffs-daemon.exe', 'ffs-mcp.exe')) {
     }
 }
 
-# Obsidian plugin.
-if ($Vault) {
+# User data location (also the canonical vault per task_30).
+$DataDir = Join-Path $env:USERPROFILE '.ffs'
+
+# Obsidian plugin — default substrate-is-vault location.
+$DefaultPlugin = Join-Path $DataDir '.obsidian\plugins\ffs'
+if (Test-Path $DefaultPlugin) {
+    Remove-Item -Recurse -Force $DefaultPlugin
+    Say "removed Obsidian plugin at $DefaultPlugin"
+}
+
+# External vault (legacy / opt-in).
+if ($Vault -and ($Vault -ne $DataDir)) {
     $plug = Join-Path $Vault '.obsidian\plugins\ffs'
     if (Test-Path $plug) {
         Remove-Item -Recurse -Force $plug
-        Say "removed Obsidian plugin at $plug"
+        Say "removed external-vault Obsidian plugin at $plug"
     }
 }
-
-# User data.
-$DataDir = Join-Path $env:USERPROFILE '.ffs'
 if ($Purge) {
     if (Test-Path $DataDir) {
         Remove-Item -Recurse -Force $DataDir

@@ -11,8 +11,17 @@
 #   - Per-OS daemon-on-login wiring:
 #         Linux  -> ~/.config/systemd/user/ffs-daemon.service
 #         macOS  -> ~/Library/LaunchAgents/com.ffs.daemon.plist
-#   - Optional Obsidian plugin registration into a vault when
-#     --vault <path> is passed (or $FFS_VAULT is set in the env).
+#   - Obsidian plugin registration into ~/.ffs/.obsidian/plugins/ffs/.
+#     Per task_30: $FFS_DATA_DIR IS the Obsidian vault — the path
+#     library (contacts/by-name/..., notes/by-name/..., ingest/,
+#     audit/) lives at the substrate root, and the user opens
+#     ~/.ffs/ as a vault in Obsidian.
+#
+#     The `--vault <path>` flag stays accepted for backwards
+#     compatibility, but when the supplied path differs from the
+#     data dir the installer warns about the non-canonical install
+#     location (the materializer always writes to $FFS_DATA_DIR,
+#     so an external vault will appear empty in Obsidian).
 #
 # This script is intentionally a single file with no external tool
 # requirements beyond POSIX shell + `install`/`cp`/`mkdir`. Cargo
@@ -40,8 +49,16 @@ usage() {
 Usage: install.sh [options]
 
 Options:
-  --vault <path>       Register the Obsidian plugin into the given vault.
-                       Also honored via the $FFS_VAULT env var.
+  --vault <path>       Override the Obsidian vault path. Default is
+                       $FFS_DATA_DIR (the substrate root) — open
+                       ~/.ffs/ as a vault in Obsidian and the
+                       materialized projection files appear in the
+                       file explorer at their canonical paths.
+                       Supplying a different path is supported but
+                       warns (the materializer always writes to
+                       $FFS_DATA_DIR, so an external vault appears
+                       empty). Also honored via the $FFS_VAULT env
+                       var.
   --prefix <path>      Binary install prefix (default: $HOME/.local).
   --skip-service       Skip per-OS daemon-on-login wiring.
   --skip-plugin        Skip Obsidian plugin registration.
@@ -54,9 +71,10 @@ The installer writes to:
   $HOME/.ffs/skills/       # auditor, librarian, scribe Python bundles
   $HOME/.ffs/run/          # daemon socket (mode 700)
   $HOME/.ffs/log/          # daemon stderr captures
+  $HOME/.ffs/.obsidian/    # Obsidian vault config + plugin (substrate-is-vault)
 
 Environment knobs:
-  FFS_VAULT      Obsidian vault path to register the plugin into.
+  FFS_VAULT      Override the Obsidian vault path (default: $FFS_DATA_DIR).
   FFS_PREFIX     Binary install prefix.
 USAGE
 }
@@ -300,17 +318,25 @@ install_obsidian_plugin() {
         say "skipping Obsidian plugin registration (--skip-plugin)"
         return 0
     fi
+
+    # Substrate-is-vault default (task_30): when --vault is unset,
+    # the data dir IS the vault. The installer creates the
+    # .obsidian/ skeleton so the user doesn't have to pre-open the
+    # vault in Obsidian — Obsidian recognizes a directory containing
+    # `.obsidian/` as a valid vault on first open.
     if [ -z "$VAULT_PATH" ]; then
-        say "no vault path provided (use --vault or set FFS_VAULT); skipping plugin registration"
-        return 0
+        VAULT_PATH="$DATA_DIR"
+        say "using substrate-is-vault at $VAULT_PATH"
+    elif [ "$VAULT_PATH" != "$DATA_DIR" ]; then
+        say "WARN: --vault $VAULT_PATH is not the substrate root ($DATA_DIR)."
+        say "WARN: the materializer writes projections to $DATA_DIR; the external vault may appear empty."
+        say "WARN: see docs/onboarding/troubleshooting.md for substrate-is-vault rationale."
     fi
-    if [ ! -d "$VAULT_PATH/.obsidian" ]; then
-        say "WARN: $VAULT_PATH/.obsidian does not exist — is the vault open in Obsidian at least once?"
-        say "skipping plugin registration"
-        return 0
-    fi
+
+    ensure_dir "$VAULT_PATH/.obsidian"
     local plugin_dst="$VAULT_PATH/.obsidian/plugins/ffs"
     ensure_dir "$plugin_dst"
+
     local SCRIPT_HOME
     SCRIPT_HOME="$(script_dir)"
     local plugin_src="$SCRIPT_HOME/obsidian-plugin"
@@ -361,7 +387,8 @@ main() {
     install_obsidian_plugin
     bootstrap_keychain
     say "done — try: $PREFIX/bin/ffs health"
-    say "next steps — see docs/onboarding/technical-friend-checklist.md and docs/onboarding/first-use-guide.md"
+    say "next: open Obsidian → Open folder as vault → $DATA_DIR"
+    say "onboarding — see docs/onboarding/technical-friend-checklist.md and docs/onboarding/first-use-guide.md"
     say "trouble?  see docs/onboarding/troubleshooting.md"
 }
 

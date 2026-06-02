@@ -48,10 +48,16 @@ bash installer/install.sh --dry-run
 bash installer/install.sh
 ```
 
-Pass `--vault /path/to/their/obsidian/vault` to register the
-Obsidian plugin into a specific vault. Pass `--prefix
-/custom/prefix` to install binaries somewhere other than
-`$HOME/.local/bin`.
+No `--vault` argument needed: the installer defaults to
+**substrate-is-vault** (see [ADR-022](../../.compozy/tasks/ffs-mvp/adrs/adr-022.md)).
+`~/.ffs/` is both the substrate root *and* the Obsidian vault,
+and the installer seeds `~/.ffs/.obsidian/plugins/ffs/`
+automatically. Pass `--prefix /custom/prefix` to install
+binaries somewhere other than `$HOME/.local/bin`. Pass
+`--vault /external/path` only if the user has a strong
+existing-vault reason (the materializer always writes to
+`~/.ffs/`, so an external vault appears empty and the installer
+warns).
 
 ### Windows
 
@@ -59,15 +65,13 @@ Obsidian plugin into a specific vault. Pass `--prefix
 # Unpack ffs-<version>-windows.zip and open a PowerShell window
 # in the unpacked folder.
 .\installer\install.ps1
-
-# With vault registration:
-.\installer\install.ps1 -Vault "C:\Users\<them>\Documents\Vault"
 ```
 
-The installer adds `%LOCALAPPDATA%\FFS\bin` to the user PATH
-(opens a fresh shell to pick it up). It also registers a
-Scheduled Task named **FFS Daemon** that launches `ffs-daemon.exe`
-at logon.
+Same substrate-is-vault default: the plugin lands at
+`%USERPROFILE%\.ffs\.obsidian\plugins\ffs\`. The installer adds
+`%LOCALAPPDATA%\FFS\bin` to the user PATH (opens a fresh shell
+to pick it up). It also registers a Scheduled Task named
+**FFS Daemon** that launches `ffs-daemon.exe` at logon.
 
 ### What landed where
 
@@ -79,10 +83,36 @@ at logon.
 | `~/.ffs/skills/` | Python skill bundles (scribe, librarian, auditor) |
 | `~/.ffs/run/` | Daemon UDS socket (mode 700) |
 | `~/.ffs/log/` | Daemon stderr captures |
+| `~/.ffs/.obsidian/plugins/ffs/` | Obsidian plugin (substrate-is-vault) |
 | `~/.config/systemd/user/ffs-daemon.service` (Linux) | Per-user systemd unit |
 | `~/Library/LaunchAgents/com.ffs.daemon.plist` (macOS) | launchd agent |
 | Scheduled Task **FFS Daemon** (Windows) | At-logon launcher |
-| `<vault>/.obsidian/plugins/ffs/` (when `--vault` was passed) | Obsidian plugin |
+
+### Migrating from a pre-task_30 install
+
+If you installed FFS before substrate-is-vault landed and your
+plugin lives somewhere other than `~/.ffs/.obsidian/plugins/ffs/`
+(e.g., inside an existing user vault you passed to `--vault`),
+do this once:
+
+```sh
+# Stop the daemon so the watcher doesn't race the move.
+launchctl unload ~/Library/LaunchAgents/com.ffs.daemon.plist  # macOS
+# OR
+systemctl --user stop ffs-daemon                              # Linux
+
+# Re-run the installer with no --vault — picks up the new default.
+bash installer/install.sh
+
+# Restart.
+launchctl load ~/Library/LaunchAgents/com.ffs.daemon.plist    # macOS
+# OR
+systemctl --user start ffs-daemon                             # Linux
+```
+
+Then in Obsidian: **Open folder as vault** → `~/.ffs/`. The old
+external vault can be retired (or left as an empty Obsidian
+workspace the user ignores).
 
 ## Step 2 — Keychain setup (10 min)
 
@@ -179,28 +209,35 @@ Each should print a JSON object with a `claim_schema`, a
 will have logged a startup error — check `~/.ffs/log/` (macOS) or
 `journalctl --user -u ffs-daemon` (Linux).
 
-## Step 5 — Obsidian plugin (5 min)
+## Step 5 — Open the vault in Obsidian (3 min)
 
-If you didn't pass `--vault` during install, register the plugin
-manually:
+The installer already seeded `~/.ffs/.obsidian/plugins/ffs/`.
+Walk the user through opening the substrate as a vault:
 
-1. Copy `installer/obsidian-plugin/{main.js,manifest.json}` into
-   `<vault>/.obsidian/plugins/ffs/`.
-2. Open Obsidian, open Settings, navigate to **Community
-   plugins**, click **Browse** → **Installed plugins**.
-3. Find **FFS** and toggle it on.
-4. Click the gear icon, point the **Daemon socket** field at
-   `~/.ffs/run/ffs.sock` (Linux/macOS) or
-   `\\.\pipe\ffs-daemon` (Windows).
+1. **Open Obsidian.**
+2. Top-left vault switcher → **Open another vault** → **Open
+   folder as vault** → navigate to `~/.ffs/` → Open.
+3. If a "trust author" dialog appears for community plugins,
+   click **Trust** (the plugin is local-only; it just talks to
+   the daemon over your `~/.ffs/run/ffs.sock`).
+4. Settings → **Community plugins** → toggle the **FFS** plugin
+   on. (If the plugin isn't listed, Obsidian needs a vault
+   reload — quit and reopen.)
+5. Gear icon next to the FFS row → confirm the **Daemon socket**
+   field points at `~/.ffs/run/ffs.sock` on Linux/macOS or
+   `\\.\pipe\ffs-daemon` on Windows. The default should already
+   match.
 
-You should see two new things in Obsidian:
+After enabling the plugin, you should see two new things:
 
 - A **Daily summary** panel in the right sidebar.
-- A new command **FFS: focus entity search**, bound to whatever
-  hotkey the user prefers.
+- A new command **FFS: Search FFS entities by name…**, bound to
+  whatever hotkey the user prefers.
 
 See [`screenshots/`](screenshots/) for what each surface looks
-like.
+like. The file explorer shows the substrate's path-library
+layout directly: `ingest/`, `contacts/by-name/...`,
+`notes/by-name/...`, `audit/`, etc.
 
 ## Step 6 — Federation handshake (15 min)
 

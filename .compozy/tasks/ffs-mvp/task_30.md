@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Substrate-is-vault — $FFS_DATA_DIR is the Obsidian vault root
 type: infra
 complexity: low
@@ -31,12 +31,12 @@ The post-task_26 rehearsal exposed a structural mismatch: the installer's `--vau
 </requirements>
 
 ## Subtasks
-- [ ] 30.1 Update `installer/install.sh` to default the vault to `$FFS_DATA_DIR` and seed `.obsidian/plugins/ffs/` there.
-- [ ] 30.2 Same change for `installer/install.ps1` (Windows).
-- [ ] 30.3 Update the `installer/uninstall.sh` and `uninstall.ps1` so the `--purge` paths drop `.obsidian/plugins/ffs/` cleanly.
-- [ ] 30.4 Update `docs/onboarding/first-use-guide.md` and `docs/onboarding/technical-friend-checklist.md` with the new flow.
-- [ ] 30.5 Update `crates/ffs-daemon/tests/installer_layout.rs` to assert the new layout.
-- [ ] 30.6 Document the substrate-as-vault decision as a new ADR (post-MVP-plan: ADR-022 or later).
+- [x] 30.1 Update `installer/install.sh` to default the vault to `$FFS_DATA_DIR` and seed `.obsidian/plugins/ffs/` there.
+- [x] 30.2 Same change for `installer/install.ps1` (Windows).
+- [x] 30.3 Update the `installer/uninstall.sh` and `uninstall.ps1` so the `--purge` paths drop `.obsidian/plugins/ffs/` cleanly.
+- [x] 30.4 Update `docs/onboarding/first-use-guide.md` and `docs/onboarding/technical-friend-checklist.md` with the new flow.
+- [x] 30.5 Update `crates/ffs-daemon/tests/installer_layout.rs` to assert the new layout.
+- [x] 30.6 Document the substrate-as-vault decision as ADR-022.
 
 ## Implementation Details
 The installer's `install_obsidian_plugin` function (in `installer/install.sh`) currently respects an optional `--vault <path>` flag. Change it to default `VAULT_PATH="$DATA_DIR"` when the flag is unset, and add an early `mkdir -p "$DATA_DIR/.obsidian"` so the existing `[ ! -d "$VAULT_PATH/.obsidian" ]` check passes without the user pre-opening the vault in Obsidian.

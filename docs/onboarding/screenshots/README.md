@@ -12,7 +12,7 @@ Each illustration shows:
 | File | What it depicts |
 |---|---|
 | [`daily-summary-panel.svg`](daily-summary-panel.svg) | The right-sidebar panel with proposals, questions, drift flags. Accept/Reject buttons annotated. |
-| [`projection-navigation.svg`](projection-navigation.svg) | Obsidian's file explorer showing `contacts/by-name/S/` with `Sara_Chen.md` rendered. |
+| [`projection-navigation.svg`](projection-navigation.svg) | Obsidian's file explorer showing `contacts/by-name/S/` with `Sara_Chen.md` rendered. The vault root is `~/.ffs/` (substrate-is-vault per ADR-022), so these paths appear directly under the vault. |
 | [`entity-search.svg`](entity-search.svg) | The entity-search modal with a 200ms-debounced query in flight. |
 | [`federation-bridges.svg`](federation-bridges.svg) | The federation panel listing two active bridges. |
 

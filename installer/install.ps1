@@ -10,8 +10,15 @@
 #   - Python skill bundles copied under %USERPROFILE%\.ffs\skills.
 #   - A Scheduled Task ("FFS Daemon") that launches ffs-daemon.exe
 #     at user logon.
-#   - Optional Obsidian plugin registration into a configured vault
-#     via -Vault <path>.
+#   - Obsidian plugin registration into %USERPROFILE%\.ffs\.obsidian\
+#     plugins\ffs\. Per task_30: $FFS_DATA_DIR IS the Obsidian vault
+#     — the path library (contacts\by-name\..., notes\by-name\...,
+#     ingest\, audit\) lives at the substrate root, and the user
+#     opens %USERPROFILE%\.ffs\ as a vault in Obsidian.
+#
+#     The -Vault flag stays accepted for backwards compatibility,
+#     but supplying a path that differs from the data dir warns
+#     about the non-canonical location.
 #
 # Re-running the installer is safe — every step is idempotent.
 
@@ -162,13 +169,24 @@ if ($SkipService) {
 
 if ($SkipPlugin) {
     Say "skipping Obsidian plugin registration (-SkipPlugin)"
-} elseif (-not $Vault) {
-    Say "no vault path provided (-Vault); skipping plugin registration"
-} elseif (-not (Test-Path (Join-Path $Vault '.obsidian'))) {
-    Say "WARN: $Vault\.obsidian does not exist — skipping plugin registration"
 } else {
+    # Substrate-is-vault default (task_30): when -Vault is unset,
+    # the data dir IS the vault. The installer creates the
+    # .obsidian\ skeleton so the user doesn't have to pre-open the
+    # vault in Obsidian.
+    if (-not $Vault) {
+        $Vault = $DataDir
+        Say "using substrate-is-vault at $Vault"
+    } elseif ($Vault -ne $DataDir) {
+        Say "WARN: -Vault $Vault is not the substrate root ($DataDir)."
+        Say "WARN: the materializer writes projections to $DataDir; the external vault may appear empty."
+        Say "WARN: see docs/onboarding/troubleshooting.md for substrate-is-vault rationale."
+    }
+
+    Run { New-Item -ItemType Directory -Force -Path (Join-Path $Vault '.obsidian') | Out-Null }
     $PluginDst = Join-Path $Vault '.obsidian\plugins\ffs'
     Run { New-Item -ItemType Directory -Force -Path $PluginDst | Out-Null }
+
     $PluginSrc = Join-Path $ScriptHome 'obsidian-plugin'
     if (-not (Test-Path $PluginSrc)) {
         $PluginSrc = Join-Path $ScriptHome '..\obsidian-plugin\dist'
@@ -193,5 +211,6 @@ if ($SkipPlugin) {
 
 Say "keychain bootstrap: deferred to first-run interactive (see README)"
 Say "done — try: $BinDir\ffs.exe health"
-Say "next steps — see docs\onboarding\technical-friend-checklist.md and docs\onboarding\first-use-guide.md"
+Say "next: open Obsidian → Open folder as vault → $DataDir"
+Say "onboarding — see docs\onboarding\technical-friend-checklist.md and docs\onboarding\first-use-guide.md"
 Say "trouble?  see docs\onboarding\troubleshooting.md"

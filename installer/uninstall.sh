@@ -4,11 +4,14 @@
 # By default this removes:
 #   - The three binaries under $PREFIX/bin.
 #   - The systemd user unit OR the launchd agent (whichever applies).
-#   - The Obsidian plugin under <vault>/.obsidian/plugins/ffs/ (when
-#     --vault is provided).
+#   - The Obsidian plugin under $HOME/.ffs/.obsidian/plugins/ffs/
+#     (the substrate-is-vault default per task_30).
+#   - The Obsidian plugin under <vault>/.obsidian/plugins/ffs/ when
+#     an external --vault is provided.
 #
 # It does NOT touch $HOME/.ffs/ (atom store, config, skills, run
-# dir) unless `--purge` is passed — those carry user state.
+# dir, .obsidian config) unless `--purge` is passed — those carry
+# user state.
 
 set -euo pipefail
 
@@ -70,9 +73,17 @@ case "$OS" in
 esac
 
 # Obsidian plugin.
-if [ -n "$VAULT_PATH" ] && [ -d "$VAULT_PATH/.obsidian/plugins/ffs" ]; then
+# Default location (substrate-is-vault, task_30): $HOME/.ffs/.obsidian/plugins/ffs.
+default_plugin="$HOME/.ffs/.obsidian/plugins/ffs"
+if [ -d "$default_plugin" ]; then
+    rm -rf "$default_plugin"
+    say "removed Obsidian plugin at $default_plugin"
+fi
+# External vault (legacy / opt-in).
+if [ -n "$VAULT_PATH" ] && [ "$VAULT_PATH" != "$HOME/.ffs" ] \
+    && [ -d "$VAULT_PATH/.obsidian/plugins/ffs" ]; then
     rm -rf "$VAULT_PATH/.obsidian/plugins/ffs"
-    say "removed Obsidian plugin at $VAULT_PATH/.obsidian/plugins/ffs"
+    say "removed external-vault Obsidian plugin at $VAULT_PATH/.obsidian/plugins/ffs"
 fi
 
 # User data (only with explicit --purge).
