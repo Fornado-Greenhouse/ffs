@@ -410,6 +410,13 @@ impl Dispatcher {
                 data: None,
             })?;
             let h = self.store.insert(&env).map_err(store_err)?;
+            // Publish so the working-set materializer (task_25) can
+            // render the projection file to disk.
+            self.notifier.publish(crate::notify::Event::AtomCommitted {
+                hash: h.clone(),
+                entity: env.entity.clone(),
+                predicate: env.predicate.clone(),
+            });
             hashes.push(h);
         }
 
@@ -960,6 +967,16 @@ impl Dispatcher {
             data: None,
         })?;
         let hash = self.store.insert(&env).map_err(store_err)?;
+        // Publish so subscribers (working-set materializer,
+        // Obsidian plugin's daily-summary panel refresh hook) see
+        // the commit. The auditor entity has no path-library home
+        // so the materializer benignly skips; the plugin still
+        // refreshes.
+        self.notifier.publish(crate::notify::Event::AtomCommitted {
+            hash: hash.clone(),
+            entity: env.entity.clone(),
+            predicate: env.predicate.clone(),
+        });
         to_value(&AuditPublishResult { atom_hash: hash })
     }
 
