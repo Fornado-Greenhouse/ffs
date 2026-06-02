@@ -103,6 +103,15 @@ impl SkillRegistry {
         self.skills.iter().find(|s| s.name == name)
     }
 
+    /// Override every registered skill's per-call timeout. Used by
+    /// the daemon binary to honor `FFS_SKILL_TIMEOUT_MS` after
+    /// discovery but before the host spawns the supervisors.
+    pub fn override_all_timeouts(&mut self, timeout: Duration) {
+        for m in &mut self.skills {
+            m.timeout = timeout;
+        }
+    }
+
     /// Walk one level of children under `dir`. Each child directory
     /// containing a `SKILL.md` is parsed into a `SkillManifest`.
     /// Children without `SKILL.md` are skipped silently — the host

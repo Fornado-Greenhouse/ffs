@@ -49,11 +49,18 @@ impl SkillsHost {
     pub fn discover_and_spawn(&mut self, dir: &Path) -> Result<(), RegistryError> {
         let mut registry = SkillRegistry::new();
         registry.discover(dir)?;
+        self.spawn_from_registry(&registry);
+        Ok(())
+    }
+
+    /// Spawn supervisors for every manifest in `registry`. Lets the
+    /// daemon binary discover separately (so it can apply env-var
+    /// overrides like `FFS_SKILL_TIMEOUT_MS`) and spawn afterward.
+    pub fn spawn_from_registry(&mut self, registry: &SkillRegistry) {
         for manifest in registry.skills() {
             let proc = SkillProcess::spawn(manifest.clone(), self.proxy.clone());
             self.skills.push(proc);
         }
-        Ok(())
     }
 
     pub fn skills(&self) -> &[SkillProcess] {

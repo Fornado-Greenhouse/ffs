@@ -29,6 +29,11 @@
 //!   `FFS_OWNER_KEY_HEX`. When the existing `atoms.db` was written
 //!   with a different DEK the daemon refuses to open and exits 1.
 //!   Keychain-pull lands in task_27.
+//! - `FFS_SKILL_TIMEOUT_MS` — optional override for every skill's
+//!   per-call timeout (default reads from each `SKILL.md`
+//!   `timeout_ms:` field, falling back to 30000 ms). Useful when
+//!   running on a slow machine where the default would cause
+//!   spurious restarts.
 //! - `FFS_LOG` — `tracing-subscriber` env filter (default `info`).
 
 use std::path::{Path, PathBuf};
@@ -45,8 +50,13 @@ use ffs_core::projection::ProjectionRenderer;
 use ffs_core::quarantine::InMemoryQuarantine;
 use ffs_core::store::{AtomStore, SqliteAtomStore, StoreError};
 use ffs_core::working_set::InMemoryWorkingSet;
+use ffs_skills_host::{RefuseAllProxy, SkillsHost};
 
-use ffs_daemon::{Dispatcher, EventPublisher, WorkingSetMaterializer, transport};
+use ffs_daemon::ingest_watcher::DEFAULT_POLL_INTERVAL;
+use ffs_daemon::{
+    Dispatcher, EventPublisher, IngestWatcher, IngestWatcherConfig, SkillsHostScribeExtractor,
+    WorkingSetMaterializer, transport,
+};
 
 // The `SpecError`, `RenderError`, and `StoreError` payloads are
 // large enough to trigger the `result_large_err` lint when carried
@@ -146,6 +156,58 @@ async fn run() -> Result<(), StartupError> {
     let publisher = Arc::new(EventPublisher::new());
     let working_set = Arc::new(InMemoryWorkingSet::new());
     let suppression = Arc::new(SuppressionRegistry::new());
+    let quarantine = Arc::new(InMemoryQuarantine::new());
+
+    // Skills host: discover bundles under $FFS_DATA_DIR/skills and
+    // spawn each as a supervised subprocess. `RefuseAllProxy` is
+    // the substrate-access stub; Phase 2 wires a real proxy that
+    // routes skill-side `query` frames through the dispatcher with
+    // the skill's identity.
+    let skills_dir = data_dir.join("skills");
+    let mut skills_host = SkillsHost::new(Arc::new(RefuseAllProxy));
+    let mut skill_registry = ffs_skills_host::SkillRegistry::new();
+    match skill_registry.discover(&skills_dir) {
+        Ok(()) => {
+            if let Some(timeout) = parse_skill_timeout()? {
+                skill_registry.override_all_timeouts(timeout);
+                tracing::info!(
+                    timeout_ms = timeout.as_millis() as u64,
+                    "FFS_SKILL_TIMEOUT_MS override applied"
+                );
+            }
+            skills_host.spawn_from_registry(&skill_registry);
+            let names: Vec<&str> = skills_host
+                .skills()
+                .iter()
+                .map(|s| s.manifest.name.as_str())
+                .collect();
+            tracing::info!(
+                skills_dir = %skills_dir.display(),
+                skills = ?names,
+                "skills host: discovered and spawned"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                skills_dir = %skills_dir.display(),
+                error = %e,
+                "skills host discovery failed; daemon will run without scribe"
+            );
+        }
+    }
+    let skills_host = Arc::new(skills_host);
+    let scribe: Option<Arc<dyn ffs_daemon::dispatch::ScribeExtractor>> =
+        if skills_host.get("scribe").is_some() {
+            Some(Arc::new(SkillsHostScribeExtractor::new(
+                skills_host.clone(),
+            )))
+        } else {
+            tracing::warn!(
+                "scribe skill not found under $FFS_DATA_DIR/skills/; \
+             ingest will accept submissions but not produce proposals"
+            );
+            None
+        };
 
     let dispatcher = Dispatcher {
         store: store.clone(),
@@ -153,8 +215,8 @@ async fn run() -> Result<(), StartupError> {
         renderer: renderer.clone(),
         notifier: publisher.clone(),
         owner: owner_pubkey.clone(),
-        quarantine: Arc::new(InMemoryQuarantine::new()),
-        scribe: None,
+        quarantine: quarantine.clone(),
+        scribe: scribe.clone(),
         working_set: working_set.clone(),
         signing_key: Some(Arc::new(signing_key)),
         federation_peers: Arc::new(InMemoryFederationPeerStore::new()),
@@ -181,6 +243,7 @@ async fn run() -> Result<(), StartupError> {
     let socket_path = run_dir.join("ffs.sock");
     let cancel = tokio_util::sync::CancellationToken::new();
     let cancel_for_signal = cancel.clone();
+    let skills_host_for_signal = skills_host.clone();
     tokio::spawn(async move {
         let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .expect("install SIGTERM handler");
@@ -192,11 +255,54 @@ async fn run() -> Result<(), StartupError> {
                 tracing::info!("received SIGTERM");
             }
         }
+        // Tell every skill to shut down (the supervisors enforce a
+        // SHUTDOWN_GRACE window then SIGKILL). Doing this before
+        // the transport's own shutdown lets in-flight scribe calls
+        // finish or be cancelled before the daemon exits.
+        skills_host_for_signal.shutdown_all();
         cancel_for_signal.cancel();
     });
 
+    // Ingest watcher: poll $FFS_DATA_DIR/ingest/, submit new .md
+    // files to the quarantine, spawn scribe extraction, move
+    // processed files into .processed/. Held in scope so its
+    // PollWatcher lives until the daemon exits.
+    let _ingest_watcher = IngestWatcher::start(IngestWatcherConfig {
+        ingest_dir: data_dir.join("ingest"),
+        quarantine: quarantine.clone(),
+        scribe: scribe.clone(),
+        publisher: publisher.clone(),
+        cancel: cancel.clone(),
+        poll_interval: DEFAULT_POLL_INTERVAL,
+    })
+    .map_err(std::io::Error::other)?;
+    tracing::info!(
+        ingest_dir = %data_dir.join("ingest").display(),
+        "ingest watcher started"
+    );
+
     transport::serve(&socket_path, dispatcher, cancel).await?;
     Ok(())
+}
+
+/// Parse the optional `FFS_SKILL_TIMEOUT_MS` env var into a
+/// `Duration`. Returns `Ok(None)` when the variable is unset;
+/// `Err` when it's set but not a positive integer.
+fn parse_skill_timeout() -> Result<Option<std::time::Duration>, StartupError> {
+    let Ok(raw) = std::env::var("FFS_SKILL_TIMEOUT_MS") else {
+        return Ok(None);
+    };
+    let ms: u64 = raw.trim().parse().map_err(|_| {
+        StartupError::BadKey(format!(
+            "FFS_SKILL_TIMEOUT_MS must be a positive integer (got {raw:?})"
+        ))
+    })?;
+    if ms == 0 {
+        return Err(StartupError::BadKey(
+            "FFS_SKILL_TIMEOUT_MS must be > 0".into(),
+        ));
+    }
+    Ok(Some(std::time::Duration::from_millis(ms)))
 }
 
 fn resolve_data_dir() -> Result<PathBuf, StartupError> {

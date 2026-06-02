@@ -29,6 +29,6 @@
 | 23 | Onboarding documentation: technical-friend checklist and first-use guide | completed | low | task_22 |
 | 24 | Wire SQLite atom store as the daemon binary's default store | completed | low | task_04, task_22 |
 | 25 | Working-set materializer: render projection files to disk on atom commit | completed | medium | task_06, task_07, task_22, task_24 |
-| 26 | Scribe subprocess + ingest watcher wired into the daemon binary | pending | medium | task_10, task_11, task_22, task_25 |
+| 26 | Scribe subprocess + ingest watcher wired into the daemon binary | completed | medium | task_10, task_11, task_22, task_25 |
 | 27 | OS keychain integration for owner signing key and SQLCipher DEK | pending | low | task_22, task_24 |
 | 28 | Obsidian plugin polish: unsubscribe handles and render-on-demand fallback | pending | low | task_17, task_19 |
