@@ -231,6 +231,100 @@ async fn daemon_reads_atoms_persisted_by_a_prior_session() {
 }
 
 #[tokio::test]
+async fn fresh_substrate_gets_owner_self_grant_so_accept_works() {
+    // Fresh data dir, no atoms in atoms.db. The daemon's startup
+    // bootstrap should sign and insert a self-grant for the owner;
+    // an RPC that goes through the capability gate (here,
+    // audit.publish_summary, which requires Write on
+    // auditor.daily_summary) should succeed instead of being
+    // capability-denied. Mirrors the user-facing path:
+    // ingest.accept also routes through the capability check.
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+    let mut child = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env("FFS_OWNER_KEY_HEX", OWNER_KEY_HEX)
+        .env("FFS_SQLCIPHER_KEY_HEX", DEK_HEX)
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(
+        wait_for(&socket, Duration::from_secs(5)).await,
+        "daemon never bound the socket"
+    );
+
+    // audit.publish_summary requires Write capability — same gate
+    // as ingest.accept. If the self-grant didn't get bootstrapped,
+    // this returns the 4001 capability-denied error.
+    let resp = rpc(
+        &socket,
+        "audit.publish_summary",
+        serde_json::json!({"claim": {"panel": [], "narrative": "bootstrap test"}}),
+    )
+    .await;
+    if let Some(err) = resp.get("error") {
+        panic!("audit.publish_summary failed — owner self-grant likely missing. error: {err}");
+    }
+    assert!(
+        resp.get("result")
+            .and_then(|r| r.get("atom_hash"))
+            .is_some(),
+        "expected atom_hash in result; got: {resp}"
+    );
+
+    // Restart the daemon against the same data dir; the bootstrap
+    // should detect the existing self-grant and skip — no duplicate
+    // capability atoms. We can't directly count atoms here, so just
+    // confirm the next audit.publish_summary still succeeds (which
+    // it would either way) and that no startup error occurred.
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("kill");
+    let _ = child.wait();
+
+    let mut child2 = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env("FFS_OWNER_KEY_HEX", OWNER_KEY_HEX)
+        .env("FFS_SQLCIPHER_KEY_HEX", DEK_HEX)
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn restart");
+    assert!(
+        wait_for(&socket, Duration::from_secs(5)).await,
+        "daemon never re-bound the socket"
+    );
+    let resp2 = rpc(
+        &socket,
+        "audit.publish_summary",
+        serde_json::json!({"claim": {"panel": [], "narrative": "second boot"}}),
+    )
+    .await;
+    if let Some(err) = resp2.get("error") {
+        panic!("second-boot audit.publish_summary failed: {err}");
+    }
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child2.id().to_string())
+        .status()
+        .expect("kill 2");
+    let _ = child2.wait();
+}
+
+#[tokio::test]
 async fn daemon_refuses_to_open_existing_db_with_wrong_dek() {
     let tmp = tempfile::tempdir().expect("tmpdir");
     let data_dir = tmp.path().to_path_buf();

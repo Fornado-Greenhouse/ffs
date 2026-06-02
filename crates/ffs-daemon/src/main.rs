@@ -144,6 +144,16 @@ async fn run() -> Result<(), StartupError> {
         SqliteAtomStore::open_with_key(&db_path, &dek)
             .map_err(|e| StartupError::Store(db_path.clone(), Box::new(e)))?,
     );
+
+    // Self-grant bootstrap: a brand-new substrate has zero
+    // capability atoms for the owner, which means every RPC that
+    // goes through the dispatcher's capability gate (ingest.accept,
+    // audit.publish_summary, bridge.establish, …) gets denied. The
+    // owner of a fresh substrate is sovereign over it by default;
+    // sign and insert a self-grant if no owner capabilities exist
+    // yet.
+    bootstrap_owner_self_capability(&*store, &signing_key, &owner_pubkey)?;
+
     let renderer = Arc::new(
         ProjectionRenderer::new(store.clone(), registry.clone(), &templates_dir)
             .map_err(|e| StartupError::Renderer(Box::new(e)))?,
@@ -283,6 +293,67 @@ async fn run() -> Result<(), StartupError> {
 
     transport::serve(&socket_path, dispatcher, cancel).await?;
     Ok(())
+}
+
+/// If the owner has zero capability atoms in the store, sign and
+/// insert a sovereign self-grant (Read + Write + Supersede × default
+/// scope, no expiry). Idempotent: re-running against a store that
+/// already has owner caps is a no-op.
+///
+/// Why this is a daemon-binary concern rather than something the
+/// installer does: the signing key lives in the daemon's env, so
+/// only the daemon can sign on the owner's behalf. The installer
+/// can seed predicates and skills but can't produce signed atoms.
+fn bootstrap_owner_self_capability(
+    store: &dyn AtomStore,
+    signing_key: &SigningKey,
+    owner: &PublicKey,
+) -> Result<(), StartupError> {
+    use ffs_core::capability::{Action, CapabilityScope, build_capability_atom};
+    use ffs_core::{EntityId, PredicateName};
+
+    let agent_entity = EntityId::new(owner.to_multibase());
+    let cap_predicate = PredicateName::new(ffs_core::capability::CAPABILITY_PREDICATE);
+    let existing = store
+        .list_by_entity(&agent_entity, Some(&cap_predicate), None)
+        .map_err(|e| StartupError::Store(PathBuf::from("(self-grant lookup)"), Box::new(e)))?;
+    if !existing.is_empty() {
+        tracing::debug!(
+            cap_count = existing.len(),
+            "owner already has capability atoms; skipping self-grant bootstrap"
+        );
+        return Ok(());
+    }
+
+    let now = current_iso8601_for_bootstrap();
+    let cap = build_capability_atom(
+        signing_key,
+        owner.clone(),
+        vec![Action::Read, Action::Write, Action::Supersede],
+        CapabilityScope::default(),
+        now.clone(),
+        None, // no expiry — sovereign self-grant
+        now,
+        None,
+    )
+    .map_err(|e| StartupError::BadKey(format!("sign self-grant: {e}")))?;
+    let hash = store
+        .insert(&cap)
+        .map_err(|e| StartupError::Store(PathBuf::from("(self-grant insert)"), Box::new(e)))?;
+    tracing::info!(
+        cap_hash = %hash.to_multibase(),
+        "bootstrapped owner self-capability (Read + Write + Supersede, unbounded scope)"
+    );
+    Ok(())
+}
+
+fn current_iso8601_for_bootstrap() -> ffs_core::Iso8601 {
+    let now = time::OffsetDateTime::now_utc();
+    let s = now
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
+    ffs_core::Iso8601::new(&s)
+        .unwrap_or_else(|_| ffs_core::Iso8601::new("1970-01-01T00:00:00Z").unwrap())
 }
 
 /// Parse the optional `FFS_SKILL_TIMEOUT_MS` env var into a
