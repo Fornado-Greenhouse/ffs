@@ -27,6 +27,7 @@ The plugin fixes landed in the post-task_22 rehearsal (commit `da09415`) wired u
 - MUST update the entity-search modal's `onChooseSuggestion` to call `plugin.renderProjection(path)` for the resolved candidate path; if the daemon returns a render, write the markdown to the vault via `app.vault.create` (or `modify` if the file exists) and open the file in the active leaf.
 - MUST surface clear errors when the render fails (capability denial, predicate-not-found) using Obsidian's `Notice` API rather than `console.warn`.
 - MUST keep the existing 61 vitest tests passing; the unsubscribe-handle change is API-level and may require small test updates.
+- MUST fix the daily-summary panel's "Recent proposals" overflow: the `source_uri` displayed for each proposal currently exceeds the sidebar width and gets visually cut off. Display the URI's basename (last path segment) by default, with the full URI available via `title=` attribute on hover. Same treatment for any other long fields in the panel (entity URIs, federation peer endpoints).
 - SHOULD add a brief in-panel "Last commit: HH:MM:SS" indicator alongside the existing refresh timestamp, sourced from the most-recent `event.atom.committed` notification — useful confirmation that the substrate is live without opening the dev console.
 </requirements>
 
@@ -36,6 +37,7 @@ The plugin fixes landed in the post-task_22 rehearsal (commit `da09415`) wired u
 - [ ] 28.3 Implement render-on-demand in `EntitySearchModal.onChooseSuggestion`: try `plugin.renderProjection(path)`, write the file, open it.
 - [ ] 28.4 Replace `console.warn` user-facing failures in the view with `new Notice(...)` calls so users actually see them.
 - [ ] 28.5 Add a "Last commit" line to the panel header sourced from the `event.atom.committed` stream.
+- [ ] 28.6 Truncate long `source_uri` strings in the proposals list to their basename, with the full path on hover via `title=`. Same for entity URIs and peer endpoints. Add CSS `text-overflow: ellipsis` as a defense-in-depth fallback for any field that exceeds the sidebar width.
 
 ## Implementation Details
 Edit only `obsidian-plugin/src/client.ts`, `obsidian-plugin/src/summary.ts`, and `obsidian-plugin/src/main.ts`. The existing tests under `obsidian-plugin/tests/` rely on the current `onChange`/`onStateChange` signatures; update them to assert the unsubscribe-handle behavior (callback is no longer invoked after unsubscribe).
