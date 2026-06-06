@@ -25,6 +25,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 clap = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -115,4 +115,6 @@ pub trait AtomStore: Send + Sync {
     fn search_fts(&self, query: &str, limit: usize) -> Result<Vec<Multihash>, StoreError>;
 }
 
-pub use self::keyring::dek_from_keyring;
+pub use self::keyring::{
+    DEK_SERVICE, OWNER_KEY_SERVICE, dek_from_keyring, owner_key_from_keyring, save_key_to_keychain,
+};

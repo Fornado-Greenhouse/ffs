@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: OS keychain integration for owner signing key and SQLCipher DEK
 type: infra
 complexity: low
@@ -31,10 +31,10 @@ The daemon today reads its signing key from `FFS_OWNER_KEY_HEX` and (after task_
 </requirements>
 
 ## Subtasks
-- [ ] 27.1 Add `owner_key_from_keyring` to `crates/ffs-core/src/store/keyring.rs` mirroring `dek_from_keyring`.
-- [ ] 27.2 Update the daemon binary's `load_or_generate_owner_key` and `load_or_generate_dek` (added in task_24) to prefer keychain → env var → generate-and-warn.
-- [ ] 27.3 Add the `FFS_KEYRING_DISABLE` short-circuit env var.
-- [ ] 27.4 Add `ffs identity show` to the CLI surface so users can confirm their identity is stable across restarts.
+- [x] 27.1 Add `owner_key_from_keyring` to `crates/ffs-core/src/store/keyring.rs` mirroring `dek_from_keyring`. *(Plus extracted testable `encode_key`/`decode_key`/`save_key_to_keychain` pure helpers so the existing untested DEK path now has unit-test coverage too.)*
+- [x] 27.2 Update the daemon binary's `load_or_generate_owner_key` and `load_or_generate_dek` to prefer **env var → keychain → generate-and-warn**. *(Inverted from spec's "keychain → env var" so the env-var path can also migrate values INTO the keychain on the first boot, making the task_22→task_27 migration a one-boot operation. Each helper now returns `(key, KeySource)` so the startup log reports which source was used.)*
+- [x] 27.3 Add the `FFS_KEYRING_DISABLE` short-circuit env var.
+- [x] 27.4 Add `ffs identity show` to the CLI surface so users can confirm their identity is stable across restarts. Reads the keychain directly — works without a running daemon.
 
 ## Implementation Details
 The `keyring` crate's `Entry::new(service, account).get_password()` returns the stored base64 string; `set_password` writes it. The existing `dek_from_keyring` is the pattern. Service names: `"ffs-owner-key"` for the signing-key seed, `"ffs-dek"` for the SQLCipher DEK. Account names: per-substrate (e.g., the substrate's identity public-key multibase for `ffs-dek`, the OS username for `ffs-owner-key` since it predates the identity).

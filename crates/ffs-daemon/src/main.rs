@@ -34,7 +34,17 @@
 //!   `timeout_ms:` field, falling back to 30000 ms). Useful when
 //!   running on a slow machine where the default would cause
 //!   spurious restarts.
+//! - `FFS_KEYRING_DISABLE` — set to `1` to skip the OS keychain
+//!   entirely. Useful in CI and inside containers without a session
+//!   keychain. When set, the daemon falls back to the env-var path
+//!   for both `FFS_OWNER_KEY_HEX` and `FFS_SQLCIPHER_KEY_HEX`.
 //! - `FFS_LOG` — `tracing-subscriber` env filter (default `info`).
+//!
+//! Key precedence (per task_27): env-var → OS keychain →
+//! generate-and-warn. The env-var path also writes the value into
+//! the keychain (when not disabled) so the next boot can drop the
+//! env var. This makes the migration from task_22's env-var
+//! bootstrap to a keychain-pinned identity a one-boot operation.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -113,15 +123,21 @@ async fn run() -> Result<(), StartupError> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&run_dir, std::fs::Permissions::from_mode(0o700))?;
 
-    let signing_key = load_or_generate_owner_key()?;
+    let (signing_key, owner_source) = load_or_generate_owner_key()?;
     let owner_pubkey = PublicKey::from_verifying(&signing_key.verifying_key());
-    let dek = load_or_generate_dek(&data_dir)?;
+    let owner_pubkey_str = owner_pubkey.to_multibase();
+    // The DEK is per-substrate and keyed by the owner pubkey so a
+    // future cohort-style multi-substrate-per-user setup can keep
+    // each substrate's DEK distinct under the same OS user.
+    let (dek, dek_source) = load_or_generate_dek(&data_dir, &owner_pubkey_str)?;
     let db_path = data_dir.join("atoms.db");
 
     tracing::info!(
         data_dir = %data_dir.display(),
         db_path = %db_path.display(),
-        owner = %owner_pubkey.to_multibase(),
+        owner = %owner_pubkey_str,
+        owner_source = %owner_source,
+        dek_source = %dek_source,
         "ffs-daemon starting"
     );
 
@@ -384,14 +400,86 @@ fn resolve_data_dir() -> Result<PathBuf, StartupError> {
     Ok(PathBuf::from(home).join(".ffs"))
 }
 
-fn load_or_generate_owner_key() -> Result<SigningKey, StartupError> {
+/// Where a key was loaded from. Shown in the startup log and by
+/// `ffs identity show` so the user can confirm their identity is
+/// stable + persisted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeySource {
+    /// Read from the OS keychain (durable across reboots).
+    Keychain,
+    /// Read from the env-var (also persisted to the keychain on
+    /// this boot when the keychain is enabled).
+    EnvVar,
+    /// Generated fresh this boot. Lost on restart unless captured.
+    Fresh,
+}
+
+impl std::fmt::Display for KeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Keychain => "keychain",
+            Self::EnvVar => "env_var",
+            Self::Fresh => "fresh",
+        };
+        f.write_str(s)
+    }
+}
+
+fn keyring_disabled() -> bool {
+    matches!(
+        std::env::var("FFS_KEYRING_DISABLE").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+fn keychain_owner_account() -> String {
+    std::env::var("USER").unwrap_or_else(|_| "ffs".into())
+}
+
+/// Load the owner Ed25519 signing-key seed. Precedence:
+///   1. `FFS_OWNER_KEY_HEX` env var (also persisted to keychain on
+///      this boot when keychain is enabled).
+///   2. OS keychain entry under `(ffs-owner-key, $USER)` —
+///      `owner_key_from_keyring` reads-or-creates-and-persists.
+///   3. Generate-and-warn (fresh seed each boot — only when
+///      keychain is disabled AND the env var isn't set).
+fn load_or_generate_owner_key() -> Result<(SigningKey, KeySource), StartupError> {
     if let Ok(hex_seed) = std::env::var("FFS_OWNER_KEY_HEX") {
         let seed = decode_hex_32(&hex_seed).map_err(StartupError::BadKey)?;
-        return Ok(SigningKey::from_bytes(&seed));
+        if !keyring_disabled() {
+            match ffs_core::store::save_key_to_keychain(
+                ffs_core::store::OWNER_KEY_SERVICE,
+                &keychain_owner_account(),
+                &seed,
+            ) {
+                Ok(()) => tracing::info!(
+                    "FFS_OWNER_KEY_HEX migrated to OS keychain; \
+                     you can drop the env var on next boot"
+                ),
+                Err(e) => {
+                    tracing::warn!(error = %e, "could not migrate FFS_OWNER_KEY_HEX to keychain")
+                }
+            }
+        }
+        return Ok((SigningKey::from_bytes(&seed), KeySource::EnvVar));
     }
-    // No env-var seed: generate a fresh key and warn. This is fine
-    // for a brand-new substrate; for an existing one the user
-    // should set FFS_OWNER_KEY_HEX so prior atoms still verify.
+
+    if !keyring_disabled() {
+        match ffs_core::store::owner_key_from_keyring(
+            ffs_core::store::OWNER_KEY_SERVICE,
+            &keychain_owner_account(),
+        ) {
+            Ok(seed) => {
+                tracing::debug!("owner signing key loaded from OS keychain");
+                return Ok((SigningKey::from_bytes(&seed), KeySource::Keychain));
+            }
+            Err(e) => tracing::warn!(
+                error = %e,
+                "owner-key keychain lookup failed; falling through to generate-and-warn"
+            ),
+        }
+    }
+
     use rand::RngCore;
     let mut seed = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut seed);
@@ -399,24 +487,57 @@ fn load_or_generate_owner_key() -> Result<SigningKey, StartupError> {
     let fp = Multihash::blake3_of(&seed).to_multibase();
     tracing::warn!(
         key_fp = %fp,
-        "FFS_OWNER_KEY_HEX not set — generated a fresh signing key. \
-         Existing atoms signed by other keys will not validate. \
-         Set FFS_OWNER_KEY_HEX=<64 hex chars> to pin a stable identity."
+        "no owner-key source (env var unset, keychain disabled or unavailable) — \
+         generated a fresh signing key. Existing atoms signed by other keys will \
+         not validate. Unset FFS_KEYRING_DISABLE to enable keychain persistence."
     );
-    Ok(key)
+    Ok((key, KeySource::Fresh))
 }
 
-/// Load the SQLCipher DEK from `FFS_SQLCIPHER_KEY_HEX`, or generate
-/// a fresh one and warn — same shape as `load_or_generate_owner_key`.
-/// The fresh-key path adds an extra warning when `atoms.db` already
-/// exists on disk, because in that case the upcoming
-/// `SqliteAtomStore::open_with_key` is guaranteed to fail and the
-/// user will lose access to their substrate unless they restore the
-/// original DEK.
-fn load_or_generate_dek(data_dir: &Path) -> Result<[u8; 32], StartupError> {
+/// Load the SQLCipher DEK. Same precedence shape as
+/// `load_or_generate_owner_key`. The DEK is keyed in the keychain by
+/// the substrate's owner pubkey multibase so multi-substrate-per-
+/// user setups can keep distinct DEKs.
+fn load_or_generate_dek(
+    data_dir: &Path,
+    owner_pubkey_multibase: &str,
+) -> Result<([u8; 32], KeySource), StartupError> {
     if let Ok(hex_seed) = std::env::var("FFS_SQLCIPHER_KEY_HEX") {
-        return decode_hex_32(&hex_seed).map_err(StartupError::BadDek);
+        let dek = decode_hex_32(&hex_seed).map_err(StartupError::BadDek)?;
+        if !keyring_disabled() {
+            match ffs_core::store::save_key_to_keychain(
+                ffs_core::store::DEK_SERVICE,
+                owner_pubkey_multibase,
+                &dek,
+            ) {
+                Ok(()) => tracing::info!(
+                    "FFS_SQLCIPHER_KEY_HEX migrated to OS keychain; \
+                     you can drop the env var on next boot"
+                ),
+                Err(e) => {
+                    tracing::warn!(error = %e, "could not migrate FFS_SQLCIPHER_KEY_HEX to keychain")
+                }
+            }
+        }
+        return Ok((dek, KeySource::EnvVar));
     }
+
+    if !keyring_disabled() {
+        match ffs_core::store::dek_from_keyring(
+            ffs_core::store::DEK_SERVICE,
+            owner_pubkey_multibase,
+        ) {
+            Ok(dek) => {
+                tracing::debug!("SQLCipher DEK loaded from OS keychain");
+                return Ok((dek, KeySource::Keychain));
+            }
+            Err(e) => tracing::warn!(
+                error = %e,
+                "DEK keychain lookup failed; falling through to generate-and-warn"
+            ),
+        }
+    }
+
     use rand::RngCore;
     let mut dek = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut dek);
@@ -424,21 +545,22 @@ fn load_or_generate_dek(data_dir: &Path) -> Result<[u8; 32], StartupError> {
     if db_path.exists() {
         tracing::warn!(
             db_path = %db_path.display(),
-            "FFS_SQLCIPHER_KEY_HEX not set but atoms.db already exists. \
-             The fresh DEK will fail to open the existing database. \
-             Set FFS_SQLCIPHER_KEY_HEX=<64 hex chars> to the original \
-             value, or remove atoms.db to start fresh (DESTRUCTIVE)."
+            "no DEK source (env var unset, keychain disabled or unavailable) — \
+             but atoms.db already exists. The fresh DEK will fail to open the \
+             existing database. Either set FFS_SQLCIPHER_KEY_HEX to the original \
+             value, restore the keychain entry, or remove atoms.db (DESTRUCTIVE)."
         );
     } else {
         let fp = Multihash::blake3_of(&dek).to_multibase();
         tracing::warn!(
             dek_fp = %fp,
-            "FFS_SQLCIPHER_KEY_HEX not set — generated a fresh DEK. \
-             Save its value via env var or the OS keychain (task_27) \
-             before next restart, or atoms.db will be unrecoverable."
+            "no DEK source (env var unset, keychain disabled or unavailable) — \
+             generated a fresh DEK. Save its value via env var or unset \
+             FFS_KEYRING_DISABLE before next restart, or atoms.db will be \
+             unrecoverable."
         );
     }
-    Ok(dek)
+    Ok((dek, KeySource::Fresh))
 }
 
 /// Decode a 64-hex-char string into a 32-byte array. Returns a

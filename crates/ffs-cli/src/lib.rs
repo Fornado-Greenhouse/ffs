@@ -49,6 +49,20 @@ pub enum Command {
         #[command(subcommand)]
         command: FederationCommand,
     },
+    /// Owner identity management.
+    Identity {
+        #[command(subcommand)]
+        command: IdentityCommand,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum IdentityCommand {
+    /// Print the owner's public-key multibase and the source it was
+    /// loaded from. Reads the keychain directly — works without a
+    /// running daemon. Use this to confirm the substrate's identity
+    /// is stable across restarts before federating with a peer.
+    Show,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -107,5 +121,8 @@ pub async fn run(args: Args) -> Outcome {
                     command: PeerCommand::List,
                 },
         } => commands::federation_peer_list(socket_ref).await,
+        Command::Identity {
+            command: IdentityCommand::Show,
+        } => commands::identity_show(json),
     }
 }

@@ -369,6 +369,62 @@ Risks: **MCP capability-check correctness**.
 
 ---
 
+## Keychain bootstrap failures
+
+### Symptom
+
+Daemon stderr shows a `keyring: ...` error in the `ffs-daemon
+starting` log line, or `ffs identity show` returns `could not
+read owner key from OS keychain: ...`. Typical messages:
+
+- `Platform secure storage failure: User cancelled the operation`
+- `Platform secure storage failure: keyring service not available`
+- `keyring entry not found` (only on first boot; expected, the
+  daemon generates one)
+
+### What's happening
+
+The cross-platform `keyring` crate talks to:
+
+- **macOS Keychain Services** (login keychain).
+- **Linux Secret Service API** (GNOME Keyring or KWallet via
+  D-Bus; needs a running session daemon).
+- **Windows Credential Manager**.
+
+A "User cancelled" error means the user clicked **Deny** on the
+macOS Keychain prompt the first time the daemon tried to write or
+read its entry. A "keyring service not available" error means
+the session has no keychain daemon running — common in headless
+SSH sessions, Docker containers, or systemd user services that
+fire before the session keychain.
+
+### Fix
+
+1. **macOS first-prompt was denied:** open Keychain Access,
+   delete any `ffs-owner-key` or `ffs-dek` entries, then restart
+   the daemon. When the next prompt appears, click **Always
+   allow** so the daemon can read the entry on every restart
+   without re-prompting.
+2. **Headless / no session keychain:** set
+   `FFS_KEYRING_DISABLE=1` in the service unit environment and
+   provide `FFS_OWNER_KEY_HEX` + `FFS_SQLCIPHER_KEY_HEX` as
+   64-hex-char env vars instead. The daemon's startup log line
+   shows `owner_source=env_var dek_source=env_var` when this is
+   the active path.
+3. **Migrating from env-var to keychain:** unset
+   `FFS_KEYRING_DISABLE` (if previously set), leave the env vars
+   in place for one boot, and let the daemon write them into the
+   keychain. The log records the migration:
+   ```
+   INFO ffs-daemon: FFS_OWNER_KEY_HEX migrated to OS keychain;
+        you can drop the env var on next boot
+   ```
+   On the next boot, remove the env vars from the service unit.
+4. **Verify the result:** `ffs identity show` should print
+   `source: keychain` and a stable pubkey across restarts.
+
+---
+
 ## When all else fails
 
 The substrate is git-cloneable. Worst case, you can:

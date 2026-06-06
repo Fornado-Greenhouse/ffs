@@ -325,6 +325,51 @@ async fn fresh_substrate_gets_owner_self_grant_so_accept_works() {
 }
 
 #[tokio::test]
+async fn ffs_keyring_disable_short_circuits_to_env_var_or_generate_fallback() {
+    // With FFS_KEYRING_DISABLE=1 and no env-var keys, the daemon
+    // must still come up (generating fresh keys with the existing
+    // warning). This protects CI / headless installs where there's
+    // no session keychain.
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+    let mut child = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env("FFS_KEYRING_DISABLE", "1")
+        .env_remove("FFS_OWNER_KEY_HEX")
+        .env_remove("FFS_SQLCIPHER_KEY_HEX")
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(
+        wait_for(&socket, Duration::from_secs(5)).await,
+        "daemon never bound the socket; FFS_KEYRING_DISABLE path must boot"
+    );
+
+    // health.summary works without capabilities — proves the daemon
+    // is past startup and serving RPCs even with generate-and-warn
+    // keys.
+    let resp = rpc(&socket, "health.summary", serde_json::Value::Null).await;
+    assert!(
+        resp.get("result").is_some(),
+        "health.summary failed under FFS_KEYRING_DISABLE: {resp}"
+    );
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("kill");
+    let _ = child.wait();
+}
+
+#[tokio::test]
 async fn daemon_refuses_to_open_existing_db_with_wrong_dek() {
     let tmp = tempfile::tempdir().expect("tmpdir");
     let data_dir = tmp.path().to_path_buf();

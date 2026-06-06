@@ -226,6 +226,100 @@ pub async fn federation_peer_add(socket: &Path, endpoint: &str, fingerprint: &st
     }
 }
 
+/// `ffs identity show` — print the owner pubkey multibase and the
+/// source from which it was loaded. Reads the keychain directly so
+/// the answer is available even when the daemon isn't running. Used
+/// to confirm the substrate's identity is stable across reboots
+/// before federating.
+pub fn identity_show(json: bool) -> Outcome {
+    use ed25519_dalek::SigningKey;
+    use ffs_core::PublicKey;
+
+    // Mirror the daemon's key-loading precedence: env var → keychain.
+    // Don't fall through to generate-and-warn here — that would
+    // produce a different identity than the daemon's, which is the
+    // opposite of what `identity show` is supposed to confirm.
+    let (seed, source) = match std::env::var("FFS_OWNER_KEY_HEX") {
+        Ok(hex) => match decode_hex_32(&hex) {
+            Ok(seed) => (seed, "env_var"),
+            Err(e) => {
+                return Outcome::err(
+                    EXIT_GENERAL,
+                    format!("FFS_OWNER_KEY_HEX is set but invalid: {e}\n"),
+                );
+            }
+        },
+        Err(_) => {
+            if keyring_disabled() {
+                return Outcome::err(
+                    EXIT_GENERAL,
+                    "no owner identity: FFS_OWNER_KEY_HEX unset and FFS_KEYRING_DISABLE is on\n"
+                        .into(),
+                );
+            }
+            let account = std::env::var("USER").unwrap_or_else(|_| "ffs".into());
+            match ffs_core::store::owner_key_from_keyring(
+                ffs_core::store::OWNER_KEY_SERVICE,
+                &account,
+            ) {
+                Ok(seed) => (seed, "keychain"),
+                Err(e) => {
+                    return Outcome::err(
+                        EXIT_GENERAL,
+                        format!("could not read owner key from OS keychain: {e}\n"),
+                    );
+                }
+            }
+        }
+    };
+    let signing = SigningKey::from_bytes(&seed);
+    let pubkey = PublicKey::from_verifying(&signing.verifying_key());
+    let account = std::env::var("USER").unwrap_or_else(|_| "ffs".into());
+
+    if json {
+        let payload = serde_json::json!({
+            "pubkey_multibase": pubkey.to_multibase(),
+            "source": source,
+            "keychain_service": ffs_core::store::OWNER_KEY_SERVICE,
+            "keychain_account": account,
+        });
+        Outcome::ok(serde_json::to_string_pretty(&payload).unwrap_or_default() + "\n")
+    } else {
+        Outcome::ok(format!(
+            "owner pubkey: {}\nsource:       {}\nkeychain:     {} / {}\n",
+            pubkey.to_multibase(),
+            source,
+            ffs_core::store::OWNER_KEY_SERVICE,
+            account
+        ))
+    }
+}
+
+fn keyring_disabled() -> bool {
+    matches!(
+        std::env::var("FFS_KEYRING_DISABLE").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+fn decode_hex_32(hex: &str) -> Result<[u8; 32], String> {
+    let s = hex.trim();
+    if s.len() != 64 {
+        return Err(format!("expected 64 hex chars, got {}", s.len()));
+    }
+    let mut out = [0u8; 32];
+    for (i, chunk) in s.as_bytes().chunks(2).enumerate() {
+        let hi = (chunk[0] as char)
+            .to_digit(16)
+            .ok_or_else(|| format!("bad hex char at byte {i}"))?;
+        let lo = (chunk[1] as char)
+            .to_digit(16)
+            .ok_or_else(|| format!("bad hex char at byte {i}"))?;
+        out[i] = ((hi << 4) | lo) as u8;
+    }
+    Ok(out)
+}
+
 /// `ffs federation peer list` — list peers.
 pub async fn federation_peer_list(socket: &Path) -> Outcome {
     match client::call(socket, "federation.peer.list", serde_json::Value::Null).await {

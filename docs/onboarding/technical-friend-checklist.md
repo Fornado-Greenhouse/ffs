@@ -114,53 +114,65 @@ Then in Obsidian: **Open folder as vault** → `~/.ffs/`. The old
 external vault can be retired (or left as an empty Obsidian
 workspace the user ignores).
 
-## Step 2 — Keychain setup (10 min)
+## Step 2 — Identity setup (2 min)
 
 The substrate is encrypted at rest. The **DEK** (database
 encryption key) protects the SQLite atom store; the **owner
 signing key** stamps every atom they author. Both live in the OS
 keychain so the user never types or sees them after this step.
 
-> **MVP status.** Production keychain provisioning is a Phase 2
-> add. For MVP, the daemon tolerates a missing
-> `FFS_OWNER_KEY_HEX` by generating a fresh signing key per boot
-> and emitting a warning. This is fine for a brand-new substrate
-> being created right now; it is **not** fine for an existing
-> substrate that already has signed atoms (the new key won't
-> verify the old ones).
+**Per task_27, the daemon handles this automatically.** On first
+boot it:
 
-For a stable identity across daemon restarts, generate a key and
-pin it via the service environment:
+- Generates a fresh 32-byte signing-key seed via `OsRng`, persists
+  it to the OS keychain under `(service=ffs-owner-key,
+  account=$USER)`, and uses the result for its Ed25519 identity.
+- Generates a fresh 32-byte SQLCipher DEK, persists it under
+  `(service=ffs-dek, account=<owner-pubkey-multibase>)`, and uses
+  it to open `atoms.db`.
+
+On subsequent boots it reads both from the keychain — same
+identity, same DEK, no warning.
+
+The macOS Keychain will prompt the user once per service the first
+time the daemon writes (with "Always allow / Allow / Deny" buttons);
+they should click **Always allow**. On Linux a one-time
+unlock prompt may appear if the GNOME Keyring or KWallet daemon
+isn't already unlocked.
+
+Confirm the identity is stable by running:
 
 ```sh
-# Pick 32 random bytes and hex-encode them (this is the seed for
-# an Ed25519 signing key).
-KEY_HEX=$(head -c 32 /dev/urandom | xxd -p -c 64)
-
-# macOS — stash in the login keychain:
-security add-generic-password \
-  -s ffs-owner-key \
-  -a "$USER" \
-  -w "$KEY_HEX"
-
-# Linux — stash with secret-tool (libsecret):
-echo -n "$KEY_HEX" | secret-tool store \
-  --label="FFS owner signing key" \
-  service ffs-owner-key
+ffs identity show
+# owner pubkey: z5NCpjdiH4A3TTAkZrEQdaaBrneejBHcqxNqQoAk3U6AL
+# source:       keychain
+# keychain:     ffs-owner-key / <username>
 ```
 
-Then edit the service unit (Linux: `~/.config/systemd/user/ffs-
-daemon.service`; macOS: `~/Library/LaunchAgents/com.ffs.daemon
-.plist`) to inject the key via `Environment=FFS_OWNER_KEY_HEX=
-$(security find-generic-password -s ffs-owner-key -w)` on macOS
-or the matching `secret-tool lookup` on Linux. **This is a
-Phase 2 polish item.** For MVP, accept the fresh-key-per-boot
-warning until you migrate to keychain-pinned identity.
+The pubkey should be the same after every restart.
 
-On Windows, the equivalent is the **Credential Manager**;
-PowerShell's `New-StoredCredential` cmdlet (from the
-`CredentialManager` module) does the equivalent of `secret-
-tool store`.
+### Bypassing the keychain (CI, containers)
+
+When running headless (no session keychain, e.g., in CI or
+inside a Docker image) set `FFS_KEYRING_DISABLE=1` in the
+service environment. The daemon then falls back to
+`FFS_OWNER_KEY_HEX` and `FFS_SQLCIPHER_KEY_HEX` env vars (see
+[`troubleshooting.md`](troubleshooting.md) for the format).
+
+### Migrating from an env-var setup
+
+If the user is upgrading from a pre-task_27 install where keys
+were pinned via env vars in the launchd plist or systemd unit,
+the next daemon boot does the migration automatically: it reads
+the env var, uses it, and ALSO writes the value to the keychain.
+On the boot after that, the user can drop the env var and the
+daemon will read from the keychain instead. The daemon log
+records the migration:
+
+```
+INFO ffs-daemon: FFS_OWNER_KEY_HEX migrated to OS keychain;
+you can drop the env var on next boot
+```
 
 ## Step 3 — First run (5 min)
 
