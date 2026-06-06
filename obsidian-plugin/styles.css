@@ -1,0 +1,102 @@
+/* FFS Obsidian plugin styles.
+ *
+ * Kept narrow on purpose — Obsidian's default theme styles the
+ * majority of UI elements. These rules only address what we
+ * generate that the default theme can't help with: containing
+ * long URIs in the daily-summary panel, and a few spacing
+ * conventions for the proposals list and flag list.
+ */
+
+.ffs-summary-root {
+  padding: 8px 12px;
+}
+
+.ffs-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ffs-summary-status {
+  margin: 4px 0 12px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.ffs-summary-narrative {
+  margin: 8px 0 16px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.ffs-summary-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 16px 0;
+}
+
+.ffs-proposal-list,
+.ffs-flag-list {
+  margin: 4px 0 16px;
+  padding: 0;
+}
+
+.ffs-proposal {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ffs-proposal-meta {
+  flex: 1 1 auto;
+  min-width: 0; /* lets flex children with overflow shrink */
+}
+
+.ffs-proposal-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+
+.ffs-proposal-count {
+  font-weight: 600;
+}
+
+.ffs-proposal-source {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+/* Defense-in-depth ellipsis for any element that may receive a
+ * long URI or path. The plugin already truncates to basename for
+ * display; this catches the remaining edge cases (very narrow
+ * sidebar, very long basenames). */
+.ffs-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.ffs-flag {
+  margin: 4px 0;
+}
+
+.ffs-flag-kind {
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: 0.85em;
+}
+
+.ffs-suggest-name {
+  font-weight: 500;
+}
+
+.ffs-suggest-meta {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}

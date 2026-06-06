@@ -114,9 +114,18 @@ export class DaemonClient {
     this.setState("disconnected");
   }
 
-  /** Subscribe to state-change notifications (for the offline indicator). */
-  onStateChange(fn: (s: ConnectionState) => void): void {
+  /**
+   * Subscribe to state-change notifications. Returns an
+   * unsubscribe function — call it from the subscriber's teardown
+   * hook (e.g., a view's `onClose`) so listeners don't accumulate
+   * across view open/close cycles.
+   */
+  onStateChange(fn: (s: ConnectionState) => void): () => void {
     this.stateListeners.push(fn);
+    return () => {
+      const idx = this.stateListeners.indexOf(fn);
+      if (idx >= 0) this.stateListeners.splice(idx, 1);
+    };
   }
 
   /**

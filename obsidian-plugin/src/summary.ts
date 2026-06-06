@@ -46,6 +46,14 @@ export interface PanelState {
   pendingProposals: ProposalItem[];
   /** True iff the latest fetch surfaced no auditor atom yet. */
   empty: boolean;
+  /**
+   * Wall-clock of the most-recent `event.atom.committed`
+   * notification observed since the panel was mounted. The view
+   * displays this as a "Last commit: HH:MM:SS" line so the user
+   * can confirm the substrate is live without opening the dev
+   * console. `null` until the first commit lands.
+   */
+  lastCommittedAt: Date | null;
 }
 
 const EMPTY_STATE: PanelState = {
@@ -53,6 +61,7 @@ const EMPTY_STATE: PanelState = {
   narrative: "No auditor summary yet.",
   pendingProposals: [],
   empty: true,
+  lastCommittedAt: null,
 };
 
 export class SummaryPanelModel {
@@ -79,9 +88,18 @@ export class SummaryPanelModel {
     );
   }
 
-  /** Subscribe to state-change notifications. */
-  onChange(fn: (s: PanelState) => void): void {
+  /**
+   * Subscribe to state-change notifications. Returns an
+   * unsubscribe function — call it from the subscriber's teardown
+   * hook so listeners don't accumulate across view open/close
+   * cycles.
+   */
+  onChange(fn: (s: PanelState) => void): () => void {
     this.listeners.push(fn);
+    return () => {
+      const idx = this.listeners.indexOf(fn);
+      if (idx >= 0) this.listeners.splice(idx, 1);
+    };
   }
 
   /**
@@ -123,6 +141,9 @@ export class SummaryPanelModel {
       narrative: String(latest?.claim?.narrative ?? EMPTY_STATE.narrative),
       pendingProposals,
       empty: latest === null && pendingProposals.length === 0,
+      // Preserve the last-commit timestamp across refreshes; only
+      // the `event.atom.committed` handler updates it.
+      lastCommittedAt: this.state.lastCommittedAt,
     };
     this.setState(next);
     return next;
@@ -152,12 +173,15 @@ export class SummaryPanelModel {
   }
 
   /**
-   * `event.atom.committed` handler: only re-fetch when the
-   * committed atom's predicate is `auditor.daily_summary` so we
-   * don't thrash on every fast-path supersession.
+   * `event.atom.committed` handler. Updates the `lastCommittedAt`
+   * indicator for every commit (so the panel shows the substrate
+   * is live), but only triggers a full refresh on
+   * `auditor.daily_summary` commits — those are the ones whose
+   * content the panel actually displays.
    */
   private onAtomCommitted(frame: NotificationFrame): void {
     const predicate = frame.params?.predicate;
+    this.setState({ ...this.state, lastCommittedAt: new Date() });
     if (predicate === "auditor.daily_summary") {
       void this.refresh().catch((err) => {
         console.warn("[ffs] summary refresh on commit failed:", err);

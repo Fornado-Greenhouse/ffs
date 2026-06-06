@@ -11,6 +11,7 @@
 import {
   App,
   ItemView,
+  Notice,
   Plugin,
   PluginSettingTab,
   Setting,
@@ -259,6 +260,10 @@ class SummaryView extends ItemView {
   /** Set on the first time we observe a connected client to fire the
    * initial refresh exactly once. */
   private didInitialRefresh = false;
+  /** Unsubscribe handles for the listeners this view registers. Both
+   * are invoked from `onClose` so listeners don't accumulate across
+   * view open/close cycles (task_28). */
+  private offSummaryChange: (() => void) | null = null;
   private offStateChange: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: FfsPlugin) {
@@ -276,7 +281,9 @@ class SummaryView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    this.plugin.summary.onChange((state) => this.render(state));
+    this.offSummaryChange = this.plugin.summary.onChange((state) =>
+      this.render(state),
+    );
 
     // Track the client's connection state. The first time we land
     // on "connected" (or "fallback"), trigger the initial refresh
@@ -296,14 +303,7 @@ class SummaryView extends ItemView {
         this.render(this.plugin.summary.state);
       }
     };
-    this.plugin.client.onStateChange(handleState);
-    // Track the listener so onClose can stop receiving updates
-    // after the view is destroyed.
-    this.offStateChange = () => {
-      // DaemonClient.onStateChange doesn't return an unsubscribe
-      // handle (MVP omission). We mark the view as disposed and
-      // make the handler a no-op via a closure flag below.
-    };
+    this.offStateChange = this.plugin.client.onStateChange(handleState);
 
     // Seed the panel chrome immediately so the user sees
     // something instead of a blank pane.
@@ -311,6 +311,8 @@ class SummaryView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.offSummaryChange?.();
+    this.offSummaryChange = null;
     this.offStateChange?.();
     this.offStateChange = null;
   }
@@ -324,7 +326,7 @@ class SummaryView extends ItemView {
       // timestamp line.
       this.render(this.plugin.summary.state);
     } catch (err) {
-      console.warn("[ffs] summary refresh failed:", err);
+      new Notice(`FFS summary refresh failed: ${describeError(err)}`);
       this.render(this.plugin.summary.state);
     }
   }
@@ -341,9 +343,12 @@ class SummaryView extends ItemView {
       void this.triggerRefresh();
     };
 
-    // Status line: connection state + last-refreshed timestamp.
-    // Without these two signals, a click on Refresh against an
-    // empty substrate looks like the button is broken.
+    // Status line: connection state + last-refreshed timestamp +
+    // last-commit timestamp. Without these signals, a click on
+    // Refresh against an empty substrate looks like the button is
+    // broken; the last-commit line gives the user "yes, the
+    // substrate is live" confirmation without opening the dev
+    // console.
     const status = root.createDiv({ cls: "ffs-summary-status" });
     const connBadge = status.createSpan({
       cls: `ffs-summary-conn ffs-summary-conn-${this.connState}`,
@@ -353,6 +358,12 @@ class SummaryView extends ItemView {
       status.createSpan({
         cls: "ffs-summary-refreshed",
         text: ` · refreshed ${formatClock(this.lastRefreshedAt)}`,
+      });
+    }
+    if (state.lastCommittedAt) {
+      status.createSpan({
+        cls: "ffs-summary-last-commit",
+        text: ` · last commit ${formatClock(state.lastCommittedAt)}`,
       });
     }
 
@@ -398,21 +409,26 @@ class SummaryView extends ItemView {
       text: `${p.proposalCount} proposal${p.proposalCount === 1 ? "" : "s"}`,
       cls: "ffs-proposal-count",
     });
-    meta.createEl("div", {
-      text: p.sourceUri,
-      cls: "ffs-proposal-source",
+    // Truncate to basename so the source URI doesn't overflow the
+    // sidebar width. Full URI is on hover via `title=`. CSS
+    // ellipsis covers any remaining overflow on very narrow
+    // sidebars (see styles.css ffs-truncate).
+    const sourceEl = meta.createEl("div", {
+      text: uriBasename(p.sourceUri),
+      cls: "ffs-proposal-source ffs-truncate",
     });
+    sourceEl.setAttr("title", p.sourceUri);
     const actions = row.createDiv({ cls: "ffs-proposal-actions" });
     const accept = actions.createEl("button", { text: "Accept" });
     accept.onclick = () => {
       void this.plugin.summary.accept(p.submissionId).catch((err) => {
-        console.warn("[ffs] accept failed:", err);
+        new Notice(`FFS accept failed: ${describeError(err)}`);
       });
     };
     const reject = actions.createEl("button", { text: "Reject" });
     reject.onclick = () => {
       void this.plugin.summary.reject(p.submissionId).catch((err) => {
-        console.warn("[ffs] reject failed:", err);
+        new Notice(`FFS reject failed: ${describeError(err)}`);
       });
     };
   }
@@ -454,31 +470,119 @@ class EntitySearchModal extends SuggestModal<EntityHit> {
   }
 
   onChooseSuggestion(hit: EntityHit): void {
-    // Try to navigate to a projection path matching this entity.
-    // Resolution heuristic: if the entity's name starts with a
-    // letter, try `contacts/by-name/<letter>/<entity>.md`. The
-    // file-open hook calls into `setOpenProjection` so the
-    // invalidation subscription picks up the right path.
+    void this.openHit(hit);
+  }
+
+  /**
+   * Resolve a search hit to a projection path, prefer an existing
+   * on-disk file, else fall back to a render-on-demand. The
+   * resolution heuristic mirrors the materializer's path-library
+   * convention (`<family>/by-name/<letter>/<slug>.md`). The
+   * family is picked from the hit's predicate; the slug from the
+   * display name with spaces replaced by underscores.
+   */
+  private async openHit(hit: EntityHit): Promise<void> {
     const first = hit.displayName.slice(0, 1).toUpperCase();
     const slug = hit.displayName.replace(/\s+/g, "_");
-    const candidates = [
-      `contacts/by-name/${first}/${slug}.md`,
-      `people/by-name/${first}/${slug}.md`,
-      `notes/by-name/${first}/${slug}.md`,
-    ];
+    const family = familyForPredicate(hit.predicate);
+    const candidates = family
+      ? [`${family}/by-name/${first}/${slug}.md`]
+      : [
+          `contacts/by-name/${first}/${slug}.md`,
+          `people/by-name/${first}/${slug}.md`,
+          `notes/by-name/${first}/${slug}.md`,
+        ];
+
     for (const path of candidates) {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (file instanceof TFile) {
-        void this.app.workspace.getLeaf(false).openFile(file);
+        await this.app.workspace.getLeaf(false).openFile(file);
         return;
       }
     }
-    // Fall back to logging; the file may not be materialized in
-    // the working set yet (Phase 2 wires a render-on-demand path).
-    console.info(
-      `[ffs] selected ${hit.entity} (${hit.predicate}); no projection on disk`,
-    );
+
+    // Nothing on disk. Render-on-demand from the daemon, write the
+    // markdown to the vault, and open the new file. The
+    // materializer (task_25) writes the canonical version once an
+    // atom commits; this path covers the gap where the user
+    // searches for an entity before the materializer has caught up
+    // (e.g., immediately after federation pull).
+    for (const path of candidates) {
+      try {
+        const rendered = await this.plugin.renderProjection(path);
+        if (!rendered) continue;
+        const created = await this.app.vault.create(path, rendered.markdown);
+        await this.app.workspace.getLeaf(false).openFile(created);
+        return;
+      } catch (err) {
+        if (isCapabilityDenied(err)) {
+          new Notice(`FFS: capability denied for ${hit.displayName}`);
+          return;
+        }
+        if (isNotFound(err)) {
+          // Try the next candidate path.
+          continue;
+        }
+        new Notice(`FFS: could not open ${hit.displayName}: ${describeError(err)}`);
+        return;
+      }
+    }
+    new Notice(`FFS: no projection found for ${hit.displayName} (${hit.predicate})`);
   }
+}
+
+/**
+ * Map the three MVP predicate names to their path-library family
+ * directories. Returns `null` for predicates outside the library so
+ * the caller falls back to brute-force-checking all three.
+ */
+function familyForPredicate(predicate: string): string | null {
+  switch (predicate) {
+    case "contact.person":
+      return "contacts";
+    case "person.generic":
+      return "people";
+    case "note":
+      return "notes";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Last path segment of a `file://` URI or filesystem path. Used
+ * to keep the proposals list from overflowing the sidebar width.
+ */
+function uriBasename(uri: string): string {
+  if (!uri) return "";
+  const stripped = uri.replace(/^file:\/\//, "");
+  const idx = stripped.lastIndexOf("/");
+  return idx >= 0 ? stripped.slice(idx + 1) : stripped;
+}
+
+/** Pull a human-readable string out of any thrown value. */
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return String(err);
+}
+
+/**
+ * Detect the daemon's capability-denied error. The DaemonClient
+ * decorates rejected promises with `code = 4001` (per
+ * `crates/ffs-daemon/src/api.rs::ERR_CAPABILITY_DENIED`).
+ */
+function isCapabilityDenied(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: number }).code === 4001;
+}
+
+/**
+ * Detect the daemon's not-found error (`ERR_NOT_FOUND = 4040`).
+ * The render-on-demand path tries multiple candidate paths; a 4040
+ * on one means "try the next" rather than a hard failure.
+ */
+function isNotFound(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: number }).code === 4040;
 }
 
 /**

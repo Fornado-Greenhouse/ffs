@@ -31,7 +31,7 @@
 | 25 | Working-set materializer: render projection files to disk on atom commit | completed | medium | task_06, task_07, task_22, task_24 |
 | 26 | Scribe subprocess + ingest watcher wired into the daemon binary | completed | medium | task_10, task_11, task_22, task_25 |
 | 27 | OS keychain integration for owner signing key and SQLCipher DEK | pending | low | task_22, task_24 |
-| 28 | Obsidian plugin polish: unsubscribe handles and render-on-demand fallback | pending | low | task_17, task_19 |
+| 28 | Obsidian plugin polish: unsubscribe handles and render-on-demand fallback | completed | low | task_17, task_19 |
 | 29 | SQLite-backed quarantine: persist pending submissions across daemon restarts | pending | medium | task_24, task_26 |
 | 30 | Substrate-is-vault: $FFS_DATA_DIR is the Obsidian vault root | completed | low | task_22, task_25 |
 | 31 | Ingest stability window: let users write a note over time before scribe consumes it | pending | low | task_26 |

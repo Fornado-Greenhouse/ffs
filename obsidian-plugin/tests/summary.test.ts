@@ -178,4 +178,43 @@ describe("SummaryPanelModel", () => {
     await model.refresh();
     expect(states).toEqual([1]);
   });
+
+  it("onChange returns an unsubscribe handle that stops future notifications", async () => {
+    const client = fakeClient({
+      "audit.query": summaryAtom([
+        { priority: 1, kind: "drift", message: "drift-A" },
+      ]),
+      "ingest.list_pending": [],
+    });
+    const model = new SummaryPanelModel(client);
+    const states: number[] = [];
+    const off = model.onChange((s) => states.push(s.items.length));
+    await model.refresh();
+    expect(states).toEqual([1]);
+
+    off();
+    await model.refresh();
+    // The listener was unsubscribed before the second refresh — its
+    // callback must not fire again.
+    expect(states).toEqual([1]);
+  });
+
+  it("event.atom.committed updates lastCommittedAt on every commit", () => {
+    const client = fakeClient({});
+    const model = new SummaryPanelModel(client);
+    expect(model.state.lastCommittedAt).toBeNull();
+
+    // Fire a commit for a non-auditor predicate (which would NOT
+    // trigger a refresh) and verify lastCommittedAt still updates.
+    client.events.emit({
+      jsonrpc: "2.0",
+      method: "event.atom.committed",
+      params: {
+        hash: "zhash",
+        entity: "Sara_Chen",
+        predicate: "contact.person",
+      },
+    });
+    expect(model.state.lastCommittedAt).toBeInstanceOf(Date);
+  });
 });

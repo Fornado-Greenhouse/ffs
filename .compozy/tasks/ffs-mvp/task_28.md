@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Obsidian plugin polish — unsubscribe handles and render-on-demand fallback
 type: refactor
 complexity: low
@@ -32,12 +32,12 @@ The plugin fixes landed in the post-task_22 rehearsal (commit `da09415`) wired u
 </requirements>
 
 ## Subtasks
-- [ ] 28.1 Change `DaemonClient.onStateChange` to return an unsubscribe handle; update `SummaryView` in `main.ts` to call it from `onClose`.
-- [ ] 28.2 Change `SummaryPanelModel.onChange` to return an unsubscribe handle; same call-site update.
-- [ ] 28.3 Implement render-on-demand in `EntitySearchModal.onChooseSuggestion`: try `plugin.renderProjection(path)`, write the file, open it.
-- [ ] 28.4 Replace `console.warn` user-facing failures in the view with `new Notice(...)` calls so users actually see them.
-- [ ] 28.5 Add a "Last commit" line to the panel header sourced from the `event.atom.committed` stream.
-- [ ] 28.6 Truncate long `source_uri` strings in the proposals list to their basename, with the full path on hover via `title=`. Same for entity URIs and peer endpoints. Add CSS `text-overflow: ellipsis` as a defense-in-depth fallback for any field that exceeds the sidebar width.
+- [x] 28.1 Change `DaemonClient.onStateChange` to return an unsubscribe handle; update `SummaryView` in `main.ts` to call it from `onClose`.
+- [x] 28.2 Change `SummaryPanelModel.onChange` to return an unsubscribe handle; same call-site update.
+- [x] 28.3 Implement render-on-demand in `EntitySearchModal.onChooseSuggestion`: try `plugin.renderProjection(path)`, write the file, open it. *(Uses the predicate-aware path resolver `familyForPredicate` to try the right family first, falling back to all three only when the predicate isn't one of the MVP three.)*
+- [x] 28.4 Replace `console.warn` user-facing failures in the view with `new Notice(...)` calls so users actually see them. *(Capability denials and not-founds get distinct Notice messages; other errors carry the underlying error message via `describeError`.)*
+- [x] 28.5 Add a "Last commit" line to the panel header sourced from the `event.atom.committed` stream. *(Added `lastCommittedAt: Date | null` to `PanelState`; the model updates it on every commit, the view reads it from the panel state at render time.)*
+- [x] 28.6 Truncate long `source_uri` strings in the proposals list to their basename, with the full path on hover via `title=`. Same for entity URIs and peer endpoints. Add CSS `text-overflow: ellipsis` as a defense-in-depth fallback for any field that exceeds the sidebar width. *(Helper `uriBasename` does the strip; new `obsidian-plugin/styles.css` carries the `.ffs-truncate` rule plus the rest of the panel styling that previously lived implicitly in the default theme.)*
 
 ## Implementation Details
 Edit only `obsidian-plugin/src/client.ts`, `obsidian-plugin/src/summary.ts`, and `obsidian-plugin/src/main.ts`. The existing tests under `obsidian-plugin/tests/` rely on the current `onChange`/`onStateChange` signatures; update them to assert the unsubscribe-handle behavior (callback is no longer invoked after unsubscribe).

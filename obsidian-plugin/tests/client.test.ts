@@ -228,4 +228,20 @@ describe("DaemonClient", () => {
     sockets[0].fireClose();
     expect(states).toContain("disconnected");
   });
+
+  it("onStateChange returns an unsubscribe handle that stops future notifications", () => {
+    const client = new DaemonClient({ socketPath: "/tmp/x.sock", netModule: net });
+    const states: ConnectionState[] = [];
+    const off = client.onStateChange((s) => states.push(s));
+    client.start();
+    sockets[0].fireConnect();
+    expect(states).toEqual(["connecting", "connected"]);
+
+    off();
+    sockets[0].fireError(new Error("eof"));
+    sockets[0].fireClose();
+    // After unsubscribe the listener must not observe the
+    // disconnected transition that follows.
+    expect(states).toEqual(["connecting", "connected"]);
+  });
 });
