@@ -369,59 +369,65 @@ Risks: **MCP capability-check correctness**.
 
 ---
 
-## Keychain bootstrap failures
+## Keychain access from launchd / systemd daemons
 
 ### Symptom
 
-Daemon stderr shows a `keyring: ...` error in the `ffs-daemon
-starting` log line, or `ffs identity show` returns `could not
-read owner key from OS keychain: ...`. Typical messages:
-
-- `Platform secure storage failure: User cancelled the operation`
-- `Platform secure storage failure: keyring service not available`
-- `keyring entry not found` (only on first boot; expected, the
-  daemon generates one)
+On macOS: each daemon boot produces a different
+`owner=z…` line in the log, even when keychain entries
+appear to be persisting. `ffs identity show` (from a Terminal)
+returns yet a third pubkey. `atoms.db` fails to open with
+`sqlite error: file is not a database` because the DEK
+changed.
 
 ### What's happening
 
-The cross-platform `keyring` crate talks to:
+macOS Keychain Services partitions every entry by:
 
-- **macOS Keychain Services** (login keychain).
-- **Linux Secret Service API** (GNOME Keyring or KWallet via
-  D-Bus; needs a running session daemon).
-- **Windows Credential Manager**.
+- The **code-signing identity** of the binary that called
+  `SecItemAdd`.
+- The **launch context** (interactive Terminal vs. launchd
+  `gui/<uid>` vs. launchd `system`).
 
-A "User cancelled" error means the user clicked **Deny** on the
-macOS Keychain prompt the first time the daemon tried to write or
-read its entry. A "keyring service not available" error means
-the session has no keychain daemon running — common in headless
-SSH sessions, Docker containers, or systemd user services that
-fire before the session keychain.
+An unsigned binary running under launchd gets a different
+partition than the same binary invoked from Terminal. Reads
+fail with `NoEntry`; the daemon generates a fresh key and
+"persists" it, but the write goes into yet another partition.
 
-### Fix
+The same pattern can affect Linux systemd user services
+that start before the session's Secret Service daemon is
+unlocked, though the failure mode is louder there (the
+keyring call returns a hard error rather than a fresh
+empty context).
 
-1. **macOS first-prompt was denied:** open Keychain Access,
-   delete any `ffs-owner-key` or `ffs-dek` entries, then restart
-   the daemon. When the next prompt appears, click **Always
-   allow** so the daemon can read the entry on every restart
-   without re-prompting.
-2. **Headless / no session keychain:** set
-   `FFS_KEYRING_DISABLE=1` in the service unit environment and
-   provide `FFS_OWNER_KEY_HEX` + `FFS_SQLCIPHER_KEY_HEX` as
-   64-hex-char env vars instead. The daemon's startup log line
-   shows `owner_source=env_var dek_source=env_var` when this is
-   the active path.
-3. **Migrating from env-var to keychain:** unset
-   `FFS_KEYRING_DISABLE` (if previously set), leave the env vars
-   in place for one boot, and let the daemon write them into the
-   keychain. The log records the migration:
+### Fix (current MVP, pre-task_33)
+
+**On macOS, set `FFS_KEYRING_DISABLE=1` in the service
+environment and use the env-var key path (`FFS_OWNER_KEY_HEX`
++ `FFS_SQLCIPHER_KEY_HEX`).** The daemon will read them
+deterministically across boots. Stash a fallback copy in
+`~/.ffs/secrets/{owner_key_hex,sqlcipher_key_hex}` with
+0600 perms.
+
+This is the canonical MVP path until task_33 lands code-
+signed FFS binaries with the `keychain-access-groups`
+entitlement that fixes the launchd partition issue.
+
+### Fix (post-task_33, when shipping)
+
+Once the FFS binaries are code-signed and carry the
+`com.ffs.shared` keychain-access-group entitlement:
+
+1. Unset `FFS_KEYRING_DISABLE` in the service environment.
+2. Confirm signing with:
+   ```sh
+   codesign -d --entitlements -:- ~/.local/bin/ffs-daemon
+   # should print: <key>keychain-access-groups</key>
+   #                <array><string>3S9R9K2L38.com.ffs.shared</string></array>
    ```
-   INFO ffs-daemon: FFS_OWNER_KEY_HEX migrated to OS keychain;
-        you can drop the env var on next boot
-   ```
-   On the next boot, remove the env vars from the service unit.
-4. **Verify the result:** `ffs identity show` should print
-   `source: keychain` and a stable pubkey across restarts.
+3. Restart the daemon. The next `ffs identity show` will
+   print `source: keychain` and the pubkey will stay stable
+   across reboots.
 
 ---
 

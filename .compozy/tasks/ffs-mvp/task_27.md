@@ -1,12 +1,28 @@
 ---
-status: completed
+status: pending
 title: OS keychain integration for owner signing key and SQLCipher DEK
 type: infra
 complexity: low
 dependencies:
   - task_22
   - task_24
+  - task_33
 ---
+
+> **Reopened 2026-06-06.** The code helpers (`encode_key`,
+> `decode_key`, `owner_key_from_keyring`, the daemon precedence
+> chain, the `ffs identity show` subcommand) all landed in commit
+> `1fb64bf` and pass their unit/integration tests. The first live
+> deploy proved the success criterion ("daemon comes back with the
+> same identity after restart") is NOT met under macOS launchd:
+> each daemon boot got a different keychain partition than the
+> interactive CLI, so cross-process reads returned `NoEntry`, each
+> process generated a fresh key, and the DEK mismatch broke
+> `atoms.db`. The keychain wiring code is correct; the deployment
+> story isn't. Task_33 lands the code-signing + entitlement
+> infrastructure that makes the keychain path actually work, and
+> this task gets re-marked completed once the live re-validation
+> from task_33 succeeds.
 
 # Task 27: OS keychain integration for owner signing key and SQLCipher DEK
 
@@ -35,6 +51,7 @@ The daemon today reads its signing key from `FFS_OWNER_KEY_HEX` and (after task_
 - [x] 27.2 Update the daemon binary's `load_or_generate_owner_key` and `load_or_generate_dek` to prefer **env var → keychain → generate-and-warn**. *(Inverted from spec's "keychain → env var" so the env-var path can also migrate values INTO the keychain on the first boot, making the task_22→task_27 migration a one-boot operation. Each helper now returns `(key, KeySource)` so the startup log reports which source was used.)*
 - [x] 27.3 Add the `FFS_KEYRING_DISABLE` short-circuit env var.
 - [x] 27.4 Add `ffs identity show` to the CLI surface so users can confirm their identity is stable across restarts. Reads the keychain directly — works without a running daemon.
+- [ ] 27.5 *(Blocked on task_33.)* Live-validate the keychain path under macOS launchd. Re-mark this task completed when the validation succeeds.
 
 ## Implementation Details
 The `keyring` crate's `Entry::new(service, account).get_password()` returns the stored base64 string; `set_password` writes it. The existing `dek_from_keyring` is the pattern. Service names: `"ffs-owner-key"` for the signing-key seed, `"ffs-dek"` for the SQLCipher DEK. Account names: per-substrate (e.g., the substrate's identity public-key multibase for `ffs-dek`, the OS username for `ffs-owner-key` since it predates the identity).

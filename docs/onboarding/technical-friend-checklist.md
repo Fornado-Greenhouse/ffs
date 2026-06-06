@@ -114,65 +114,60 @@ Then in Obsidian: **Open folder as vault** → `~/.ffs/`. The old
 external vault can be retired (or left as an empty Obsidian
 workspace the user ignores).
 
-## Step 2 — Identity setup (2 min)
+## Step 2 — Identity setup (5–10 min)
 
 The substrate is encrypted at rest. The **DEK** (database
 encryption key) protects the SQLite atom store; the **owner
-signing key** stamps every atom they author. Both live in the OS
-keychain so the user never types or sees them after this step.
+signing key** stamps every atom they author. Both should live
+durably across daemon restarts so the substrate's identity is
+stable.
 
-**Per task_27, the daemon handles this automatically.** On first
-boot it:
+### Path A: env-var-pinned (current MVP default)
 
-- Generates a fresh 32-byte signing-key seed via `OsRng`, persists
-  it to the OS keychain under `(service=ffs-owner-key,
-  account=$USER)`, and uses the result for its Ed25519 identity.
-- Generates a fresh 32-byte SQLCipher DEK, persists it under
-  `(service=ffs-dek, account=<owner-pubkey-multibase>)`, and uses
-  it to open `atoms.db`.
-
-On subsequent boots it reads both from the keychain — same
-identity, same DEK, no warning.
-
-The macOS Keychain will prompt the user once per service the first
-time the daemon writes (with "Always allow / Allow / Deny" buttons);
-they should click **Always allow**. On Linux a one-time
-unlock prompt may appear if the GNOME Keyring or KWallet daemon
-isn't already unlocked.
-
-Confirm the identity is stable by running:
+Generate 32 random bytes for each key, hex-encode, and pin them
+in the service unit's environment. Stash a fallback copy under
+`~/.ffs/secrets/` with mode 0600.
 
 ```sh
-ffs identity show
-# owner pubkey: z5NCpjdiH4A3TTAkZrEQdaaBrneejBHcqxNqQoAk3U6AL
-# source:       keychain
-# keychain:     ffs-owner-key / <username>
+KEY_HEX=$(head -c 32 /dev/urandom | xxd -p -c 64)
+DEK_HEX=$(head -c 32 /dev/urandom | xxd -p -c 64)
+
+mkdir -p ~/.ffs/secrets && chmod 700 ~/.ffs/secrets
+printf '%s\n' "$KEY_HEX" > ~/.ffs/secrets/owner_key_hex
+printf '%s\n' "$DEK_HEX" > ~/.ffs/secrets/sqlcipher_key_hex
+chmod 600 ~/.ffs/secrets/*
 ```
 
-The pubkey should be the same after every restart.
+Then edit `~/Library/LaunchAgents/com.ffs.daemon.plist` (macOS)
+or `~/.config/systemd/user/ffs-daemon.service` (Linux) to
+inject the two values via `FFS_OWNER_KEY_HEX` and
+`FFS_SQLCIPHER_KEY_HEX` in the `EnvironmentVariables` block.
+Also set `FFS_KEYRING_DISABLE=1` until task_33 lands, so the
+daemon doesn't attempt the (currently broken under launchd)
+keychain path.
 
-### Bypassing the keychain (CI, containers)
-
-When running headless (no session keychain, e.g., in CI or
-inside a Docker image) set `FFS_KEYRING_DISABLE=1` in the
-service environment. The daemon then falls back to
-`FFS_OWNER_KEY_HEX` and `FFS_SQLCIPHER_KEY_HEX` env vars (see
-[`troubleshooting.md`](troubleshooting.md) for the format).
-
-### Migrating from an env-var setup
-
-If the user is upgrading from a pre-task_27 install where keys
-were pinned via env vars in the launchd plist or systemd unit,
-the next daemon boot does the migration automatically: it reads
-the env var, uses it, and ALSO writes the value to the keychain.
-On the boot after that, the user can drop the env var and the
-daemon will read from the keychain instead. The daemon log
-records the migration:
-
+After reload, `ffs identity show` will print:
 ```
-INFO ffs-daemon: FFS_OWNER_KEY_HEX migrated to OS keychain;
-you can drop the env var on next boot
+owner pubkey: z…
+source:       env_var
 ```
+
+### Path B: OS-keychain-pinned
+
+> **Status (task_27 + task_33):** the keychain helpers in
+> `ffs-core` and the `ffs identity show` subcommand are
+> implemented. They work correctly from interactive CLI
+> contexts. They do NOT work yet from a launchd-spawned daemon
+> on macOS — Keychain Services partitions entries by binary
+> code-signing identity, and the FFS binaries aren't signed
+> with a matching `keychain-access-groups` entitlement yet.
+> Use Path A above until task_33 lands the codesigning
+> infrastructure. The troubleshooting guide has the long-form
+> explanation.
+
+When task_33 ships, this section will become: "on first boot
+the daemon generates and stores both keys in the OS keychain;
+verify with `ffs identity show`."
 
 ## Step 3 — First run (5 min)
 
