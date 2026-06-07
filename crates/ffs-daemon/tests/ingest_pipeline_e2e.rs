@@ -130,6 +130,9 @@ async fn drop_markdown_in_ingest_produces_a_proposal_via_real_scribe() {
             "FFS_SQLCIPHER_KEY_HEX",
             "abadcafeabadcafeabadcafeabadcafeabadcafeabadcafeabadcafeabadcafe",
         )
+        // Opt out of the task_31 stability window so this test's
+        // assertions don't have to wait the default 60s.
+        .env("FFS_INGEST_STABILITY_MS", "0")
         .env("FFS_LOG", "warn")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -257,6 +260,7 @@ async fn unstructured_body_text_produces_contact_person_proposal() {
             "decafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecafbad",
         )
         .env("FFS_KEYRING_DISABLE", "1")
+        .env("FFS_INGEST_STABILITY_MS", "0")
         .env("FFS_LOG", "warn")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -332,6 +336,117 @@ async fn unstructured_body_text_produces_contact_person_proposal() {
         .and_then(|c| c.get("phone"))
         .and_then(|v| v.as_str());
     assert_eq!(phone, Some("919-428-4074"));
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("kill");
+    let status = child.wait().expect("wait");
+    assert!(status.success(), "daemon exited non-zero: {status:?}");
+}
+
+/// task_31: with a real (non-zero) stability window, the daemon
+/// holds a newly-discovered file until its content has been stable
+/// for the configured delay. We write an initial draft, modify it
+/// once shortly after, and confirm the FINAL content — not the
+/// initial draft — is what scribe extracted into the quarantine.
+#[tokio::test]
+async fn stability_window_waits_for_content_to_settle() {
+    if !python_available() {
+        eprintln!("skipping: python3 not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+    let mut child = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env(
+            "FFS_OWNER_KEY_HEX",
+            "0808080808080808080808080808080808080808080808080808080808080808",
+        )
+        .env(
+            "FFS_SQLCIPHER_KEY_HEX",
+            "f00dbabef00dbabef00dbabef00dbabef00dbabef00dbabef00dbabef00dbabe",
+        )
+        .env("FFS_KEYRING_DISABLE", "1")
+        // 1000 ms stability window — long enough that a mid-window
+        // modification resets the timer in a way we can observe,
+        // short enough that the test stays fast.
+        .env("FFS_INGEST_STABILITY_MS", "1000")
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon");
+
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(
+        wait_for(&socket, Duration::from_secs(5)).await,
+        "daemon never bound the socket"
+    );
+
+    let ingest_dir = data_dir.join("ingest");
+    let dropped = ingest_dir.join("evolving.md");
+
+    // Initial draft. Note distinguishing display_name so we can
+    // tell which version made it through.
+    let initial = "---\nname: Alpha Initial\nemail: alpha@example.com\n---\n\n## Notes\n- v1\n";
+    let final_content = "---\nname: Omega Final\nemail: omega@example.com\n---\n\n## Notes\n- v2\n";
+    std::fs::write(&dropped, initial).unwrap();
+    // Modify well inside the stability window so the timer resets.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    std::fs::write(&dropped, final_content).unwrap();
+
+    // Poll up to 6 s — covers poll interval (500 ms) + stability
+    // window (1000 ms) + scribe extraction + slop for slow CI.
+    let start = Instant::now();
+    let mut display_name: Option<String> = None;
+    let mut last_resp: serde_json::Value = serde_json::Value::Null;
+    while start.elapsed() < Duration::from_secs(6) {
+        last_resp = rpc(&socket, "ingest.list_pending", serde_json::json!({})).await;
+        let submissions = last_resp
+            .get("result")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if let Some(sub) = submissions.first() {
+            let status_str = sub.get("status").and_then(|s| s.as_str()).unwrap_or("");
+            if status_str.eq_ignore_ascii_case("extracted") {
+                let proposals = sub
+                    .get("proposals")
+                    .and_then(|p| p.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(contact) = proposals
+                    .iter()
+                    .find(|p| p.get("predicate").and_then(|v| v.as_str()) == Some("contact.person"))
+                {
+                    display_name = contact
+                        .get("claim")
+                        .and_then(|c| c.get("display_name"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    break;
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    assert_eq!(
+        display_name.as_deref(),
+        Some("Omega Final"),
+        "expected the final content's display_name to land; last response: {last_resp}"
+    );
+    assert!(
+        !dropped.exists(),
+        "source should have been moved to .processed/ after the window elapsed"
+    );
 
     Command::new("kill")
         .arg("-TERM")

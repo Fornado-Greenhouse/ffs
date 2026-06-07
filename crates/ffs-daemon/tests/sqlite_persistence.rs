@@ -395,6 +395,9 @@ async fn quarantine_submission_survives_daemon_restart() {
         .env("FFS_OWNER_KEY_HEX", OWNER_KEY_HEX)
         .env("FFS_SQLCIPHER_KEY_HEX", DEK_HEX)
         .env("FFS_KEYRING_DISABLE", "1")
+        // task_31: opt out of the ingest stability window so the
+        // dropped file is submitted near-immediately.
+        .env("FFS_INGEST_STABILITY_MS", "0")
         .env("FFS_LOG", "warn")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -445,6 +448,7 @@ async fn quarantine_submission_survives_daemon_restart() {
         .env("FFS_OWNER_KEY_HEX", OWNER_KEY_HEX)
         .env("FFS_SQLCIPHER_KEY_HEX", DEK_HEX)
         .env("FFS_KEYRING_DISABLE", "1")
+        .env("FFS_INGEST_STABILITY_MS", "0")
         .env("FFS_LOG", "warn")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

@@ -38,6 +38,12 @@
 //!   entirely. Useful in CI and inside containers without a session
 //!   keychain. When set, the daemon falls back to the env-var path
 //!   for both `FFS_OWNER_KEY_HEX` and `FFS_SQLCIPHER_KEY_HEX`.
+//! - `FFS_INGEST_STABILITY_MS` — how long a newly-discovered `.md`
+//!   file under `$FFS_DATA_DIR/ingest/` must sit with unchanged
+//!   content before the watcher submits it (default 60_000 ms).
+//!   `0` disables the window — useful in tests that don't want
+//!   to wait, and for the "drop a finished note" flow where the
+//!   user already wrote the file in another tool.
 //! - `FFS_LOG` — `tracing-subscriber` env filter (default `info`).
 //!
 //! Key precedence (per task_27): env-var → OS keychain →
@@ -49,6 +55,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ed25519_dalek::SigningKey;
 use ffs_core::PublicKey;
@@ -63,7 +70,7 @@ use ffs_core::store::{AtomStore, SqliteAtomStore, StoreError};
 use ffs_core::working_set::InMemoryWorkingSet;
 use ffs_skills_host::{RefuseAllProxy, SkillsHost};
 
-use ffs_daemon::ingest_watcher::DEFAULT_POLL_INTERVAL;
+use ffs_daemon::ingest_watcher::{DEFAULT_POLL_INTERVAL, DEFAULT_STABILITY_WINDOW};
 use ffs_daemon::{
     Dispatcher, EventPublisher, IngestWatcher, IngestWatcherConfig, SkillsHostScribeExtractor,
     WorkingSetMaterializer, transport,
@@ -303,6 +310,19 @@ async fn run() -> Result<(), StartupError> {
     // files to the quarantine, spawn scribe extraction, move
     // processed files into .processed/. Held in scope so its
     // PollWatcher lives until the daemon exits.
+    //
+    // `FFS_INGEST_STABILITY_MS` controls the per-file stability
+    // window — how long a newly-discovered file must sit with
+    // unchanged content before the watcher submits it. Default
+    // 60_000 ms gives the user space to compose a note in
+    // Obsidian's new-note flow without the daemon snatching a
+    // half-written file. `0` disables the window (used by the
+    // e2e tests for determinism).
+    let stability_window = std::env::var("FFS_INGEST_STABILITY_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(DEFAULT_STABILITY_WINDOW);
     let _ingest_watcher = IngestWatcher::start(IngestWatcherConfig {
         ingest_dir: data_dir.join("ingest"),
         quarantine: quarantine.clone(),
@@ -310,10 +330,12 @@ async fn run() -> Result<(), StartupError> {
         publisher: publisher.clone(),
         cancel: cancel.clone(),
         poll_interval: DEFAULT_POLL_INTERVAL,
+        stability_window,
     })
     .map_err(std::io::Error::other)?;
     tracing::info!(
         ingest_dir = %data_dir.join("ingest").display(),
+        stability_window_ms = stability_window.as_millis() as u64,
         "ingest watcher started"
     );
 

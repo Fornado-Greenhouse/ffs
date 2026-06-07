@@ -174,10 +174,7 @@ struct SubmissionRow {
     accepted_hashes_json: String,
 }
 
-fn row_to_submission(
-    conn: &Connection,
-    row: SubmissionRow,
-) -> Result<Submission, QuarantineError> {
+fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission, QuarantineError> {
     let SubmissionRow {
         id,
         source_uri,

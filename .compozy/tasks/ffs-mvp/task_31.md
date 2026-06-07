@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Ingest stability window — let users write a note over time before scribe consumes it
 type: backend
 complexity: low
@@ -30,11 +30,14 @@ The ingest watcher (task_26) consumes a new `.md` file the moment it appears und
 </requirements>
 
 ## Subtasks
-- [ ] 31.1 Add a content-hash + last-seen-time tracking map to the `IngestWatcher`; a file enters the map at discovery and is submitted only after the stability delay elapses with no content change.
-- [ ] 31.2 Honor `FFS_INGEST_STABILITY_MS` (default 60000, 0 disables).
-- [ ] 31.3 Handle delete-before-stable cleanly (drop the pending entry without erroring).
-- [ ] 31.4 Update `tests/ingest_pipeline_e2e.rs` to set `FFS_INGEST_STABILITY_MS=0` so its assertions don't have to wait 60s.
-- [ ] 31.5 Add unit tests covering the new state machine (entered-but-not-yet-stable, stabilized-and-submitted, modified-before-stable-resets-timer, deleted-before-stable-cancels).
+- [x] 31.1 Add a content-hash + last-seen-time tracking map to the `IngestWatcher`; a file enters the map at discovery and is submitted only after the stability delay elapses with no content change. *(`PendingFile { hash, first_seen }` stored in a per-`event_loop` `HashMap<PathBuf, PendingFile>`; a periodic 1 s `tokio::time::interval` drives `check_stable`, which re-reads each candidate file and resets the timer if the on-disk hash has drifted since the last FS event.)*
+- [x] 31.2 Honor `FFS_INGEST_STABILITY_MS` (default 60000, 0 disables). *(Wired in `main.rs`; documented in the daemon's env-var docblock.)*
+- [x] 31.3 Handle delete-before-stable cleanly (drop the pending entry without erroring). *(Two paths: `EventKind::Remove` events drop the entry immediately; `check_stable` also drops entries whose file vanished between the last event and the next check tick.)*
+- [x] 31.4 Update `tests/ingest_pipeline_e2e.rs` to set `FFS_INGEST_STABILITY_MS=0` so its assertions don't have to wait 60s. *(Both e2e tests in that file plus the `quarantine_submission_survives_daemon_restart` test in `tests/sqlite_persistence.rs` opted out.)*
+- [x] 31.5 Add unit tests covering the new state machine (entered-but-not-yet-stable, stabilized-and-submitted, modified-before-stable-resets-timer, deleted-before-stable-cancels). *(7 new `#[test]` / `#[tokio::test]` covering insert / hash-changed reset / hash-same idempotent / within-window skip / past-window submit / changed-since-event reset / delete-clears.)*
+
+## Follow-ups
+- The SHOULD requirement to surface stabilizing-but-not-yet-submitted files in `ingest.list_pending` is intentionally deferred. It would require a new RPC field and Obsidian UI work — outside the test list and beyond the gating success criteria. Scope to a future plugin-UX task when the panel is ready to show it.
 
 ## Implementation Details
 Add a `PendingFile { hash: Multihash, first_seen: Instant }` map to `IngestWatcher`'s event loop. On each `Create`/`Modify` event for an eligible path:
