@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Scribe heuristics — recognize unstructured contacts and produce friendlier entity IDs
 type: backend
 complexity: medium
@@ -35,11 +35,11 @@ The first-use rehearsal showed the scribe defaulting to `note` for content that 
 </requirements>
 
 ## Subtasks
-- [ ] 32.1 Add heuristic functions to `skills/scribe/extraction.py` for phone/email/name/venue patterns; gate the `contact.person` proposal on a signal-count threshold.
-- [ ] 32.2 Improve note-fallback so the proposal carries a meaningful `title` derived from the body (first line slug, capped at ~6 words).
-- [ ] 32.3 Update `crates/ffs-daemon/src/dispatch.rs::ingest_accept` to derive a human-readable entity ID from the proposal's claim using a shared `slugify` helper.
-- [ ] 32.4 Add unit tests covering: unstructured contact (phone + name) → contact.person; ambiguous body → note with first-line title; truly empty body → fallback to `note-YYYY-MM-DD-HHMM`; multiple contacts in one ingest file → multiple proposals.
-- [ ] 32.5 Extend the e2e ingest test with an unstructured-contact fixture proving the contact.person path lands.
+- [x] 32.1 Add heuristic functions to `skills/scribe/extraction.py` for phone/email/name/venue patterns; gate the `contact.person` proposal on a signal-count threshold. *(Approach: venue spans are detected first and masked from the text before the capitalized-name detector runs, so "Met at Ballantyne Country Club" doesn't get misclassified as a person named "Ballantyne Country". The stop list is intentionally narrow — grammar function words + a small set of past-tense interaction verbs ("Met", "Saw", "Spoke", etc.) — NOT month names, day names, or venue words, which would falsely reject real people like "April Johnson".)*
+- [x] 32.2 Improve note-fallback so the proposal carries a meaningful `title` derived from the body (first line slug, capped at ~6 words). *(Markdown-list-prefix stripper now requires the prefix to be followed by whitespace, so unstructured content like "919-428-4074" doesn't get its leading digits eaten.)*
+- [x] 32.3 Update `crates/ffs-daemon/src/dispatch.rs::ingest_accept` to derive a human-readable entity ID from the proposal's claim using a shared `slugify` helper. *(Pure helper `slug_for_proposal` + `slugify` + `format_tx_time_slug` implemented in `dispatch.rs` with 10 unit tests covering every branch.)*
+- [x] 32.4 Add unit tests covering: unstructured contact (phone + name) → contact.person; ambiguous body → note with first-line title; truly empty body → fallback to `note-YYYY-MM-DD-HHMM`; multiple contacts in one ingest file → multiple proposals. *(12 new Python tests + 10 new Rust tests.)*
+- [x] 32.5 Extend the e2e ingest test with an unstructured-contact fixture proving the contact.person path lands. *(`unstructured_body_text_produces_contact_person_proposal` exercises the full pipeline with the rehearsal's "Met Sara Chen … Phone 919-428-4074" fixture.)*
 
 ## Implementation Details
 The scribe's existing `extract_contact_person` (in `skills/scribe/extraction.py`) reads only frontmatter. Add a sibling `extract_contact_person_unstructured` that walks the body for signals. The threshold function counts signals and returns the proposal when the count is high enough.

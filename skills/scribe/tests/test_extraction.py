@@ -215,3 +215,143 @@ def test_parse_markdown_tolerates_unicode_and_blank_lines():
     notes = [s for s in sections if s[0] == "Notes"][0]
     assert "- café" in notes[1]
     assert warnings == []
+
+
+# ---------------------------------------------------------------------
+# task_32 — unstructured contact heuristics + improved note title
+# ---------------------------------------------------------------------
+
+
+def test_unstructured_contact_fires_when_name_and_phone_co_occur(monkeypatch):
+    """Name + phone (2 signals) → contact.person, no frontmatter required."""
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "Met Sara Chen at the conference. Phone 919-428-4074."
+    result = extraction.handle({"source_uri": "file:///c.md", "content": md})
+    contact = next(
+        (p for p in result["proposals"] if p["predicate"] == "contact.person"),
+        None,
+    )
+    assert contact is not None, f"expected a contact.person; got {result['proposals']}"
+    assert contact["claim"]["display_name"] == "Sara Chen"
+    assert contact["claim"]["phone"] == "919-428-4074"
+    assert "phone number" in contact["rationale"]
+
+
+def test_unstructured_contact_fires_when_name_and_email_co_occur(monkeypatch):
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "Quick note: Sara Chen is sara@example.com — really sharp engineer."
+    result = extraction.handle({"source_uri": "file:///c.md", "content": md})
+    contact = next(
+        (p for p in result["proposals"] if p["predicate"] == "contact.person"),
+        None,
+    )
+    assert contact is not None
+    assert contact["claim"]["display_name"] == "Sara Chen"
+    assert contact["claim"]["email"] == "sara@example.com"
+
+
+def test_venue_span_is_masked_from_name_detection(monkeypatch):
+    """The rehearsal fixture: "Met at Ballantyne Country Club" must NOT
+    produce a contact.person with display_name="Ballantyne Country".
+    Venue detection runs first and masks its span before the name
+    detector scans.
+    """
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "919-428-4074, January 18, Met at Ballantyne Country Club"
+    result = extraction.handle({"source_uri": "file:///r.md", "content": md})
+    # No contact.person should have been emitted — the only
+    # capitalized phrase is the masked venue.
+    contacts = [p for p in result["proposals"] if p["predicate"] == "contact.person"]
+    assert not contacts, f"venue should have been masked, got contacts: {contacts}"
+    # A note proposal lands with a body-derived title (NOT "untitled").
+    note = next(p for p in result["proposals"] if p["predicate"] == "note")
+    title = note["claim"]["title"]
+    assert title != "untitled"
+    assert "428-4074" in title or "Ballantyne" in title or "January" in title
+
+
+def test_name_starting_with_month_word_is_accepted(monkeypatch):
+    """Someone named April Johnson is a real person, not a stopword.
+    A pre-task_32 implementation that stop-listed month names would
+    silently misclassify them. Guard against that regression.
+    """
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "April Johnson — 919-428-4074. Met at the conference."
+    result = extraction.handle({"source_uri": "file:///c.md", "content": md})
+    contact = next(p for p in result["proposals"] if p["predicate"] == "contact.person")
+    assert contact["claim"]["display_name"] == "April Johnson"
+
+
+def test_unstructured_single_signal_falls_back_to_note(monkeypatch):
+    """One signal (phone alone) doesn't meet the 2-signal threshold;
+    a note proposal lands instead with a body-derived title.
+    """
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "919-428-4074"
+    result = extraction.handle({"source_uri": "file:///p.md", "content": md})
+    contacts = [p for p in result["proposals"] if p["predicate"] == "contact.person"]
+    assert not contacts
+    note = next(p for p in result["proposals"] if p["predicate"] == "note")
+    assert "428-4074" in note["claim"]["title"]
+
+
+def test_note_title_derived_from_first_body_line(monkeypatch):
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "Random thought about the federation protocol\nMore context below.\n"
+    result = extraction.handle({"source_uri": "file:///n.md", "content": md})
+    note = next(p for p in result["proposals"] if p["predicate"] == "note")
+    title = note["claim"]["title"]
+    assert title.startswith("Random thought")
+    # First-line slug is capped at 6 words.
+    assert len(title.split()) <= 6
+
+
+def test_note_title_strips_markdown_list_prefix(monkeypatch):
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "- A bullet-style first line that should become the title\n"
+    result = extraction.handle({"source_uri": "file:///n.md", "content": md})
+    note = next(p for p in result["proposals"] if p["predicate"] == "note")
+    title = note["claim"]["title"]
+    assert not title.startswith("-")
+    assert title.startswith("A bullet")
+
+
+def test_empty_body_falls_back_to_untitled(monkeypatch):
+    """When the body really is empty/whitespace, the literal
+    "untitled" remains — the Rust dispatcher then derives a slug
+    from tx_time so the entity ID is still navigable.
+    """
+    _install_fake_query(monkeypatch, SCHEMAS)
+    md = "\n\n   \n"
+    result = extraction.handle({"source_uri": "file:///e.md", "content": md})
+    note = next(p for p in result["proposals"] if p["predicate"] == "note")
+    assert note["claim"]["title"] == "untitled"
+
+
+# ---------------------------------------------------------------------
+# Heuristic helpers — unit-level coverage of the underlying detectors
+# ---------------------------------------------------------------------
+
+
+def test_detect_phone_numbers_handles_three_common_shapes():
+    assert "919-428-4074" in extraction.detect_phone_numbers("call 919-428-4074")
+    assert any("428-4074" in p for p in extraction.detect_phone_numbers("call (919) 428-4074 then"))
+    assert any("428-4074" in p for p in extraction.detect_phone_numbers("call +1-919-428-4074 anytime"))
+
+
+def test_detect_emails_picks_up_address():
+    assert extraction.detect_emails("write to sara@example.com today") == ["sara@example.com"]
+
+
+def test_detect_venue_mentions_returns_spans_for_masking():
+    venues = extraction.detect_venue_mentions("We met at Foley Greenhouse last week.")
+    assert venues
+    venue_text, start, end = venues[0]
+    assert "Foley Greenhouse" in venue_text
+    assert end > start
+
+
+def test_extract_capitalized_name_rejects_function_word_pairs():
+    # "The Project" shouldn't qualify; "Sara Chen" should.
+    assert extraction.extract_capitalized_name("The Project") is None
+    assert extraction.extract_capitalized_name("Sara Chen") == "Sara Chen"

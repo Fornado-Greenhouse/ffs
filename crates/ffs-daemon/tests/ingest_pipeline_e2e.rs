@@ -229,3 +229,115 @@ async fn drop_markdown_in_ingest_produces_a_proposal_via_real_scribe() {
         );
     }
 }
+
+/// task_32: unstructured body text ("Met Sara Chen at the
+/// conference. Phone 919-428-4074.") should produce a
+/// `contact.person` proposal with display_name "Sara Chen",
+/// not a `note` with title "untitled" and entity ID
+/// `from-sub-<id>` (the pre-task_32 behavior).
+#[tokio::test]
+async fn unstructured_body_text_produces_contact_person_proposal() {
+    if !python_available() {
+        eprintln!("skipping: python3 not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+    let mut child = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env(
+            "FFS_OWNER_KEY_HEX",
+            "0707070707070707070707070707070707070707070707070707070707070707",
+        )
+        .env(
+            "FFS_SQLCIPHER_KEY_HEX",
+            "decafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecafbad",
+        )
+        .env("FFS_KEYRING_DISABLE", "1")
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon");
+
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(
+        wait_for(&socket, Duration::from_secs(5)).await,
+        "daemon never bound the socket"
+    );
+
+    let ingest_dir = data_dir.join("ingest");
+    // Unstructured: NO frontmatter, body has the contact signals
+    // (capitalized name + phone). Pre-task_32 this got classified
+    // as a note with title "untitled".
+    let note = "Met Sara Chen at the conference. Phone 919-428-4074.";
+    let dropped = ingest_dir.join("sara-rehearsal.md");
+    std::fs::write(&dropped, note).unwrap();
+
+    let start = Instant::now();
+    let mut last_resp: serde_json::Value = serde_json::Value::Null;
+    let mut submissions = Vec::new();
+    while start.elapsed() < Duration::from_secs(10) {
+        last_resp = rpc(&socket, "ingest.list_pending", serde_json::json!({})).await;
+        submissions = last_resp
+            .get("result")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if !submissions.is_empty()
+            && submissions[0]
+                .get("status")
+                .and_then(|s| s.as_str())
+                .map(|s| s.eq_ignore_ascii_case("extracted"))
+                .unwrap_or(false)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    assert!(
+        !submissions.is_empty(),
+        "ingest.list_pending should surface the submission; last response: {last_resp}"
+    );
+    let sub = &submissions[0];
+    let proposals = sub
+        .get("proposals")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Find the contact.person proposal (there may also be a
+    // fallback note proposal — that's fine, but a contact.person
+    // MUST exist).
+    let contact = proposals
+        .iter()
+        .find(|p| p.get("predicate").and_then(|v| v.as_str()) == Some("contact.person"));
+    assert!(
+        contact.is_some(),
+        "expected a contact.person proposal from unstructured body; got: {proposals:?}"
+    );
+    let contact = contact.unwrap();
+    let display_name = contact
+        .get("claim")
+        .and_then(|c| c.get("display_name"))
+        .and_then(|v| v.as_str());
+    assert_eq!(display_name, Some("Sara Chen"));
+    let phone = contact
+        .get("claim")
+        .and_then(|c| c.get("phone"))
+        .and_then(|v| v.as_str());
+    assert_eq!(phone, Some("919-428-4074"));
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("kill");
+    let status = child.wait().expect("wait");
+    assert!(status.success(), "daemon exited non-zero: {status:?}");
+}

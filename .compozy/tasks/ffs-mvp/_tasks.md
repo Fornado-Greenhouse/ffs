@@ -35,5 +35,5 @@
 | 29 | SQLite-backed quarantine: persist pending submissions across daemon restarts | pending | medium | task_24, task_26 |
 | 30 | Substrate-is-vault: $FFS_DATA_DIR is the Obsidian vault root | completed | low | task_22, task_25 |
 | 31 | Ingest stability window: let users write a note over time before scribe consumes it | pending | low | task_26 |
-| 32 | Scribe heuristics: recognize unstructured contacts and produce friendlier entity IDs | pending | medium | task_11, task_26 |
+| 32 | Scribe heuristics: recognize unstructured contacts and produce friendlier entity IDs | completed | medium | task_11, task_26 |
 | 33 | macOS code signing + keychain-access-groups so task_27 works under launchd | pending | high | task_01, task_22, task_27 |

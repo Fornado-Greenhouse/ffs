@@ -389,12 +389,7 @@ impl Dispatcher {
         for proposal in &sub.proposals {
             let tmpl = AtomTemplate {
                 v: 1,
-                entity: proposal
-                    .claim
-                    .get("display_name")
-                    .and_then(|v| v.as_str())
-                    .map(|s| EntityId::new(s.replace(' ', "_")))
-                    .unwrap_or_else(|| EntityId::new(format!("from-{}", &sub.id))),
+                entity: slug_for_proposal(proposal, &sub.id, &now),
                 predicate: proposal.predicate.clone(),
                 claim: proposal.claim.clone(),
                 valid_from: now.clone(),
@@ -1153,4 +1148,209 @@ fn current_iso8601() -> Iso8601 {
         .format(&Fmt::DEFAULT)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
     Iso8601::new(s).expect("formatted ISO8601 must parse")
+}
+
+/// Derive a human-readable entity ID for a scribe-produced
+/// proposal at accept time. Preference order:
+///
+///   1. `claim.display_name` (slug-ified) — for `contact.person`
+///      and `person.generic` proposals.
+///   2. `claim.title` (slug-ified) — for `note` proposals carrying
+///      a meaningful title (either user-supplied frontmatter or
+///      scribe's body-derived first-line slug).
+///   3. A tx_time-based fallback (`note-YYYY-MM-DD-HHMM`) — for
+///      truly empty notes where scribe couldn't derive a title.
+///   4. The last-resort `from-<submission-id>` — for proposals
+///      whose claim has no usable text at all (rare; mostly a
+///      defensive backstop for malformed scribe output).
+///
+/// Slugification rules: trim, lowercase only at the boundary
+/// (preserve user-supplied casing for navigability —
+/// "Sara_Chen.md" reads better than "sara_chen.md" in a file
+/// explorer), replace whitespace with underscores, drop characters
+/// that aren't alphanumeric / underscore / hyphen / period.
+fn slug_for_proposal(
+    proposal: &ffs_core::Proposal,
+    submission_id: &str,
+    now: &Iso8601,
+) -> EntityId {
+    let predicate = proposal.predicate.as_str();
+
+    // (1) display_name for contact/person predicates.
+    if matches!(predicate, "contact.person" | "person.generic")
+        && let Some(name) = proposal
+            .claim
+            .get("display_name")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+    {
+        return EntityId::new(slugify(name));
+    }
+
+    // (2) title for note proposals (or anything with a title field).
+    if let Some(title) = proposal
+        .claim
+        .get("title")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty() && *s != "untitled")
+    {
+        return EntityId::new(slugify(title));
+    }
+
+    // (3) tx_time-based slug for unstructured notes (`note-YYYY-MM-DD-HHMM`).
+    if predicate == "note"
+        && let Some(stamp) = format_tx_time_slug(now)
+    {
+        return EntityId::new(stamp);
+    }
+
+    // (4) Last resort.
+    EntityId::new(format!("from-{submission_id}"))
+}
+
+/// Convert a human-readable string into a filesystem-safe slug
+/// while preserving the original casing.
+fn slugify(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut last_was_underscore = false;
+    for c in input.trim().chars() {
+        if c.is_alphanumeric() || c == '-' || c == '.' {
+            out.push(c);
+            last_was_underscore = false;
+        } else if (c.is_whitespace() || c == '_') && !last_was_underscore {
+            out.push('_');
+            last_was_underscore = true;
+        }
+        // Anything else (commas, parens, slashes, etc.) gets dropped.
+    }
+    let trimmed = out.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "untitled".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Format an `Iso8601` as a `note-YYYY-MM-DD-HHMM` slug suitable
+/// for use as an entity ID. Returns `None` if the input doesn't
+/// parse into the expected shape.
+fn format_tx_time_slug(now: &Iso8601) -> Option<String> {
+    // Iso8601 stores something like "2026-06-07T11:23:45.123456789Z".
+    // We want just the YYYY-MM-DD and HHMM bits.
+    let s = now.as_str();
+    let date = s.get(0..10)?;
+    let time_seg = s.get(11..16)?; // "HH:MM"
+    let hhmm: String = time_seg.chars().filter(|c| *c != ':').collect();
+    if hhmm.len() != 4 {
+        return None;
+    }
+    Some(format!("note-{date}-{hhmm}"))
+}
+
+#[cfg(test)]
+mod slug_tests {
+    use super::*;
+    use ffs_core::Proposal;
+
+    fn now_iso() -> Iso8601 {
+        Iso8601::new("2026-06-07T11:23:00Z").unwrap()
+    }
+
+    fn proposal(predicate: &str, claim: serde_json::Value) -> Proposal {
+        Proposal {
+            predicate: PredicateName::new(predicate),
+            claim,
+            provenance: vec![],
+            rationale: "test".into(),
+        }
+    }
+
+    #[test]
+    fn contact_person_uses_display_name_with_spaces_to_underscores() {
+        let p = proposal(
+            "contact.person",
+            serde_json::json!({"display_name": "Sara Chen"}),
+        );
+        let slug = slug_for_proposal(&p, "sub-1", &now_iso());
+        assert_eq!(slug.as_str(), "Sara_Chen");
+    }
+
+    #[test]
+    fn person_generic_uses_display_name() {
+        let p = proposal(
+            "person.generic",
+            serde_json::json!({"display_name": "Alex Kim", "role": "engineer"}),
+        );
+        let slug = slug_for_proposal(&p, "sub-2", &now_iso());
+        assert_eq!(slug.as_str(), "Alex_Kim");
+    }
+
+    #[test]
+    fn note_uses_title_when_present() {
+        let p = proposal(
+            "note",
+            serde_json::json!({"title": "Tuesday standup notes", "body": "..."}),
+        );
+        let slug = slug_for_proposal(&p, "sub-3", &now_iso());
+        assert_eq!(slug.as_str(), "Tuesday_standup_notes");
+    }
+
+    #[test]
+    fn note_with_untitled_falls_back_to_tx_time_slug() {
+        let p = proposal("note", serde_json::json!({"title": "untitled", "body": ""}));
+        let slug = slug_for_proposal(&p, "sub-4", &now_iso());
+        assert_eq!(slug.as_str(), "note-2026-06-07-1123");
+    }
+
+    #[test]
+    fn note_with_missing_title_falls_back_to_tx_time_slug() {
+        let p = proposal("note", serde_json::json!({"body": "x"}));
+        let slug = slug_for_proposal(&p, "sub-5", &now_iso());
+        assert_eq!(slug.as_str(), "note-2026-06-07-1123");
+    }
+
+    #[test]
+    fn unknown_predicate_falls_back_to_submission_id() {
+        let p = proposal("capability.grant", serde_json::json!({}));
+        let slug = slug_for_proposal(&p, "sub-99", &now_iso());
+        assert_eq!(slug.as_str(), "from-sub-99");
+    }
+
+    #[test]
+    fn slugify_drops_punctuation_and_collapses_underscores() {
+        // Punctuation gone, multiple whitespace → single underscore.
+        assert_eq!(slugify("Sara,  (Chen)"), "Sara_Chen");
+        // Hyphens and periods preserved (file-extension shapes survive).
+        assert_eq!(slugify("Doc 2.1 — draft"), "Doc_2.1_draft");
+        // Empty-after-strip falls back to "untitled".
+        assert_eq!(slugify("!!!"), "untitled");
+    }
+
+    #[test]
+    fn slugify_preserves_casing_for_navigability() {
+        // The dispatcher slug becomes the filename in the path
+        // library, where reading "Sara_Chen.md" beats reading
+        // "sara_chen.md".
+        assert_eq!(slugify("Sara Chen"), "Sara_Chen");
+        assert_eq!(slugify("sara chen"), "sara_chen");
+        assert_eq!(slugify("SARA CHEN"), "SARA_CHEN");
+    }
+
+    #[test]
+    fn format_tx_time_slug_extracts_date_and_hhmm() {
+        let stamp = format_tx_time_slug(&Iso8601::new("2026-06-07T11:23:45.123Z").unwrap());
+        assert_eq!(stamp.as_deref(), Some("note-2026-06-07-1123"));
+    }
+
+    #[test]
+    fn note_with_body_derived_title_uses_it() {
+        // Scribe's body-derived title path: title carries a
+        // first-line slug rather than literal "untitled".
+        let p = proposal(
+            "note",
+            serde_json::json!({"title": "Random thought about federation", "body": "..."}),
+        );
+        let slug = slug_for_proposal(&p, "sub-7", &now_iso());
+        assert_eq!(slug.as_str(), "Random_thought_about_federation");
+    }
 }

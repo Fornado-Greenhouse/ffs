@@ -191,6 +191,169 @@ def extract_contact_person(
     return claim
 
 
+# Stop-list for the capitalized-name detector. Two narrow classes:
+#
+#  1. English grammar function words ("The", "A", "His") — these
+#     never appear inside personal names regardless of culture.
+#  2. A small set of past-tense interaction verbs ("Met", "Saw",
+#     "Called", "Spoke") that get capitalized only because they're
+#     at sentence start. Catching these is necessary because the
+#     regex naively matches the first capitalized bigram, so "Met
+#     Sara Chen at …" would otherwise produce display_name "Met
+#     Sara". The verbs are also handled structurally where possible
+#     (the venue-masking pass eats their "Met at X" surroundings)
+#     but standalone "Met <Name>" without a venue still needs to
+#     be skipped.
+#
+# Explicitly NOT included: months ("April", "May" are real names),
+# days, location words ("Country", "Club"), or any open-class
+# noun. Those false-positive classes are handled structurally:
+# venues by masking, months/days by accepting them.
+_NAME_STOPWORDS = frozenset(
+    [
+        # Function words.
+        "the", "a", "an",
+        "this", "that", "these", "those",
+        "his", "her", "their", "our", "your", "my",
+        # Past-tense interaction verbs commonly seen at sentence
+        # start in a contact note.
+        "met", "saw", "called", "spoke", "phoned",
+        "emailed", "texted", "talked", "visited", "heard", "bumped",
+    ]
+)
+
+
+_PHONE_PATTERNS = (
+    # 919-428-4074
+    re.compile(r"\b\d{3}-\d{3}-\d{4}\b"),
+    # (919) 428-4074, (919)428-4074
+    re.compile(r"\(\s*\d{3}\s*\)\s*\d{3}[\s-]?\d{4}"),
+    # +1 919 428 4074, +1-919-428-4074
+    re.compile(r"\+?1[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{4}"),
+)
+
+_EMAIL_PATTERN = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+
+# "Met at <Capitalized…>" / "saw … at <Capitalized…>" venue
+# patterns. Capture the venue span (the `<Capitalized…>` group) so
+# the caller can both report it AND mask it from the name detector.
+# The pattern intentionally requires an initial capital so "at the
+# office" (lowercase venue) doesn't fire — those don't claim to be
+# proper nouns and don't risk swallowing a name.
+_VENUE_PATTERNS = (
+    re.compile(r"\b[Mm]et\s+(?:at|with)\s+((?:[A-Z][\w\-]*(?:\s+[A-Z][\w\-]*)*))", re.MULTILINE),
+    re.compile(r"\b[Ss]aw\b[^.]*?\bat\s+((?:[A-Z][\w\-]*(?:\s+[A-Z][\w\-]*)*))", re.MULTILINE),
+)
+
+
+def detect_phone_numbers(text: str) -> List[str]:
+    """Return every phone-number-looking substring in `text`."""
+    out: List[str] = []
+    for pat in _PHONE_PATTERNS:
+        out.extend(m.group(0) for m in pat.finditer(text))
+    return out
+
+
+def detect_emails(text: str) -> List[str]:
+    """Return every email-looking substring in `text`."""
+    return [m.group(0) for m in _EMAIL_PATTERN.finditer(text)]
+
+
+def detect_venue_mentions(text: str) -> List[Tuple[str, int, int]]:
+    """Detect "Met at X" / "saw … at X" mentions. Returns a list of
+    `(venue_text, start_offset, end_offset)` tuples where the
+    offsets are into the venue match (group 1), not the whole
+    pattern. Used both for the venue signal AND for masking the
+    venue from the name detector so something like "Met at
+    Ballantyne Country Club" doesn't get classified as a person
+    named "Ballantyne Country".
+    """
+    out: List[Tuple[str, int, int]] = []
+    for pat in _VENUE_PATTERNS:
+        for m in pat.finditer(text):
+            out.append((m.group(1).strip(), m.start(1), m.end(1)))
+    return out
+
+
+def _mask_spans(text: str, spans: List[Tuple[int, int]]) -> str:
+    """Replace each `(start, end)` span in `text` with same-length
+    placeholder characters that won't match any of the heuristic
+    patterns (specifically: avoid uppercase letters so the
+    capitalized-name detector skips them). Preserves text length so
+    the offsets of other matches stay correct.
+    """
+    if not spans:
+        return text
+    chars = list(text)
+    for start, end in spans:
+        for i in range(start, min(end, len(chars))):
+            chars[i] = "_"
+    return "".join(chars)
+
+
+def extract_capitalized_name(text: str) -> Optional[str]:
+    """Find a two-word capitalized name in `text`. Skips a small
+    set of English grammar function words and common past-tense
+    interaction verbs (the only false positives that are
+    universally safe to reject). The caller is expected to
+    pre-mask venue spans, so we don't need a venue stop-list here.
+
+    Uses a lookahead so finditer finds overlapping bigrams — this
+    is necessary because input like "Met Sara Chen" has its first
+    bigram "Met Sara" rejected by the stop list, but we still need
+    to see "Sara Chen" as a candidate. Without the lookahead, the
+    "Sara" characters would already be consumed by the rejected
+    "Met Sara" match.
+    """
+    pattern = re.compile(r"\b(?=([A-Z][a-z]+)\s+([A-Z][a-z]+)\b)")
+    for m in pattern.finditer(text):
+        first, last = m.group(1), m.group(2)
+        if first.lower() in _NAME_STOPWORDS or last.lower() in _NAME_STOPWORDS:
+            continue
+        return f"{first} {last}"
+    return None
+
+
+def extract_contact_person_unstructured(content_text: str) -> Optional[Tuple[Dict[str, Any], List[str]]]:
+    """Walk the body for unstructured contact signals: phone, email,
+    venue mention, capitalized name. Emit a `contact.person` claim
+    when ≥2 distinct signals fire AND a name is extractable from
+    text where venue spans have been masked out.
+
+    Returns `(claim, signals)` — `signals` is the list of signal
+    names that fired (used for the proposal's `rationale` string).
+    """
+    # Detect venues FIRST. Venues are masked from the text before
+    # we run the name detector so e.g. "Met at Ballantyne Country
+    # Club" doesn't get misclassified as a person named "Ballantyne
+    # Country".
+    venues = detect_venue_mentions(content_text)
+    masked = _mask_spans(content_text, [(s, e) for _, s, e in venues])
+
+    name = extract_capitalized_name(masked)
+    if not name:
+        return None
+    signals: List[str] = ["capitalized name"]
+    claim: Dict[str, Any] = {"display_name": name}
+
+    phones = detect_phone_numbers(content_text)
+    if phones:
+        signals.append("phone number")
+        claim["phone"] = phones[0]
+    emails = detect_emails(content_text)
+    if emails:
+        signals.append("email address")
+        claim["email"] = emails[0]
+    if venues:
+        venue_text = venues[0][0]
+        signals.append(f"venue mention ({venue_text})")
+        claim.setdefault("notes", []).append(f"Met at {venue_text}")
+
+    if len(signals) < 2:
+        return None
+    return claim, signals
+
+
 def extract_person_generic(
     fm: Dict[str, Any],
     sections: List[Tuple[str, List[str]]],
@@ -216,7 +379,6 @@ def extract_note(
     sections: List[Tuple[str, List[str]]],
     raw_body: str,
 ) -> Dict[str, Any]:
-    title = fm.get("title") or _name_field(fm) or "untitled"
     tags_raw = fm.get("tags")
     tags: List[str] = []
     if isinstance(tags_raw, str):
@@ -225,10 +387,55 @@ def extract_note(
     body_text = "\n".join(line for _, lines in sections for line in lines).strip()
     if not body_text:
         body_text = raw_body.strip()
+
+    # Title preference order: frontmatter `title` → frontmatter `name` →
+    # body-derived first-line slug (≤6 words, ~60 chars) → literal
+    # "untitled". The body-derived path keeps untitled notes from
+    # producing the unreadable `from-<submission-id>` entity ID
+    # downstream.
+    title = (
+        fm.get("title")
+        or _name_field(fm)
+        or _title_from_body(body_text)
+        or "untitled"
+    )
+
     claim: Dict[str, Any] = {"title": title, "body": body_text}
     if tags:
         claim["tags"] = tags
     return claim
+
+
+def _title_from_body(body: str) -> Optional[str]:
+    """Derive a short, human-readable title from a body's first
+    non-empty line. Caps at 6 words / 60 characters to keep the
+    resulting projection filename navigable. Returns None when the
+    body is empty or whitespace-only.
+
+    Strips markdown-list and -heading prefixes — but only when
+    they're FOLLOWED BY whitespace, so that an unstructured line
+    like "919-428-4074" (which would otherwise get its leading
+    digits eaten by an over-eager character-class strip) survives
+    intact.
+    """
+    # Markdown prefixes: unordered list (`-`, `*`, `+`), ordered
+    # list (`\d+.`), heading (`#`+), or block quote (`>`), each
+    # required to be followed by at least one whitespace character
+    # to count as a prefix.
+    prefix_re = re.compile(r"^\s*(?:[-*+>]|#+|\d+\.)\s+")
+    for line in body.splitlines():
+        stripped = line.strip()
+        stripped = prefix_re.sub("", stripped).strip()
+        if not stripped:
+            continue
+        words = stripped.split()
+        if not words:
+            continue
+        truncated = " ".join(words[:6])
+        if len(truncated) > 60:
+            truncated = truncated[:60].rsplit(" ", 1)[0]
+        return truncated or None
+    return None
 
 
 # --------------------------------------------------------------------
@@ -389,6 +596,26 @@ def handle(inp: Any) -> Dict[str, Any]:
                 source_uri,
                 content_hash,
                 "extracted display_name + role/team from frontmatter",
+            )
+        )
+    # Unstructured contact (no frontmatter, body looks like a
+    # contact). Only fires when at least 2 distinct signals fire AND
+    # a capitalized name is extractable from the body.
+    elif (
+        not _name_field(fm)
+        and (unstructured := extract_contact_person_unstructured(content_text)) is not None
+    ):
+        unstructured_claim, unstructured_signals = unstructured
+        proposals.append(
+            _make_proposal(
+                "contact.person",
+                unstructured_claim,
+                source_uri,
+                content_hash,
+                "matched "
+                + str(len(unstructured_signals))
+                + " unstructured-contact signals: "
+                + ", ".join(unstructured_signals),
             )
         )
 
