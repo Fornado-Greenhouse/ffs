@@ -14,6 +14,7 @@ pub mod multihash;
 pub mod predicate;
 pub mod projection;
 pub mod quarantine;
+pub mod quarantine_sqlite;
 pub mod store;
 pub mod suppress;
 pub mod working_set;
@@ -35,6 +36,7 @@ pub use multihash::{Multihash, MultihashError};
 pub use quarantine::{
     InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError, Submission, SubmissionStatus,
 };
+pub use quarantine_sqlite::SqliteQuarantine;
 pub use store::{AtomStore, MemAtomStore, SCHEMA_VERSION, SqliteAtomStore, StoreError};
 pub use suppress::SuppressionRegistry;
 pub use working_set::{InMemoryWorkingSet, WorkingSetEntry, WorkingSetError, WorkingSetStore};

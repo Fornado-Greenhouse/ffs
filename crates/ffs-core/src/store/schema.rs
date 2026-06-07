@@ -101,3 +101,36 @@ CREATE TABLE IF NOT EXISTS ingest_quarantine (
 );
 CREATE INDEX IF NOT EXISTS ingest_quarantine_status ON ingest_quarantine(status);
 "#;
+
+/// V2 (task_29): SQLCipher-backed `IngestQuarantine` implementation.
+/// The v1 placeholder `ingest_quarantine` table didn't match the
+/// runtime trait shape, so this DDL adds two new tables
+/// (`quarantine_submissions` + `quarantine_proposals`) that mirror
+/// the existing `Submission` + `Proposal` struct layout. The v1
+/// placeholder table stays untouched for backwards compatibility
+/// and is intentionally unused by the new code.
+pub const V2_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS quarantine_submissions (
+    id                   TEXT    PRIMARY KEY,
+    source_uri           TEXT    NOT NULL,
+    content_hash         BLOB    NOT NULL,
+    content              BLOB    NOT NULL,
+    tx_time              TEXT    NOT NULL,
+    status               TEXT    NOT NULL,
+    failure_reason       TEXT,
+    accepted_atom_hashes TEXT    NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS quarantine_submissions_status_tx
+    ON quarantine_submissions(status, tx_time DESC);
+
+CREATE TABLE IF NOT EXISTS quarantine_proposals (
+    submission_id TEXT    NOT NULL REFERENCES quarantine_submissions(id) ON DELETE CASCADE,
+    seq           INTEGER NOT NULL,
+    predicate     TEXT    NOT NULL,
+    claim         TEXT    NOT NULL,
+    provenance    TEXT    NOT NULL,
+    rationale     TEXT    NOT NULL,
+    PRIMARY KEY (submission_id, seq)
+);
+"#;

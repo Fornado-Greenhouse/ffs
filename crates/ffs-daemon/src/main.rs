@@ -57,7 +57,8 @@ use ffs_core::federation_peers::InMemoryFederationPeerStore;
 use ffs_core::multihash::Multihash;
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::ProjectionRenderer;
-use ffs_core::quarantine::InMemoryQuarantine;
+use ffs_core::quarantine::IngestQuarantine;
+use ffs_core::quarantine_sqlite::SqliteQuarantine;
 use ffs_core::store::{AtomStore, SqliteAtomStore, StoreError};
 use ffs_core::working_set::InMemoryWorkingSet;
 use ffs_skills_host::{RefuseAllProxy, SkillsHost};
@@ -182,7 +183,16 @@ async fn run() -> Result<(), StartupError> {
     let publisher = Arc::new(EventPublisher::new());
     let working_set = Arc::new(InMemoryWorkingSet::new());
     let suppression = Arc::new(SuppressionRegistry::new());
-    let quarantine = Arc::new(InMemoryQuarantine::new());
+    // SQLCipher-backed quarantine (task_29) — survives daemon
+    // restarts. Shares the atoms.db file with the atom store; both
+    // tables sit in the same SQLCipher-encrypted DB, protected by
+    // the same DEK. WAL mode (enabled by the atom store on open)
+    // allows the quarantine's own connection to read concurrently
+    // without lock contention.
+    let quarantine: Arc<dyn IngestQuarantine> = Arc::new(
+        SqliteQuarantine::open_with_key(&db_path, &dek)
+            .map_err(|e| StartupError::Store(db_path.clone(), Box::new(e)))?,
+    );
 
     // Skills host: discover bundles under $FFS_DATA_DIR/skills and
     // spawn each as a supervised subprocess. `RefuseAllProxy` is

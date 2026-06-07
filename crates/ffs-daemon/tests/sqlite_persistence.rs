@@ -369,6 +369,151 @@ async fn ffs_keyring_disable_short_circuits_to_env_var_or_generate_fallback() {
     let _ = child.wait();
 }
 
+/// task_29: a pending submission with extracted proposals must
+/// survive a daemon restart. Pre-task_29 the `InMemoryQuarantine`
+/// lost everything on restart even though the watcher had already
+/// moved the source file into `.processed/`. Now both submission
+/// and its proposals persist to the same SQLCipher-encrypted
+/// atoms.db that the atom store uses.
+#[tokio::test]
+async fn quarantine_submission_survives_daemon_restart() {
+    if !python_available() {
+        eprintln!("skipping: python3 not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+    seed_skills_symlinks(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+
+    // === First daemon boot: drop a markdown file, let scribe
+    // extract it, then SIGTERM.
+    let mut child = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env("FFS_OWNER_KEY_HEX", OWNER_KEY_HEX)
+        .env("FFS_SQLCIPHER_KEY_HEX", DEK_HEX)
+        .env("FFS_KEYRING_DISABLE", "1")
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn first boot");
+
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(wait_for(&socket, Duration::from_secs(5)).await);
+
+    let ingest_dir = data_dir.join("ingest");
+    let note = "---\nname: Sara Chen\nemail: sara@example.com\n---\n\n## Notes\n- met at picnic\n";
+    std::fs::write(ingest_dir.join("survives.md"), note).unwrap();
+
+    // Wait for the submission to land + transition to Extracted.
+    let first_id = {
+        let start = Instant::now();
+        loop {
+            if start.elapsed() > Duration::from_secs(10) {
+                panic!("submission never reached Extracted");
+            }
+            let resp = rpc(&socket, "ingest.list_pending", serde_json::json!({})).await;
+            if let Some(subs) = resp.get("result").and_then(|r| r.as_array())
+                && let Some(first) = subs.first()
+                && first.get("status").and_then(|s| s.as_str()) == Some("extracted")
+            {
+                break first
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .expect("id")
+                    .to_string();
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("kill");
+    let _ = child.wait();
+
+    // === Second daemon boot: SAME data dir, SAME DEK. The
+    // submission must still be there.
+    let mut child2 = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env("FFS_OWNER_KEY_HEX", OWNER_KEY_HEX)
+        .env("FFS_SQLCIPHER_KEY_HEX", DEK_HEX)
+        .env("FFS_KEYRING_DISABLE", "1")
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn second boot");
+    assert!(wait_for(&socket, Duration::from_secs(5)).await);
+
+    let resp = rpc(&socket, "ingest.list_pending", serde_json::json!({})).await;
+    let subs = resp
+        .get("result")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        subs.iter()
+            .any(|s| s.get("id").and_then(|v| v.as_str()) == Some(first_id.as_str())),
+        "submission {first_id} should survive the daemon restart; got: {subs:?}"
+    );
+    let surviving = subs
+        .iter()
+        .find(|s| s.get("id").and_then(|v| v.as_str()) == Some(first_id.as_str()))
+        .unwrap();
+    assert_eq!(
+        surviving.get("status").and_then(|s| s.as_str()),
+        Some("extracted"),
+        "post-restart status should remain Extracted"
+    );
+    let proposals = surviving
+        .get("proposals")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !proposals.is_empty(),
+        "post-restart proposals should be present"
+    );
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child2.id().to_string())
+        .status()
+        .expect("kill 2");
+    let _ = child2.wait();
+}
+
+/// Symlink the scribe skill bundle into the data dir so the daemon
+/// can spawn it. Used by tests that exercise the full ingest
+/// pipeline (which needs scribe to produce proposals before the
+/// quarantine has anything to persist).
+fn seed_skills_symlinks(data_dir: &Path) {
+    let src_skills = repo_root().join("skills");
+    let dst_skills = data_dir.join("skills");
+    std::fs::create_dir_all(&dst_skills).unwrap();
+    for sub in ["scribe", "_lib"] {
+        let _ = std::os::unix::fs::symlink(src_skills.join(sub), dst_skills.join(sub));
+    }
+}
+
+fn python_available() -> bool {
+    Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 #[tokio::test]
 async fn daemon_refuses_to_open_existing_db_with_wrong_dek() {
     let tmp = tempfile::tempdir().expect("tmpdir");

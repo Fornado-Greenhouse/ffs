@@ -375,7 +375,7 @@ fn unknown_future_schema_version_refuses_to_open() {
     match err {
         StoreError::UnsupportedSchemaVersion {
             found: 999,
-            supported: 1,
+            supported: ffs_core::store::SCHEMA_VERSION,
         } => {}
         other => {
             panic!("expected UnsupportedSchemaVersion {{found:999, supported:1}}, got {other:?}")

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: SQLite-backed quarantine — persist pending submissions across daemon restarts
 type: backend
 complexity: medium
@@ -31,11 +31,11 @@ The dispatcher's quarantine is `InMemoryQuarantine` — pending submissions vani
 </requirements>
 
 ## Subtasks
-- [ ] 29.1 Add the `submissions` + `proposals` SQLite table schema as a new migration step.
-- [ ] 29.2 Implement `SqliteQuarantine` against the existing `IngestQuarantine` trait, mirroring the `InMemoryQuarantine` semantics.
-- [ ] 29.3 Wire `SqliteQuarantine` into the daemon binary's `main.rs` alongside the atom store (shares the same `Mutex<Connection>`, or holds its own depending on contention).
-- [ ] 29.4 Bump `SCHEMA_VERSION` and verify the migration applies cleanly to an existing task_24 atoms.db.
-- [ ] 29.5 Add an integration test that proves a submission with extracted proposals survives a daemon restart.
+- [x] 29.1 Add the `submissions` + `proposals` SQLite table schema as a new migration step. *(Tables named `quarantine_submissions` + `quarantine_proposals` to avoid colliding with the v1 placeholder `ingest_quarantine` table that was never used; the v1 placeholder stays untouched for backwards compatibility.)*
+- [x] 29.2 Implement `SqliteQuarantine` against the existing `IngestQuarantine` trait, mirroring the `InMemoryQuarantine` semantics. *(New module `crates/ffs-core/src/quarantine_sqlite.rs` with 9 unit tests + carrying the SQLite blessing comment block per CLAUDE.md convention.)*
+- [x] 29.3 Wire `SqliteQuarantine` into the daemon binary's `main.rs` alongside the atom store. *(Holds its own `Mutex<Connection>` to the same atoms.db file; WAL mode allows the two connections to read concurrently without contention. Sharing the atom store's Mutex would have required a deeper refactor of `SqliteAtomStore`'s API and wasn't worth it for MVP.)*
+- [x] 29.4 Bump `SCHEMA_VERSION` and verify the migration applies cleanly to an existing task_24 atoms.db. *(Migration runner rewritten to step forward one version at a time. 5 new tests + the live-deploy onto the user's existing atoms.db confirmed the v1→v2 step succeeded silently and the existing atoms + capabilities + materializer state were preserved.)*
+- [x] 29.5 Add an integration test that proves a submission with extracted proposals survives a daemon restart. *(`quarantine_submission_survives_daemon_restart` in `tests/sqlite_persistence.rs`. Also verified live: dropped a note, restarted launchd, watched `ingest.list_pending` still return the submission with its proposals.)*
 
 ## Implementation Details
 The existing `IngestQuarantine` trait lives at `crates/ffs-core/src/quarantine.rs`. The SQLite atom store machinery (migrations, connection management, SQLCipher key) is at `crates/ffs-core/src/store/sqlite.rs` + `crates/ffs-core/src/store/migrations.rs`. The new quarantine should reuse that infrastructure rather than opening its own SQLite handle.

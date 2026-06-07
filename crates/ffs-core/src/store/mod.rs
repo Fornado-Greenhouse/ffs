@@ -24,7 +24,7 @@ use thiserror::Error;
 
 mod keyring;
 mod mem;
-mod migrations;
+pub(crate) mod migrations;
 mod schema;
 mod sqlite;
 
@@ -36,7 +36,14 @@ use crate::multihash::Multihash;
 
 /// Schema version supported by this build of `ffs-core`. Stores at higher
 /// versions refuse to open.
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// History:
+/// - v1: initial atom store, classifications, capabilities,
+///   provenance, entities, claims_fts, federation_peers,
+///   working_set, and a placeholder `ingest_quarantine` table.
+/// - v2 (task_29): real `quarantine_submissions` + `quarantine_proposals`
+///   tables that match the runtime `IngestQuarantine` trait shape.
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
