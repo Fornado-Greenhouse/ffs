@@ -1,15 +1,17 @@
 /* FFS Obsidian plugin styles.
  *
- * Kept narrow on purpose — Obsidian's default theme styles the
- * majority of UI elements. These rules only address what we
- * generate that the default theme can't help with: containing
- * long URIs in the daily-summary panel, and a few spacing
- * conventions for the proposals list and flag list.
+ * Vertical rhythm: 4 / 8 / 16 / 24 px steps. Section labels are
+ * small-caps muted to defer to content; proposals get card-style
+ * grouping so multiple cards stack with clear separation; the
+ * Refresh control is an icon button so the title row never wraps
+ * even in narrow sidebars.
  */
 
 .ffs-summary-root {
-  padding: 8px 12px;
+  padding: 16px;
 }
+
+/* ---- Header ---- */
 
 .ffs-summary-header {
   display: flex;
@@ -18,14 +20,85 @@
   gap: 8px;
 }
 
+.ffs-summary-header h3 {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ffs-icon-button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 1.1em;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+/* ---- Status line ---- */
+
 .ffs-summary-status {
-  margin: 4px 0 12px;
-  font-size: 0.85em;
+  display: block;
+  margin: 4px 0 16px;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.ffs-summary-status .ffs-summary-conn {
+  white-space: nowrap;
+}
+
+/* Connection-state bullet color. Used in the daily-summary status
+ * line AND the bottom-of-window status bar so both surfaces convey
+ * the same signal at a glance. */
+.ffs-conn-dot {
+  font-size: 1.05em;
+  line-height: 1;
+  vertical-align: -1px;
+}
+
+.ffs-conn-dot-connected {
+  color: var(--color-green);
+}
+
+.ffs-conn-dot-connecting {
+  color: var(--color-yellow);
+}
+
+.ffs-conn-dot-fallback {
+  color: var(--color-orange);
+}
+
+.ffs-conn-dot-disconnected {
+  color: var(--text-muted);
+}
+
+/* Spacing fix-up for the bundled status bar item. */
+.ffs-statusbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+/* ---- Section labels ---- */
+
+.ffs-summary-root h4 {
+  margin: 24px 0 8px;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 
 .ffs-summary-narrative {
-  margin: 8px 0 16px;
+  margin: 0 0 16px;
   font-style: italic;
   color: var(--text-muted);
 }
@@ -33,64 +106,181 @@
 .ffs-summary-empty {
   color: var(--text-muted);
   font-style: italic;
-  margin: 16px 0;
+  margin: 12px 0;
+  text-align: center;
+  padding: 24px 0;
 }
 
-.ffs-proposal-list,
-.ffs-flag-list {
-  margin: 4px 0 16px;
+/* ---- Proposal cards ---- */
+
+.ffs-proposal-list {
+  list-style: none;
+  margin: 0 0 8px;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .ffs-proposal {
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.ffs-proposal-summary {
+  display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ffs-proposal-caret {
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--text-muted);
+  transition: transform 0.12s ease;
+  margin-top: 2px;
+  font-size: 0.85em;
+}
+
+.ffs-proposal.is-expanded .ffs-proposal-caret {
+  transform: rotate(90deg);
 }
 
 .ffs-proposal-meta {
   flex: 1 1 auto;
-  min-width: 0; /* lets flex children with overflow shrink */
-}
-
-.ffs-proposal-actions {
-  flex: 0 0 auto;
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0; /* lets flex children with overflow shrink */
 }
 
 .ffs-proposal-count {
   font-weight: 600;
+  font-size: 0.95em;
 }
 
 .ffs-proposal-source {
-  font-size: 0.85em;
+  font-size: 0.8em;
   color: var(--text-muted);
+  font-family: var(--font-monospace);
 }
 
-/* Defense-in-depth ellipsis for any element that may receive a
- * long URI or path. The plugin already truncates to basename for
- * display; this catches the remaining edge cases (very narrow
- * sidebar, very long basenames). */
-.ffs-truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Expandable body: hidden by default, shown when the card has
+ * `.is-expanded`. */
+.ffs-proposal-body {
+  display: none;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.ffs-proposal.is-expanded .ffs-proposal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ffs-proposal-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ffs-proposal-predicate {
+  font-family: var(--font-monospace);
+  font-size: 0.8em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ffs-proposal-claim {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 2px 8px;
+  font-size: 0.85em;
+}
+
+.ffs-proposal-claim dt {
+  font-weight: 500;
+  color: var(--text-muted);
   white-space: nowrap;
-  max-width: 100%;
+}
+
+.ffs-proposal-claim dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.ffs-proposal-claim dd ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.ffs-proposal-claim dd li {
+  margin: 0;
+}
+
+.ffs-proposal-rationale {
+  margin-top: 4px;
+  font-style: italic;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.ffs-proposal-empty {
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.ffs-proposal-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.ffs-proposal-actions button {
+  flex: 0 1 auto;
+  padding: 3px 12px;
+  font-size: 0.9em;
+}
+
+/* ---- Flags ---- */
+
+.ffs-flag-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
 }
 
 .ffs-flag {
-  margin: 4px 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 0.9em;
+}
+
+.ffs-flag:last-child {
+  border-bottom: none;
 }
 
 .ffs-flag-kind {
   color: var(--text-muted);
   font-family: var(--font-monospace);
   font-size: 0.85em;
+  margin-right: 4px;
 }
+
+/* ---- Suggester ---- */
 
 .ffs-suggest-name {
   font-weight: 500;
@@ -99,4 +289,13 @@
 .ffs-suggest-meta {
   font-size: 0.8em;
   color: var(--text-muted);
+}
+
+/* ---- Utility ---- */
+
+.ffs-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }

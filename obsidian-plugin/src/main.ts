@@ -38,6 +38,7 @@ import {
   SummaryPanelModel,
   type PanelState,
   type ProposalItem,
+  type ProposalPreview,
   type PanelItem,
 } from "./summary.js";
 
@@ -236,14 +237,16 @@ export default class FfsPlugin extends Plugin {
 
   private renderStatus(state: string): void {
     if (!this.statusEl) return;
-    const label =
-      {
-        connected: "FFS ● connected",
-        connecting: "FFS ◐ connecting",
-        disconnected: "FFS ○ offline",
-        fallback: "FFS ◔ CLI fallback",
-      }[state] ?? `FFS ${state}`;
-    this.statusEl.setText(label);
+    // Build the status-bar item as DOM so we can color just the
+    // bullet character without colorizing the whole text.
+    this.statusEl.empty();
+    this.statusEl.addClass("ffs-statusbar");
+    this.statusEl.createSpan({ text: "FFS " });
+    this.statusEl.createSpan({
+      cls: `ffs-conn-dot ffs-conn-dot-${state}`,
+      text: connStateBullet(state),
+    });
+    this.statusEl.createSpan({ text: " " + connStateText(state) });
   }
 }
 
@@ -338,7 +341,12 @@ class SummaryView extends ItemView {
 
     const header = root.createDiv({ cls: "ffs-summary-header" });
     header.createEl("h3", { text: "Daily summary" });
-    const refresh = header.createEl("button", { text: "Refresh" });
+    const refresh = header.createEl("button", {
+      text: "↻",
+      cls: "ffs-icon-button",
+    });
+    refresh.setAttr("aria-label", "Refresh");
+    refresh.setAttr("title", "Refresh");
     refresh.onclick = () => {
       void this.triggerRefresh();
     };
@@ -353,7 +361,11 @@ class SummaryView extends ItemView {
     const connBadge = status.createSpan({
       cls: `ffs-summary-conn ffs-summary-conn-${this.connState}`,
     });
-    connBadge.setText(connStateLabel(this.connState));
+    connBadge.createSpan({
+      cls: `ffs-conn-dot ffs-conn-dot-${this.connState}`,
+      text: connStateBullet(this.connState),
+    });
+    connBadge.appendText(" " + connStateText(this.connState));
     if (this.lastRefreshedAt) {
       status.createSpan({
         cls: "ffs-summary-refreshed",
@@ -404,22 +416,56 @@ class SummaryView extends ItemView {
 
   private renderProposal(parent: HTMLElement, p: ProposalItem): void {
     const row = parent.createDiv({ cls: "ffs-proposal" });
-    const meta = row.createDiv({ cls: "ffs-proposal-meta" });
+
+    // Clickable summary header. Toggles the `.is-expanded` class
+    // on the card so CSS can show/hide the body. The Accept/Reject
+    // buttons live outside the clickable area so a button click
+    // doesn't bubble into a card-collapse.
+    const summary = row.createDiv({ cls: "ffs-proposal-summary" });
+    summary.setAttr("role", "button");
+    summary.setAttr("aria-expanded", "false");
+    summary.onclick = () => {
+      const expanded = row.classList.toggle("is-expanded");
+      summary.setAttr("aria-expanded", expanded ? "true" : "false");
+    };
+
+    const caret = summary.createSpan({ cls: "ffs-proposal-caret", text: "▸" });
+    caret.setAttr("aria-hidden", "true");
+
+    const meta = summary.createDiv({ cls: "ffs-proposal-meta" });
     meta.createEl("div", {
       text: `${p.proposalCount} proposal${p.proposalCount === 1 ? "" : "s"}`,
       cls: "ffs-proposal-count",
     });
     // Truncate to basename so the source URI doesn't overflow the
-    // sidebar width. Full URI is on hover via `title=`. CSS
-    // ellipsis covers any remaining overflow on very narrow
-    // sidebars (see styles.css ffs-truncate).
+    // sidebar width. Full URI is on hover via `title=`.
     const sourceEl = meta.createEl("div", {
       text: uriBasename(p.sourceUri),
       cls: "ffs-proposal-source ffs-truncate",
     });
     sourceEl.setAttr("title", p.sourceUri);
+
+    // Expandable body: one section per proposal showing its
+    // predicate, claim, and scribe's rationale. The user needs
+    // this to make an informed accept/reject decision —
+    // accepting signs the claim into the substrate, so they
+    // should see exactly what they're committing to.
+    const body = row.createDiv({ cls: "ffs-proposal-body" });
+    for (const proposal of p.proposals) {
+      this.renderProposalDetail(body, proposal);
+    }
+    if (p.proposals.length === 0) {
+      body.createEl("p", {
+        text: "(no proposal details available)",
+        cls: "ffs-proposal-empty",
+      });
+    }
+
     const actions = row.createDiv({ cls: "ffs-proposal-actions" });
-    const accept = actions.createEl("button", { text: "Accept" });
+    const accept = actions.createEl("button", {
+      text: "Accept",
+      cls: "mod-cta",
+    });
     accept.onclick = () => {
       void this.plugin.summary.accept(p.submissionId).catch((err) => {
         new Notice(`FFS accept failed: ${describeError(err)}`);
@@ -431,6 +477,40 @@ class SummaryView extends ItemView {
         new Notice(`FFS reject failed: ${describeError(err)}`);
       });
     };
+  }
+
+  /** Render a single proposal's claim inside the expandable body
+   * of a proposal card. */
+  private renderProposalDetail(
+    parent: HTMLElement,
+    proposal: ProposalPreview,
+  ): void {
+    const detail = parent.createDiv({ cls: "ffs-proposal-detail" });
+    detail.createEl("div", {
+      text: proposal.predicate,
+      cls: "ffs-proposal-predicate",
+    });
+    const claim = detail.createEl("dl", { cls: "ffs-proposal-claim" });
+    for (const [key, value] of Object.entries(proposal.claim)) {
+      claim.createEl("dt", { text: key });
+      const dd = claim.createEl("dd");
+      if (Array.isArray(value)) {
+        const ul = dd.createEl("ul");
+        for (const item of value) {
+          ul.createEl("li", { text: String(item) });
+        }
+      } else if (value && typeof value === "object") {
+        dd.setText(JSON.stringify(value));
+      } else {
+        dd.setText(value == null ? "" : String(value));
+      }
+    }
+    if (proposal.rationale) {
+      detail.createEl("div", {
+        text: proposal.rationale,
+        cls: "ffs-proposal-rationale",
+      });
+    }
   }
 
   private renderFlag(parent: HTMLElement, item: PanelItem): void {
@@ -609,16 +689,35 @@ class FfsSettingsTabImpl extends PluginSettingTab {
   }
 }
 
-function connStateLabel(state: string): string {
+/** Connection-state bullet character. Split from the label text so
+ * the bullet can be wrapped in its own span and colored via CSS
+ * (green for connected, gray for offline, etc.) while the label
+ * stays neutral. */
+function connStateBullet(state: string): string {
   switch (state) {
     case "connected":
-      return "● connected";
+      return "●";
     case "connecting":
-      return "◐ connecting…";
+      return "◐";
     case "fallback":
-      return "◔ CLI fallback";
+      return "◔";
     case "disconnected":
-      return "○ offline";
+      return "○";
+    default:
+      return "•";
+  }
+}
+
+function connStateText(state: string): string {
+  switch (state) {
+    case "connected":
+      return "connected";
+    case "connecting":
+      return "connecting…";
+    case "fallback":
+      return "CLI fallback";
+    case "disconnected":
+      return "offline";
     default:
       return state;
   }

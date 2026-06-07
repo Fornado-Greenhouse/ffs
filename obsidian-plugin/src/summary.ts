@@ -35,6 +35,18 @@ export interface ProposalItem {
   sourceUri: string;
   /** Number of proposals in the submission (display only). */
   proposalCount: number;
+  /** Per-proposal previews the panel renders when the user expands
+   * the card to see what they're about to accept. */
+  proposals: ProposalPreview[];
+}
+
+/** Minimal projection of a scribe proposal for the panel's
+ * expanded view. Excludes provenance — that's audit-trail data the
+ * Accept-time decision doesn't need. */
+export interface ProposalPreview {
+  predicate: string;
+  claim: Record<string, unknown>;
+  rationale: string;
 }
 
 export interface PanelState {
@@ -124,16 +136,30 @@ export class SummaryPanelModel {
         message: String(it?.message ?? ""),
       }));
 
-    const pending = (await this.client.call(
-      "ingest.list_pending",
-      {},
-    )) as Array<{ id?: string; source_uri?: string; proposals?: unknown[] }>;
+    const pending = (await this.client.call("ingest.list_pending", {})) as Array<{
+      id?: string;
+      source_uri?: string;
+      proposals?: Array<{
+        predicate?: string;
+        claim?: Record<string, unknown>;
+        rationale?: string;
+      }>;
+    }>;
     const pendingProposals: ProposalItem[] = (Array.isArray(pending) ? pending : [])
-      .map((sub) => ({
-        submissionId: String(sub?.id ?? ""),
-        sourceUri: String(sub?.source_uri ?? ""),
-        proposalCount: Array.isArray(sub?.proposals) ? sub.proposals.length : 0,
-      }))
+      .map((sub) => {
+        const raw = Array.isArray(sub?.proposals) ? sub.proposals : [];
+        const proposals: ProposalPreview[] = raw.map((p) => ({
+          predicate: String(p?.predicate ?? "unknown"),
+          claim: (p?.claim ?? {}) as Record<string, unknown>,
+          rationale: String(p?.rationale ?? ""),
+        }));
+        return {
+          submissionId: String(sub?.id ?? ""),
+          sourceUri: String(sub?.source_uri ?? ""),
+          proposalCount: proposals.length,
+          proposals,
+        };
+      })
       .filter((it) => it.submissionId.length > 0);
 
     const next: PanelState = {
