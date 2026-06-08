@@ -1,3 +1,6 @@
+// Daemon binary spawn + UDS round-trip is Unix-only.
+#![cfg(unix)]
+
 //! End-to-end test for the ingest pipeline wired in task_26:
 //! spawn the real daemon binary, drop a markdown file under
 //! `$FFS_DATA_DIR/ingest/`, wait, and assert

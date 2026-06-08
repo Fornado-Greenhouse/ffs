@@ -1,3 +1,6 @@
+// Daemon binary spawn + UDS round-trip is Unix-only.
+#![cfg(unix)]
+
 //! SQLite atom-store persistence tests for the ffs-daemon binary
 //! (task_24).
 //!

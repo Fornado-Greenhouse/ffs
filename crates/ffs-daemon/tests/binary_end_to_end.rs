@@ -1,3 +1,6 @@
+// Daemon binary spawn + UDS round-trip is Unix-only.
+#![cfg(unix)]
+
 //! End-to-end smoke test for the `ffs-daemon` binary (task_22).
 //!
 //! This is the "now it actually runs" test: it spawns the compiled

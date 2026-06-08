@@ -4,6 +4,7 @@
 //! end through a real `Dispatcher` so the Obsidian plugin's
 //! summary + search modules have a verified wire contract.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
@@ -90,6 +91,7 @@ fn setup() -> Harness {
     let templates_dir = dir.path().join("templates");
     std::fs::create_dir_all(&predicates_dir).unwrap();
     std::fs::create_dir_all(&templates_dir).unwrap();
+    #[cfg(unix)]
     std::fs::set_permissions(&predicates_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(
         predicates_dir.join("contact.person.toml"),

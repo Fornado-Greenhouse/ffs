@@ -128,8 +128,13 @@ async fn run() -> Result<(), StartupError> {
     std::fs::create_dir_all(&predicates_dir)?;
     std::fs::create_dir_all(&templates_dir)?;
     std::fs::create_dir_all(&run_dir)?;
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&run_dir, std::fs::Permissions::from_mode(0o700))?;
+    // 0o700 hardening on the run dir is the unix story; Windows
+    // applies its ACL-based equivalent at install time, not here.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&run_dir, std::fs::Permissions::from_mode(0o700))?;
+    }
 
     let (signing_key, owner_source) = load_or_generate_owner_key()?;
     let owner_pubkey = PublicKey::from_verifying(&signing_key.verifying_key());

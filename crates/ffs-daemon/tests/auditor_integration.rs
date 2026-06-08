@@ -3,6 +3,7 @@
 //! through the substrate. Verifies the atom's signature, supersession
 //! chaining, and capability checks.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
@@ -58,6 +59,7 @@ fn setup(with_signing_key: bool) -> Harness {
     let templates_dir = dir.path().join("templates");
     std::fs::create_dir_all(&predicates_dir).unwrap();
     std::fs::create_dir_all(&templates_dir).unwrap();
+    #[cfg(unix)]
     std::fs::set_permissions(&predicates_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
 
     let registry = Arc::new(SpecRegistry::new());

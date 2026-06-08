@@ -1,3 +1,7 @@
+// Spawns a UDS-bound daemon — Unix-only. Windows uses the named-pipe
+// transport and its own integration tests.
+#![cfg(unix)]
+
 //! End-to-end CLI tests against a spawned daemon. We use the daemon's
 //! library (`ffs_daemon::transport::serve`) to host a UDS endpoint, then
 //! invoke the CLI's `run` function in-process. This avoids the cost of

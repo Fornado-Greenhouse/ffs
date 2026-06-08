@@ -13,6 +13,7 @@
 //!
 //! Skips itself with a stderr note if `python3` is not on `PATH`.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -240,6 +241,10 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
     let templates_dir = dir.path().join("templates");
     std::fs::create_dir_all(&predicates_dir).unwrap();
     std::fs::create_dir_all(&templates_dir).unwrap();
+    // 0o700 is the safe-default substrate hardening on Unix; Windows
+    // uses ACLs instead, applied by the installer rather than test
+    // setup, so we skip the mode change there.
+    #[cfg(unix)]
     std::fs::set_permissions(&predicates_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(
         predicates_dir.join("contact.person.toml"),

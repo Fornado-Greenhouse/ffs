@@ -2,6 +2,7 @@
 //! tempdir, write to a projection file, and assert that a supersession
 //! atom appears in the store within the latency budget.
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -75,6 +76,11 @@ fn setup() -> Harness {
     std::fs::create_dir_all(&predicates_dir).unwrap();
     std::fs::create_dir_all(&working_set_dir).unwrap();
     std::fs::create_dir_all(&ingest_dir).unwrap();
+    // 0o700 is the safe-default for a substrate working set on Unix.
+    // Windows uses ACLs rather than POSIX modes; the equivalent
+    // hardening lives in the installer for Windows, not in test
+    // setup, so we just skip the mode change there.
+    #[cfg(unix)]
     std::fs::set_permissions(&working_set_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(predicates_dir.join("contact.person.toml"), CONTACT_TOML).unwrap();
 

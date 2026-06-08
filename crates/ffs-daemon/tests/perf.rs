@@ -1,3 +1,7 @@
+// Perf measurements run against a UDS-bound daemon binary —
+// Unix-only.
+#![cfg(unix)]
+
 //! Daemon perf budgets per task_07 success criteria:
 //!
 //! - **Burst**: 1000 sequential requests from a single client complete

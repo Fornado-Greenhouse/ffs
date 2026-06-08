@@ -1,3 +1,8 @@
+// UDS transport is Unix-only; the Windows named-pipe transport
+// has its own integration tests. Gate the whole file so Windows CI
+// doesn't trip on tokio::net::UnixStream + os::unix::fs::Permissions.
+#![cfg(unix)]
+
 //! Dispatcher + transport integration tests.
 //!
 //! Coverage:
