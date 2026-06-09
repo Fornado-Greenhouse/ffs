@@ -293,15 +293,31 @@ async fn run() -> Result<(), StartupError> {
     let cancel_for_signal = cancel.clone();
     let skills_host_for_signal = skills_host.clone();
     tokio::spawn(async move {
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("install SIGTERM handler");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                tracing::info!("received SIGINT");
+        // Wait for any shutdown signal. SIGTERM (installer + launchd
+        // + systemd) is Unix-only — Windows only has CTRL-C via
+        // tokio::signal::ctrl_c (and CTRL-BREAK via
+        // tokio::signal::windows). The Windows daemon path is
+        // not yet shipped, so the unix arm of this select is
+        // gated behind cfg(unix) and Windows falls back to
+        // ctrl_c-only.
+        #[cfg(unix)]
+        {
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("install SIGTERM handler");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("received SIGINT");
+                }
+                _ = sigterm.recv() => {
+                    tracing::info!("received SIGTERM");
+                }
             }
-            _ = sigterm.recv() => {
-                tracing::info!("received SIGTERM");
-            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("received CTRL-C");
         }
         // Tell every skill to shut down (the supervisors enforce a
         // SHUTDOWN_GRACE window then SIGKILL). Doing this before
