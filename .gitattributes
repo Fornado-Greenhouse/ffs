@@ -1,0 +1,47 @@
+# Force LF line endings for files whose contents are part of the
+# substrate's wire/serialization surface. Without this, a Windows
+# checkout converts LF -> CRLF on text files, and tests that round-
+# trip rendered Markdown against canonical strings fail with
+# `"...\r\n..."` (left) vs `"...\n..."` (right) — see the
+# starter_templates::contact_person_renders_canonical_atom_into_expected_markdown
+# CI failure on 2026-06-09.
+#
+# Categories below are all treated as content-canonical: their bytes
+# show up in atoms, signatures, projection paths, golden-output
+# tests, and on-disk substrate files that must be byte-identical
+# across operating systems.
+
+# Rust sources — clippy + rustfmt assume LF.
+*.rs                    text eol=lf
+
+# Tera projection templates. The rendered output is content-hashed
+# into atom envelopes; CRLF would break signature equality.
+*.tera                  text eol=lf
+
+# Predicate specs + JSON Schema + atom JSON fixtures.
+*.toml                  text eol=lf
+*.json                  text eol=lf
+
+# Skill bundles + onboarding docs. Skill manifests parse YAML
+# frontmatter; CRLF tolerated, LF canonical.
+*.md                    text eol=lf
+*.py                    text eol=lf
+
+# Obsidian plugin TypeScript sources + bundle config.
+*.ts                    text eol=lf
+*.mts                   text eol=lf
+*.mjs                   text eol=lf
+*.cjs                   text eol=lf
+*.css                   text eol=lf
+
+# Shell + PowerShell installer scripts. CRLF in install.sh would
+# break the bash shebang; CRLF in install.ps1 is harmless but
+# canonicalizing keeps the diff clean.
+*.sh                    text eol=lf
+*.ps1                   text eol=lf
+
+# Workflow + tooling configs.
+*.yml                   text eol=lf
+*.yaml                  text eol=lf
+*.plist                 text eol=lf
+*.service               text eol=lf
