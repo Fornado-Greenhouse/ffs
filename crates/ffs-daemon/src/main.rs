@@ -288,7 +288,16 @@ async fn run() -> Result<(), StartupError> {
     let _materializer_handle = materializer.spawn(publisher.clone());
     tracing::info!("working-set materializer subscribed to event.atom.committed");
 
+    // Socket path computation: Unix daemons bind a UDS at
+    // `$FFS_DATA_DIR/run/ffs.sock` so the path respects the
+    // installer-configurable data dir; Windows daemons bind a named
+    // pipe whose name lives in the kernel's pipe namespace
+    // (`\\.\pipe\ffs-<user>`) rather than on disk, so the FFS_DATA_DIR
+    // doesn't apply. We pick per-OS to keep both stories honest.
+    #[cfg(unix)]
     let socket_path = run_dir.join("ffs.sock");
+    #[cfg(windows)]
+    let socket_path = transport::default_socket_path();
     let cancel = tokio_util::sync::CancellationToken::new();
     let cancel_for_signal = cancel.clone();
     let skills_host_for_signal = skills_host.clone();

@@ -184,7 +184,15 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
         Ok(r) => r,
         Err(_) => return Ok(()),
     };
-    let rel_str = rel.to_string_lossy().to_string();
+    // Normalize OS-native backslashes to forward slashes so the
+    // string we hand to the path parser + every downstream event
+    // payload is substrate-canonical on every host. Without this,
+    // Windows ships `contacts\\by-name\\S\\Sarah_Chen.md` into
+    // event.projection.invalidated.params.path and the fast-path
+    // classifier silently falls through to slow-path because
+    // `parse()` can't decompose a `\`-separated string.
+    // See projection::path::normalize_separators + task_34.
+    let rel_str = projection_path::normalize_separators(&rel.to_string_lossy()).into_owned();
 
     if is_federated_path(&rel_str) {
         let _ = crate::dispatch::route_to_ingest(

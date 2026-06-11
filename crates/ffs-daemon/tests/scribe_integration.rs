@@ -371,14 +371,28 @@ async fn ingest_submit_with_scribe_lands_contact_person_proposal_with_provenance
     // Scribe runs asynchronously; poll the quarantine until the
     // submission transitions to Extracted (with a generous budget for
     // the python subprocess + skills-host pipeline).
+    //
+    // Budget shape is platform-conditional rather than unconditionally
+    // generous: Windows CI's Python subprocess cold-start (interpreter
+    // boot + import-stdlib + import-`ffs_skill` + import-extraction)
+    // empirically runs ~2-3x slower than macOS/Ubuntu (we saw 6.24 s
+    // on `windows-latest` against a 5 s budget). An unconditional
+    // bump would mask a future regression on the fast platforms, so
+    // we keep the 5 s budget there and stretch to 12 s only where it
+    // actually needs to stretch. See task_34.
+    let (budget_iterations, poll_interval) = if cfg!(target_os = "windows") {
+        (120, std::time::Duration::from_millis(100)) // 12 s on Windows
+    } else {
+        (50, std::time::Duration::from_millis(100)) // 5 s elsewhere
+    };
     let mut sub = None;
-    for _ in 0..50 {
+    for _ in 0..budget_iterations {
         let s = h.quarantine.get(&id).await.unwrap();
         if s.status != SubmissionStatus::Pending {
             sub = Some(s);
             break;
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(poll_interval).await;
     }
     let sub = sub.expect("scribe extraction completed within budget");
     assert_eq!(sub.status, SubmissionStatus::Extracted);

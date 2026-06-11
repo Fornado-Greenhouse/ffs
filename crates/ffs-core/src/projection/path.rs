@@ -13,7 +13,37 @@
 //! [`ParsedPath::Unsupported`] for MVP. Adding any of them is a small
 //! per-sub-path addition; the renderer just needs a new arm.
 
+use std::borrow::Cow;
+
 use crate::atom::{EntityId, PredicateName};
+
+/// Normalize OS-native path separators in a projection-path string to
+/// the substrate-canonical forward slash. The substrate's contract is
+/// `/`-separated everywhere — atom envelopes, reverse-map rules,
+/// projection URLs, event payloads — so anything sourced from a
+/// `std::path::Path` on Windows (where `to_string_lossy()` yields
+/// `\`-separated strings) must run through this at the boundary
+/// before the path goes anywhere a `/` is expected.
+///
+/// Replaces `\\` with `/` unconditionally rather than gating on
+/// `cfg!(windows)` for two reasons: (1) the helper is testable on
+/// every dev host, and (2) a backslash from any source — Windows
+/// path conversion, a federated atom authored on Windows, a
+/// malformed event from a misbehaving peer — gets normalized
+/// regardless of where the code is running. The `contains('\\')`
+/// short-circuit makes the Unix common case allocation-free.
+///
+/// See task_34 and the Windows CI failure where
+/// `event.projection.invalidated.params.path` shipped
+/// `"contacts\\by-name\\S\\Sarah_Chen.md"` because the fastpath
+/// watcher emitted `Path::to_string_lossy()` without normalizing.
+pub fn normalize_separators(path: &str) -> Cow<'_, str> {
+    if path.contains('\\') {
+        Cow::Owned(path.replace('\\', "/"))
+    } else {
+        Cow::Borrowed(path)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PathFamily {
@@ -117,9 +147,13 @@ pub enum PathError {
 
 /// Parse a projection path string. Accepts both `<family>/...` and
 /// `/<family>/...` forms; trailing slashes and the leading slash are
-/// normalized away.
+/// normalized away. Backslash separators are normalized to forward
+/// slashes via [`normalize_separators`] so a path lifted from
+/// `Path::to_string_lossy()` on Windows parses identically to the
+/// canonical `/`-shaped form.
 pub fn parse(path: &str) -> Result<ParsedPath, PathError> {
-    let trimmed = path.trim_start_matches('/').trim_end_matches('/');
+    let canonical = normalize_separators(path);
+    let trimmed = canonical.trim_start_matches('/').trim_end_matches('/');
     if trimmed.is_empty() {
         return Err(PathError::Empty);
     }
@@ -294,6 +328,59 @@ mod tests {
         let p = path_for_entity(PathFamily::Notes, &EntityId::new("tuesday_standup"))
             .expect("alpha entity has a path");
         assert_eq!(p, "notes/by-name/T/tuesday_standup.md");
+    }
+
+    // ---- Backslash normalization (task_34) ----
+
+    #[test]
+    fn normalize_separators_is_a_no_op_for_forward_slash_strings() {
+        let s = "contacts/by-name/S/Sarah_Chen.md";
+        let out = normalize_separators(s);
+        assert_eq!(out, s);
+        // Same allocation: the no-backslash short-circuit returns
+        // Borrowed, not Owned.
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn normalize_separators_replaces_backslashes_with_forward_slashes() {
+        let out = normalize_separators(r"contacts\by-name\S\Sarah_Chen.md");
+        assert_eq!(out, "contacts/by-name/S/Sarah_Chen.md");
+        assert!(matches!(out, std::borrow::Cow::Owned(_)));
+    }
+
+    #[test]
+    fn normalize_separators_handles_mixed_separators() {
+        // Defensive: if someone hands us a half-normalized string,
+        // make sure the result is still fully `/`-shaped.
+        let out = normalize_separators(r"contacts\by-name/S\Sarah_Chen.md");
+        assert_eq!(out, "contacts/by-name/S/Sarah_Chen.md");
+    }
+
+    #[test]
+    fn parse_accepts_backslash_separated_paths() {
+        // This is the Windows CI failure shape — without
+        // normalization, parse() classifies as Unknown family
+        // because parts[0] = `contacts\by-name\S\Sarah_Chen.md`.
+        let p = parse(r"contacts\by-name\S\Sarah_Chen.md").unwrap();
+        assert_eq!(
+            p,
+            ParsedPath::SingleEntity {
+                family: PathFamily::Contacts,
+                entity: EntityId::new("Sarah_Chen"),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_backslash_path_matches_forward_slash_path() {
+        // Regression guard: the two separator shapes must produce
+        // exactly equal ParsedPath values so downstream code (the
+        // fastpath classifier, the reverse-map matcher, the
+        // dispatch event payloads) doesn't have to branch on host.
+        let bs = parse(r"contacts\by-name\S\Sarah_Chen.md").unwrap();
+        let fs = parse("contacts/by-name/S/Sarah_Chen.md").unwrap();
+        assert_eq!(bs, fs);
     }
 
     #[test]

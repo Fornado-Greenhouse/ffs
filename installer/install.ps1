@@ -42,6 +42,25 @@ function Run($block) {
     }
 }
 
+# ACL-harden a directory to the current user only. Mirrors the
+# `chmod 0o700` step in installer/install.sh on Unix per ADR-024.
+# `/inheritance:r` strips inherited ACEs so a permissive ACL on
+# %USERPROFILE% (e.g., from Group Policy on a domain join) doesn't
+# leak in; `/grant:r "user:(OI)(CI)F"` grants Full Control to the
+# current user with Object Inherit + Container Inherit applied to
+# everything under the path. Verified via the post-call icacls
+# print — fail loudly if the ACL didn't take.
+function Harden-Acl($path) {
+    if ($DryRun) {
+        Write-Host "+ icacls $path /inheritance:r /grant:r `"$env:USERNAME`":(OI)(CI)F"
+    } else {
+        & icacls $path /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "icacls failed to harden $path (exit $LASTEXITCODE)"
+        }
+    }
+}
+
 $BinDir = Join-Path $Prefix 'bin'
 $DataDir = Join-Path $env:USERPROFILE '.ffs'
 
@@ -96,6 +115,12 @@ foreach ($d in @(
 )) {
     Run { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 }
+
+# Lock the data dir and the run subdir down to the current user
+# only (ADR-024). Sibling of `chmod 0o700` in install.sh.
+Say "applying ACL hardening to $DataDir"
+Harden-Acl $DataDir
+Harden-Acl (Join-Path $DataDir 'run')
 
 # -------- seed starter library --------
 
