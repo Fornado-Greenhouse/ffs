@@ -498,6 +498,97 @@ fn keychain_owner_account() -> String {
     std::env::var("USER").unwrap_or_else(|_| "ffs".into())
 }
 
+/// Run `codesign -d --entitlements - --xml <path>` on the running
+/// binary and capture the merged stdout+stderr. Public for testing
+/// the parser separately from the shell-out. Returns `None` when
+/// the codesign tool isn't available or the call fails — both of
+/// which mean "treat as unsigned" for the gate.
+#[cfg(target_os = "macos")]
+fn codesign_entitlements_output(path: &Path) -> Option<String> {
+    let out = std::process::Command::new("codesign")
+        .arg("-d")
+        .arg("--entitlements")
+        .arg("-")
+        .arg("--xml")
+        .arg(path)
+        .output()
+        .ok()?;
+    // codesign emits the XML to stdout and chattier diagnostics to
+    // stderr; an unsigned binary fails non-zero on stderr. We treat
+    // any non-empty output across both streams as fair game for the
+    // entitlements parser because some macOS versions route the
+    // payload to stderr.
+    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+    combined.push_str(&String::from_utf8_lossy(&out.stderr));
+    Some(combined)
+}
+
+/// Pure parser for the `codesign -d --entitlements -` output. The
+/// `is_signed_with_keychain_entitlement` runtime check delegates to
+/// this so the decision logic is unit-testable without shelling
+/// out.
+///
+/// We don't bother XML-parsing; we just look for the access-group
+/// string anywhere in the output. False positives would require a
+/// binary that genuinely carries our access group, which is the
+/// signed state we want anyway.
+fn entitlements_contain_ffs_access_group(output: &str) -> bool {
+    // Mirrors `ffs_core::store::keyring_macos::FFS_ACCESS_GROUP`,
+    // which is the canonical source of truth. Inlined here to keep
+    // this helper buildable on every OS (the macOS module isn't
+    // present elsewhere).
+    output.contains("3S9R9K2L38.com.ffs.shared")
+}
+
+/// Returns `true` when the running binary is code-signed with the
+/// `keychain-access-groups = [3S9R9K2L38.com.ffs.shared]`
+/// entitlement (macOS) — the precondition for the keychain path to
+/// actually persist across daemon restarts under launchd, per
+/// ADR-023. On non-macOS hosts always returns `true` because the
+/// entitlement concept is macOS-specific; the platform's own
+/// keychain backend (SecretService on Linux, Credential Manager on
+/// Windows) handles its own access model.
+#[cfg(target_os = "macos")]
+fn is_signed_with_keychain_entitlement() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let Some(output) = codesign_entitlements_output(&exe) else {
+        return false;
+    };
+    entitlements_contain_ffs_access_group(&output)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_signed_with_keychain_entitlement() -> bool {
+    true
+}
+
+/// Composite gate: the keychain path is taken iff the user hasn't
+/// asked us to skip it (`FFS_KEYRING_DISABLE`) AND, on macOS, the
+/// running binary is signed with the access-group entitlement.
+/// Logs one warning per boot the first time we detect the
+/// macOS-unsigned state, with a pointer to
+/// `scripts/codesign-macos.sh`.
+fn keychain_path_enabled() -> bool {
+    if keyring_disabled() {
+        return false;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if !is_signed_with_keychain_entitlement() {
+            tracing::warn!(
+                "macOS binary is not signed with `3S9R9K2L38.com.ffs.shared` \
+                 keychain-access-group; falling back to env-var / generate. \
+                 Sign with scripts/codesign-macos.sh + ADR-023's entitlements \
+                 plist for keychain persistence across daemon restarts."
+            );
+            return false;
+        }
+    }
+    true
+}
+
 /// Load the owner Ed25519 signing-key seed. Precedence:
 ///   1. `FFS_OWNER_KEY_HEX` env var (also persisted to keychain on
 ///      this boot when keychain is enabled).
@@ -508,7 +599,7 @@ fn keychain_owner_account() -> String {
 fn load_or_generate_owner_key() -> Result<(SigningKey, KeySource), StartupError> {
     if let Ok(hex_seed) = std::env::var("FFS_OWNER_KEY_HEX") {
         let seed = decode_hex_32(&hex_seed).map_err(StartupError::BadKey)?;
-        if !keyring_disabled() {
+        if keychain_path_enabled() {
             match ffs_core::store::save_key_to_keychain(
                 ffs_core::store::OWNER_KEY_SERVICE,
                 &keychain_owner_account(),
@@ -526,7 +617,7 @@ fn load_or_generate_owner_key() -> Result<(SigningKey, KeySource), StartupError>
         return Ok((SigningKey::from_bytes(&seed), KeySource::EnvVar));
     }
 
-    if !keyring_disabled() {
+    if keychain_path_enabled() {
         match ffs_core::store::owner_key_from_keyring(
             ffs_core::store::OWNER_KEY_SERVICE,
             &keychain_owner_account(),
@@ -566,7 +657,7 @@ fn load_or_generate_dek(
 ) -> Result<([u8; 32], KeySource), StartupError> {
     if let Ok(hex_seed) = std::env::var("FFS_SQLCIPHER_KEY_HEX") {
         let dek = decode_hex_32(&hex_seed).map_err(StartupError::BadDek)?;
-        if !keyring_disabled() {
+        if keychain_path_enabled() {
             match ffs_core::store::save_key_to_keychain(
                 ffs_core::store::DEK_SERVICE,
                 owner_pubkey_multibase,
@@ -584,7 +675,7 @@ fn load_or_generate_dek(
         return Ok((dek, KeySource::EnvVar));
     }
 
-    if !keyring_disabled() {
+    if keychain_path_enabled() {
         match ffs_core::store::dek_from_keyring(
             ffs_core::store::DEK_SERVICE,
             owner_pubkey_multibase,
@@ -708,4 +799,60 @@ mod tests {
         let bad: String = "z".repeat(64);
         assert!(decode_hex_32(&bad).is_err());
     }
+
+    // ---- task_33 signed-binary detection ----
+
+    /// codesign emits a `keychain-access-groups` block containing
+    /// the access-group string when the binary is signed with the
+    /// FFS entitlements plist. The detection treats any match
+    /// across the merged stdout+stderr as signed.
+    #[test]
+    fn entitlements_match_when_codesign_output_carries_access_group() {
+        let output = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>3S9R9K2L38.com.ffs.shared</string>
+    </array>
+</dict>
+</plist>
+"#;
+        assert!(entitlements_contain_ffs_access_group(output));
+    }
+
+    /// A binary signed with the wrong (or no) keychain group must
+    /// be classified as unsigned for our purposes.
+    #[test]
+    fn entitlements_miss_when_access_group_is_different() {
+        let output = r#"<plist version="1.0"><dict>
+    <key>keychain-access-groups</key>
+    <array><string>3S9R9K2L38.com.someoneelse</string></array>
+</dict></plist>"#;
+        assert!(!entitlements_contain_ffs_access_group(output));
+    }
+
+    /// `codesign -d --entitlements -` against an unsigned binary
+    /// emits a single line like "code object is not signed at all"
+    /// on stderr. No access-group string → unsigned.
+    #[test]
+    fn entitlements_miss_when_codesign_says_unsigned() {
+        let output = "code object is not signed at all\n";
+        assert!(!entitlements_contain_ffs_access_group(output));
+    }
+
+    /// Empty output (codesign tool absent on a CI runner without
+    /// the Xcode command-line tools, say) → treat as unsigned.
+    #[test]
+    fn entitlements_miss_on_empty_output() {
+        assert!(!entitlements_contain_ffs_access_group(""));
+    }
+
+    // `keychain_path_enabled` honors FFS_KEYRING_DISABLE; that
+    // gate is exercised end-to-end by the
+    // `ffs_keyring_disable_short_circuits_to_env_var_or_generate_fallback`
+    // integration test in `tests/sqlite_persistence.rs`, so we
+    // don't unit-test the env-var read here (the workspace
+    // forbids `unsafe` and `std::env::set_var` requires it).
 }

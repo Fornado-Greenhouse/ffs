@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Codesigning entitlements for the three FFS binaries (ffs, ffs-daemon,
+  ffs-mcp) on macOS. Applied by scripts/codesign-macos.sh and by the
+  CI release workflow per task_33 + ADR-023.
+
+  Why these specific entitlements:
+
+  * keychain-access-groups — partitions Keychain Services entries so
+    all three FFS binaries share one logical bucket. Without this,
+    macOS partitions entries by code-signing identity AND by launch
+    context (interactive vs. launchd), and the daemon (launched by
+    launchd) reads an empty keychain even when the CLI (launched
+    interactively) wrote an entry seconds earlier. The shared
+    access group makes those writes mutually visible.
+
+  * com.apple.security.app-sandbox = false — FFS reads + writes
+    ~/.ffs/ outside any Apple-defined sandbox container. The
+    keychain-access-groups entitlement requires being explicit
+    about sandbox state; setting `false` here just states the
+    obvious so codesign doesn't refuse the entitlement.
+
+  Team ID 3S9R9K2L38 is the project lead's Apple Developer Team ID.
+  The access group is namespaced under it (`<team>.<group>`) per
+  Apple's app-group naming convention.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>3S9R9K2L38.com.ffs.shared</string>
+    </array>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+</dict>
+</plist>

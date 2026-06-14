@@ -63,6 +63,58 @@ jobs:
           file target/${{ matrix.target }}/release/${{ matrix.artifact }}
           otool -L target/${{ matrix.target }}/release/${{ matrix.artifact }}
 
+      # Codesign the macOS binary with the keychain-access-group
+      # entitlement so the daemon's keychain path works at runtime
+      # (task_33 + ADR-023). Three repo secrets need to be set:
+      #   MACOS_SIGNING_CERT_P12 — base64-encoded .p12 export of a
+      #     "Developer ID Application" cert + private key.
+      #   MACOS_SIGNING_CERT_PASSWORD — password the .p12 was
+      #     exported with.
+      #   MACOS_SIGNING_IDENTITY — codesign identity string, e.g.,
+      #     "Developer ID Application: Alex Foley (3S9R9K2L38)".
+      # When any of them is missing, the workflow skips signing and
+      # leaves the unsigned binary in place so forks without
+      # signing infrastructure can still build releases.
+      - name: Import signing certificate (macOS)
+        id: import-cert
+        if: startsWith(matrix.os, 'macos')
+        env:
+          MACOS_SIGNING_CERT_P12: ${{ secrets.MACOS_SIGNING_CERT_P12 }}
+          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if [[ -z "${MACOS_SIGNING_CERT_P12:-}" || -z "${MACOS_SIGNING_CERT_PASSWORD:-}" ]]; then
+            echo "macOS signing secrets not configured; skipping import" >&2
+            echo "imported=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$MACOS_SIGNING_CERT_P12" | base64 --decode > /tmp/ffs-signing-cert.p12
+          # Ephemeral keychain so we don't touch the runner's login keychain.
+          security create-keychain -p ci ffs-ci.keychain
+          security default-keychain -s ffs-ci.keychain
+          security unlock-keychain -p ci ffs-ci.keychain
+          security set-keychain-settings -lut 21600 ffs-ci.keychain
+          security import /tmp/ffs-signing-cert.p12 \
+            -k ffs-ci.keychain \
+            -P "$MACOS_SIGNING_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          # Allow codesign to use the private key non-interactively.
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k ci ffs-ci.keychain >/dev/null
+          rm -f /tmp/ffs-signing-cert.p12
+          echo "imported=true" >>"$GITHUB_OUTPUT"
+
+      - name: Codesign macOS binary
+        if: >-
+          startsWith(matrix.os, 'macos') &&
+          steps.import-cert.outputs.imported == 'true' &&
+          env.MACOS_SIGNING_IDENTITY != ''
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          export FFS_SIGNING_IDENTITY="$MACOS_SIGNING_IDENTITY"
+          ./scripts/codesign-macos.sh \
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
       - name: Verify linkage (Windows)
         if: matrix.os == 'windows-latest'
         run: |

@@ -372,6 +372,129 @@ async fn ffs_keyring_disable_short_circuits_to_env_var_or_generate_fallback() {
     let _ = child.wait();
 }
 
+/// task_33: with the codesigning entitlement in place, two
+/// consecutive daemon boots against the same `$FFS_DATA_DIR` must
+/// produce the same owner identity from the keychain — that's the
+/// end of the launchd partitioning chaos task_27's first deploy
+/// hit. Skip cleanly when `FFS_SIGNING_IDENTITY` isn't set so the
+/// CI run on contributor machines (no Apple Developer Program)
+/// still passes.
+///
+/// Today this test prints `skipping: …` and returns Ok unless the
+/// developer has explicitly opted in by signing the test binary
+/// and re-exporting the env var. CI sets the env var when the
+/// signing secrets are configured (see release.yml).
+#[tokio::test]
+#[cfg(target_os = "macos")]
+async fn signed_daemon_produces_stable_keychain_identity_across_boots() {
+    // Gating env var rather than a cargo feature because the test
+    // body works against any codesigned binary; the question is
+    // whether *this build* has been signed.
+    if std::env::var("FFS_SIGNING_IDENTITY").is_err() {
+        eprintln!(
+            "skipping: FFS_SIGNING_IDENTITY unset — sign the daemon binary \
+             with scripts/codesign-macos.sh and export FFS_SIGNING_IDENTITY \
+             to run this test"
+        );
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+
+    // First boot: fresh data dir, no env-var keys, no
+    // FFS_KEYRING_DISABLE. The signed binary should hit the
+    // keychain, generate a new pair, persist them.
+    let child1 = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env_remove("FFS_OWNER_KEY_HEX")
+        .env_remove("FFS_SQLCIPHER_KEY_HEX")
+        .env_remove("FFS_KEYRING_DISABLE")
+        .env("FFS_INGEST_STABILITY_MS", "0")
+        .env("FFS_LOG", "info")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn signed daemon boot 1");
+
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(wait_for(&socket, Duration::from_secs(5)).await);
+
+    // Read the owner pubkey via health.summary's identity field.
+    // Today health.summary doesn't expose the owner; use the
+    // log-line capture pattern instead. SIGTERM cleanly then read
+    // captured stderr.
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child1.id().to_string())
+        .status()
+        .expect("kill 1");
+    let out1 = child1.wait_with_output().expect("wait 1");
+    let stderr1 = String::from_utf8_lossy(&out1.stderr);
+    let owner_line_1 = stderr1
+        .lines()
+        .find(|l| l.contains("ffs-daemon starting") && l.contains("owner="))
+        .expect("owner=… log line on boot 1");
+
+    // Second boot: SAME data dir, same envs. The keychain should
+    // already have the entries; this boot must log
+    // `owner_source=keychain` and the pubkey must match.
+    let child2 = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env_remove("FFS_OWNER_KEY_HEX")
+        .env_remove("FFS_SQLCIPHER_KEY_HEX")
+        .env_remove("FFS_KEYRING_DISABLE")
+        .env("FFS_INGEST_STABILITY_MS", "0")
+        .env("FFS_LOG", "info")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn signed daemon boot 2");
+    assert!(wait_for(&socket, Duration::from_secs(5)).await);
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child2.id().to_string())
+        .status()
+        .expect("kill 2");
+    let out2 = child2.wait_with_output().expect("wait 2");
+    let stderr2 = String::from_utf8_lossy(&out2.stderr);
+    let owner_line_2 = stderr2
+        .lines()
+        .find(|l| l.contains("ffs-daemon starting") && l.contains("owner="))
+        .expect("owner=… log line on boot 2");
+
+    // Extract `owner=…` substrings and compare.
+    fn extract_owner(line: &str) -> &str {
+        let start = line.find("owner=").map(|i| i + "owner=".len()).unwrap_or(0);
+        let tail = &line[start..];
+        let end = tail
+            .find(' ')
+            .unwrap_or(tail.find('\n').unwrap_or(tail.len()));
+        &tail[..end]
+    }
+    let owner1 = extract_owner(owner_line_1);
+    let owner2 = extract_owner(owner_line_2);
+    assert_eq!(
+        owner1, owner2,
+        "signed daemon must produce the same owner identity across boots: \
+         boot1={owner1} boot2={owner2}"
+    );
+
+    // Sanity: the second boot must have come from the keychain,
+    // not regenerated. (If the binary isn't actually signed even
+    // though FFS_SIGNING_IDENTITY was set, we'd see
+    // `owner_source=fresh` here.)
+    assert!(
+        owner_line_2.contains("owner_source=keychain"),
+        "boot 2 should have read the keychain: {owner_line_2}"
+    );
+}
+
 /// task_29: a pending submission with extracted proposals must
 /// survive a daemon restart. Pre-task_29 the `InMemoryQuarantine`
 /// lost everything on restart even though the watcher had already

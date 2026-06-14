@@ -400,7 +400,23 @@ unlocked, though the failure mode is louder there (the
 keyring call returns a hard error rather than a fresh
 empty context).
 
-### Fix (current MVP, pre-task_33)
+### Diagnose
+
+Run the helper directly and inspect the entitlement payload:
+
+```sh
+codesign -d --entitlements -:- ~/.local/bin/ffs-daemon
+```
+
+- If the output contains `<string>3S9R9K2L38.com.ffs.shared</string>`,
+  the binary is signed and entitled. The keychain path will be
+  active.
+- If the output says "code object is not signed at all" or the
+  access group is missing, the binary is in the unsigned dev-build
+  state. The daemon detects this at startup and routes around the
+  keychain automatically.
+
+### Fix A — unsigned dev build (no Apple Developer Program)
 
 **On macOS, set `FFS_KEYRING_DISABLE=1` in the service
 environment and use the env-var key path (`FFS_OWNER_KEY_HEX`
@@ -409,25 +425,39 @@ deterministically across boots. Stash a fallback copy in
 `~/.ffs/secrets/{owner_key_hex,sqlcipher_key_hex}` with
 0600 perms.
 
-This is the canonical MVP path until task_33 lands code-
-signed FFS binaries with the `keychain-access-groups`
-entitlement that fixes the launchd partition issue.
+You can omit `FFS_KEYRING_DISABLE=1` on an unsigned binary too —
+post-task_33 the daemon detects the unsigned state and logs:
 
-### Fix (post-task_33, when shipping)
+```
+WARN ffs-daemon: macOS binary is not signed with `3S9R9K2L38.com.ffs.shared`
+                 keychain-access-group; falling back to env-var / generate.
+                 Sign with scripts/codesign-macos.sh + ADR-023's entitlements
+                 plist for keychain persistence across daemon restarts.
+```
 
-Once the FFS binaries are code-signed and carry the
-`com.ffs.shared` keychain-access-group entitlement:
+The daemon then takes the env-var path automatically.
 
-1. Unset `FFS_KEYRING_DISABLE` in the service environment.
-2. Confirm signing with:
+### Fix B — signed release build (Apple Developer Program)
+
+1. Sign the three FFS binaries with your Developer ID Application
+   identity (per ADR-023):
    ```sh
-   codesign -d --entitlements -:- ~/.local/bin/ffs-daemon
-   # should print: <key>keychain-access-groups</key>
-   #                <array><string>3S9R9K2L38.com.ffs.shared</string></array>
+   export FFS_SIGNING_IDENTITY="Developer ID Application: <Your Name> (<TeamID>)"
+   ./scripts/codesign-macos.sh \
+     target/release/ffs \
+     target/release/ffs-daemon \
+     target/release/ffs-mcp
    ```
-3. Restart the daemon. The next `ffs identity show` will
-   print `source: keychain` and the pubkey will stay stable
-   across reboots.
+   You'll need to change the team ID inside
+   `entitlements/ffs.entitlements.plist` AND the
+   `FFS_ACCESS_GROUP` constant in
+   `crates/ffs-core/src/store/keyring_macos.rs` if yours differs
+   from `3S9R9K2L38`. Then re-sign.
+2. Unset `FFS_KEYRING_DISABLE` in the service environment.
+3. Confirm signing with the `codesign -d` command above.
+4. Restart the daemon. The next `ffs identity show` will print
+   `source: keychain` and the pubkey will stay stable across
+   reboots.
 
 ---
 

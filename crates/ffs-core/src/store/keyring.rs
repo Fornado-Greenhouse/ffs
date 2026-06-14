@@ -4,20 +4,36 @@
 //! - The **owner signing-key seed** (32 bytes) that's expanded into
 //!   the daemon's Ed25519 identity.
 //!
-//! Both helpers wrap the cross-platform `keyring` crate (macOS
-//! Keychain, Linux Secret Service, Windows Credential Manager).
-//! On first call they generate 32 random bytes via `OsRng`, base64-
-//! encode them, persist to the OS keychain under the supplied
-//! `(service, account)` pair, and return the raw bytes. On
-//! subsequent calls they read the existing entry and decode it.
+//! Per-OS dispatch (task_33 + ADR-023):
 //!
-//! Pure helpers (`encode_key`, `decode_key`) sit underneath both
-//! `dek_from_keyring` and `owner_key_from_keyring` and carry the
-//! validation logic — these are the unit-testable surface.
+//! - **macOS**: drops down to `security-framework` via
+//!   [`super::keyring_macos`] so we can set `kSecAttrAccessGroup`
+//!   explicitly. Without that knob the `keyring` v3 crate uses
+//!   `find_generic_password` / `set_generic_password` without an
+//!   access group, and Keychain Services partitions entries by the
+//!   writing binary's code-signing identity + launch context — so
+//!   an entry the interactive CLI wrote is invisible to the
+//!   launchd-spawned daemon. The codesigning entitlement
+//!   (`entitlements/ffs.entitlements.plist`) declares the matching
+//!   group so all FFS binaries see the same bucket. The daemon's
+//!   `is_signed_with_keychain_entitlement` check gates whether this
+//!   path is taken at all on macOS — unsigned dev builds skip the
+//!   keychain entirely.
+//! - **Linux / Windows**: the `keyring` v3 crate's `linux-native`
+//!   (SecretService) and `windows-native` (Credential Manager)
+//!   backends work without access groups; their permission model is
+//!   per-user out of the box. This file calls into the keyring crate
+//!   directly on those platforms.
+//!
+//! Pure helpers (`encode_key`, `decode_key`, `generate_fresh_key`)
+//! sit underneath every backend and carry the validation logic —
+//! these are the unit-testable surface.
 
-use ::keyring::{Entry, Error as KeyringError};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+
+#[cfg(not(target_os = "macos"))]
+use ::keyring::{Entry, Error as KeyringError};
 
 use super::StoreError;
 
@@ -33,8 +49,15 @@ pub const DEK_SERVICE: &str = "ffs-dek";
 /// `account` is a per-substrate identifier such as the substrate's
 /// owner public-key in multibase form.
 pub fn dek_from_keyring(service: &str, account: &str) -> Result<[u8; 32], StoreError> {
-    let entry = Entry::new(service, account).map_err(|e| StoreError::Keyring(e.to_string()))?;
-    key_from_entry_or_generate(&entry)
+    #[cfg(target_os = "macos")]
+    {
+        super::keyring_macos::key_from_access_group_or_generate(service, account)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let entry = Entry::new(service, account).map_err(|e| StoreError::Keyring(e.to_string()))?;
+        key_from_entry_or_generate(&entry)
+    }
 }
 
 /// Look up or create the substrate's owner Ed25519 signing-key seed
@@ -46,8 +69,15 @@ pub fn dek_from_keyring(service: &str, account: &str) -> Result<[u8; 32], StoreE
 /// Multi-substrate-per-user (cohorts) can override the account
 /// when the cohort design lands.
 pub fn owner_key_from_keyring(service: &str, account: &str) -> Result<[u8; 32], StoreError> {
-    let entry = Entry::new(service, account).map_err(|e| StoreError::Keyring(e.to_string()))?;
-    key_from_entry_or_generate(&entry)
+    #[cfg(target_os = "macos")]
+    {
+        super::keyring_macos::key_from_access_group_or_generate(service, account)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let entry = Entry::new(service, account).map_err(|e| StoreError::Keyring(e.to_string()))?;
+        key_from_entry_or_generate(&entry)
+    }
 }
 
 /// Persist a 32-byte key into the OS keychain under `(service,
@@ -60,15 +90,25 @@ pub fn save_key_to_keychain(
     account: &str,
     key: &[u8; 32],
 ) -> Result<(), StoreError> {
-    let entry = Entry::new(service, account).map_err(|e| StoreError::Keyring(e.to_string()))?;
-    entry
-        .set_password(&encode_key(key))
-        .map_err(|e| StoreError::Keyring(e.to_string()))
+    #[cfg(target_os = "macos")]
+    {
+        super::keyring_macos::persist(service, account, key)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let entry = Entry::new(service, account).map_err(|e| StoreError::Keyring(e.to_string()))?;
+        entry
+            .set_password(&encode_key(key))
+            .map_err(|e| StoreError::Keyring(e.to_string()))
+    }
 }
 
-/// Shared lookup-or-generate logic for both keys. On `NoEntry`
-/// generates 32 fresh bytes from `OsRng`, base64-encodes them,
-/// persists, and returns. On a hit decodes and length-validates.
+/// Shared lookup-or-generate logic for the non-macOS backends. On
+/// `NoEntry` generates 32 fresh bytes from `OsRng`, base64-encodes
+/// them, persists, and returns. On a hit decodes and length-
+/// validates. macOS uses [`super::keyring_macos`] instead so it
+/// can set `kSecAttrAccessGroup`.
+#[cfg(not(target_os = "macos"))]
 fn key_from_entry_or_generate(entry: &Entry) -> Result<[u8; 32], StoreError> {
     match entry.get_password() {
         Ok(s) => decode_key(&s).map_err(StoreError::Keyring),
@@ -107,7 +147,7 @@ pub(crate) fn decode_key(s: &str) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
-fn generate_fresh_key() -> [u8; 32] {
+pub(crate) fn generate_fresh_key() -> [u8; 32] {
     use rand::RngCore;
     let mut key = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut key);

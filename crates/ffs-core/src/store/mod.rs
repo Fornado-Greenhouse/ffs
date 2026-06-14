@@ -23,6 +23,12 @@
 use thiserror::Error;
 
 mod keyring;
+// macOS-only: drop-to-`security-framework` keychain helpers that set
+// `kSecAttrAccessGroup` so all FFS binaries land in one logical
+// bucket. The keyring crate (even with `apple-native`) doesn't expose
+// that knob — see ADR-023 + crates/ffs-core/src/store/keyring_macos.rs.
+#[cfg(target_os = "macos")]
+mod keyring_macos;
 mod mem;
 pub(crate) mod migrations;
 mod schema;

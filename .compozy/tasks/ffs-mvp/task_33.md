@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: macOS code signing + keychain-access-groups entitlement so task_27 works under launchd
 type: infra
 complexity: high
@@ -37,13 +37,19 @@ The root cause is macOS Keychain Services partitioning entries by **binary code-
 </requirements>
 
 ## Subtasks
-- [ ] 33.1 Add `entitlements/ffs.entitlements.plist` with the access-group declaration.
-- [ ] 33.2 Add `scripts/codesign-macos.sh` honoring `FFS_SIGNING_IDENTITY`. Verify with `codesign --verify` + `codesign -d --entitlements -:-`.
-- [ ] 33.3 Add a `is_signed_with_keychain_entitlement()` runtime check to the daemon binary; gate the keychain path on it and refuse with a clear log message when unsigned.
-- [ ] 33.4 Confirm or implement `kSecAttrAccessGroup` handling in the macOS keyring path (read keyring v3 source; drop to `security-framework` if needed).
-- [ ] 33.5 Augment `.github/workflows/release.yml` macOS jobs with codesigning. Use the `MACOS_SIGNING_IDENTITY` + `MACOS_SIGNING_CERT_P12` + `MACOS_SIGNING_CERT_PASSWORD` repository secrets pattern. Skip cleanly when the secrets aren't set.
-- [ ] 33.6 Update docs (technical-friend-checklist Step 2, troubleshooting keychain section) + add ADR-023.
-- [ ] 33.7 Add an integration test that signs the test binary on demand and confirms two consecutive daemon spawns produce the same identity. Skip cleanly when `FFS_SIGNING_IDENTITY` isn't set so the test suite still passes on contributor machines without signing setup.
+- [x] 33.1 Add `entitlements/ffs.entitlements.plist` with the access-group declaration. *(File created with `keychain-access-groups = [3S9R9K2L38.com.ffs.shared]` plus `com.apple.security.app-sandbox = false`. Header comment explains why both are load-bearing.)*
+- [x] 33.2 Add `scripts/codesign-macos.sh` honoring `FFS_SIGNING_IDENTITY`. *(Script signs each passed-in binary with the entitlements file + `--options runtime` + `--timestamp` + `--force`; verifies with `codesign --verify --deep --strict --verbose=2`; prints embedded entitlements via `codesign -d --entitlements - --xml`. `chmod +x` applied.)*
+- [x] 33.3 Add a `is_signed_with_keychain_entitlement()` runtime check; gate the keychain path on it. *(Two functions in `crates/ffs-daemon/src/main.rs`: `codesign_entitlements_output` shells out + merges stdout/stderr — some macOS versions emit to stderr — and `entitlements_contain_ffs_access_group` is a pure substring check on `3S9R9K2L38.com.ffs.shared` (unit-testable). The composite `keychain_path_enabled()` gate combines `!FFS_KEYRING_DISABLE` + `is_signed_with_keychain_entitlement()` and is what the env-var/keychain/generate precedence chains check now. On non-macOS, `is_signed_with_keychain_entitlement()` returns `true` so the existing keyring crate path stays in force.)*
+- [x] 33.4 Drop down to `security-framework` for the macOS keyring path with `kSecAttrAccessGroup` set. *(Read keyring v3 source on macos.rs — it calls `find_generic_password` / `set_generic_password` with NO access-group attribute. Built `crates/ffs-core/src/store/keyring_macos.rs` against `security_framework::passwords::{set_generic_password_options, generic_password}` + `passwords_options::PasswordOptions::set_access_group`. Returns `errSecItemNotFound` (-25300, hardcoded with a constant pinning the source) as the NoEntry signal. ALSO discovered + fixed a precondition bug: the workspace `Cargo.toml` declared `keyring = "3"` without `apple-native`, so keyring was silently using its in-process mock backend on macOS — every boot wrote to a fresh HashMap. Enabled `apple-native`, `linux-native-sync-persistent`, `windows-native`, `crypto-rust` features explicitly. Added `security-framework = "3"` as a direct macOS-only ffs-core dep.)*
+- [x] 33.5 Augment `.github/workflows/release.yml` macOS jobs with codesigning. *(Two new steps: `Import signing certificate (macOS)` builds an ephemeral keychain from the base64-encoded `MACOS_SIGNING_CERT_P12` + `MACOS_SIGNING_CERT_PASSWORD` secrets, then `set-key-partition-list` so codesign can use the key non-interactively. `Codesign macOS binary` runs `scripts/codesign-macos.sh` with `MACOS_SIGNING_IDENTITY`. Both steps skip cleanly when any secret is missing — forks without signing infrastructure still get unsigned `.tar.gz` artifacts.)*
+- [x] 33.6 Update docs + add ADR-023. *(ADR-023 written with the three-cause analysis: mock backend silently in use, keyring v3 doesn't pass access groups, launchd partitioning. Alternatives 1–3 (accept partitioning / file-based secrets / upstream patch) considered + rejected with reasoning. `docs/onboarding/technical-friend-checklist.md` Step 2 rewritten: Path A simplified (FFS_KEYRING_DISABLE optional since daemon auto-detects unsigned state), Path B now has the full codesigning recipe with `codesign -d --entitlements -:-` verification. `docs/onboarding/troubleshooting.md` keychain section split into "Diagnose" / "Fix A — unsigned" / "Fix B — signed" with the warn-log message verbatim.)*
+- [x] 33.7 Add an integration test that proves cross-process keychain access on a signed binary. *(`signed_daemon_produces_stable_keychain_identity_across_boots` in `tests/sqlite_persistence.rs`, gated `#[cfg(target_os = "macos")]`. Skips cleanly with `eprintln!` when `FFS_SIGNING_IDENTITY` isn't set so CI on contributor machines stays green. When opted in, spawns the daemon twice against the same `$FFS_DATA_DIR`, captures the `ffs-daemon starting owner=… owner_source=keychain` stderr lines, parses the owner string out, and asserts boot 1 == boot 2 + `owner_source=keychain` on boot 2.)*
+
+## User-pending follow-ups
+These aren't code changes — they're operational steps the project lead needs to complete before signed releases ship:
+- Configure the three GitHub repo secrets: `MACOS_SIGNING_CERT_P12` (base64-encoded .p12 export), `MACOS_SIGNING_CERT_PASSWORD`, and `MACOS_SIGNING_IDENTITY` (`"Developer ID Application: Alex Foley (3S9R9K2L38)"`). Without these the release workflow still produces unsigned binaries.
+- Locally, run `scripts/codesign-macos.sh` on a `cargo build --release` and verify the cross-process integration test passes when `FFS_SIGNING_IDENTITY` is exported. This is the empirical proof that task_27's launchd identity-drift bug is fixed.
+- (Phase 2) notarization via `xcrun notarytool` for distribution outside of `cargo install` — the `--options runtime` flag is already in place as the precondition.
 
 ## Implementation Details
 

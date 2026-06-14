@@ -142,9 +142,13 @@ Then edit `~/Library/LaunchAgents/com.ffs.daemon.plist` (macOS)
 or `~/.config/systemd/user/ffs-daemon.service` (Linux) to
 inject the two values via `FFS_OWNER_KEY_HEX` and
 `FFS_SQLCIPHER_KEY_HEX` in the `EnvironmentVariables` block.
-Also set `FFS_KEYRING_DISABLE=1` until task_33 lands, so the
-daemon doesn't attempt the (currently broken under launchd)
-keychain path.
+You can additionally set `FFS_KEYRING_DISABLE=1` to short-circuit
+the keychain path entirely — useful in CI containers without an
+unlocked keychain. (On macOS, the daemon now refuses the keychain
+path automatically when the running binary is not codesigned per
+Path B below; on signed binaries it'll prefer the keychain even
+when the env-var path is also set, and the env-var values are
+migrated into the keychain on first boot.)
 
 After reload, `ffs identity show` will print:
 ```
@@ -152,22 +156,54 @@ owner pubkey: z…
 source:       env_var
 ```
 
-### Path B: OS-keychain-pinned
+### Path B: OS-keychain-pinned (macOS — requires codesigning)
 
-> **Status (task_27 + task_33):** the keychain helpers in
-> `ffs-core` and the `ffs identity show` subcommand are
-> implemented. They work correctly from interactive CLI
-> contexts. They do NOT work yet from a launchd-spawned daemon
-> on macOS — Keychain Services partitions entries by binary
-> code-signing identity, and the FFS binaries aren't signed
-> with a matching `keychain-access-groups` entitlement yet.
-> Use Path A above until task_33 lands the codesigning
-> infrastructure. The troubleshooting guide has the long-form
-> explanation.
+Task_33 lands codesigning + a `keychain-access-groups` entitlement
+so the launchd-spawned daemon and the interactive CLI share one
+logical keychain bucket (see ADR-023 for the mechanism).
 
-When task_33 ships, this section will become: "on first boot
-the daemon generates and stores both keys in the OS keychain;
-verify with `ffs identity show`."
+The relevant pieces are already in the repo:
+
+- `entitlements/ffs.entitlements.plist` declares
+  `keychain-access-groups = [3S9R9K2L38.com.ffs.shared]`.
+- `scripts/codesign-macos.sh` signs the three FFS binaries with
+  that entitlement using a `FFS_SIGNING_IDENTITY` env var.
+- `crates/ffs-core/src/store/keyring_macos.rs` calls
+  `security-framework` directly with `kSecAttrAccessGroup` set
+  so the entitlement is actually load-bearing at runtime.
+
+To enable it for your install:
+
+```sh
+# Use *your* "Developer ID Application" identity here.
+export FFS_SIGNING_IDENTITY="Developer ID Application: <Your Name> (<TeamID>)"
+cargo build --release
+./scripts/codesign-macos.sh \
+  target/release/ffs \
+  target/release/ffs-daemon \
+  target/release/ffs-mcp
+```
+
+Verify the entitlement was embedded:
+
+```sh
+codesign -d --entitlements -:- ./target/release/ffs-daemon
+# Should print a plist mentioning `3S9R9K2L38.com.ffs.shared`.
+# If your TeamID differs, change the entitlements file (and the
+# FFS_ACCESS_GROUP constant in ffs-core::store::keyring_macos)
+# accordingly before re-signing.
+```
+
+After reinstalling the signed binaries and restarting the daemon,
+`ffs identity show` will print `source: keychain`. The pubkey
+must stay identical across reboots; if it changes, the
+troubleshooting guide's "Keychain access from launchd / systemd
+daemons" section has the diagnostic recipe.
+
+If you don't have an Apple Developer Program membership, stay on
+Path A. The daemon will detect the unsigned state, log a one-time
+warning pointing at `scripts/codesign-macos.sh`, and use the
+env-var path automatically.
 
 ## Step 3 — First run (5 min)
 
