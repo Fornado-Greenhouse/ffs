@@ -26,3 +26,14 @@ node_modules/
 **/node_modules/
 obsidian-plugin/main.js
 obsidian-plugin/main.js.map
+
+# Operational stash for codesigning artifacts (task_33). Things
+# that belong here: the Developer ID Application .cer, the
+# CSR that produced it, any intermediate CA certs, the .p12
+# export, and the throwaway password used for the .p12. These
+# files are local-machine secrets; if any of them lands in git
+# we have to revoke + reissue the cert and rotate every secret
+# derived from it. Gitignored across the whole tree as
+# defense-in-depth.
+secrets/
+**/secrets/
