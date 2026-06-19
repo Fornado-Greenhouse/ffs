@@ -156,32 +156,77 @@ owner pubkey: z…
 source:       env_var
 ```
 
-### Path B: OS-keychain-pinned (macOS — requires codesigning)
+### Path B: OS-keychain-pinned (macOS — requires codesigning + notarization + provisioning profile)
 
 Task_33 lands codesigning + a `keychain-access-groups` entitlement
 so the launchd-spawned daemon and the interactive CLI share one
-logical keychain bucket (see ADR-023 for the mechanism).
+logical keychain bucket (see ADR-023 for the mechanism). Three
+Apple-side gates have to be crossed before this works:
 
-The relevant pieces are already in the repo:
+1. **Developer ID Application certificate** — you have one from
+   joining the Apple Developer Program.
+2. **Notarization** — Apple's automated scan of the signed binary;
+   without it, macOS Gatekeeper rejects it.
+3. **Embedded provisioning profile** — Apple-signed authorization
+   that lets your binary claim the restricted
+   `keychain-access-groups` entitlement. Without it, AMFI silently
+   `SIGKILL`s the binary at exec.
+
+The repo carries the code-side pieces:
 
 - `entitlements/ffs.entitlements.plist` declares
   `keychain-access-groups = [3S9R9K2L38.com.ffs.shared]`.
-- `scripts/codesign-macos.sh` signs the three FFS binaries with
-  that entitlement using a `FFS_SIGNING_IDENTITY` env var.
+- `scripts/codesign-macos.sh` signs the three FFS binaries.
+- Each binary crate's `build.rs` embeds the profile via
+  `__TEXT,__provisioning` when `FFS_PROVISIONING_PROFILE` is set.
 - `crates/ffs-core/src/store/keyring_macos.rs` calls
-  `security-framework` directly with `kSecAttrAccessGroup` set
-  so the entitlement is actually load-bearing at runtime.
+  `security-framework` directly with `kSecAttrAccessGroup` set.
 
-To enable it for your install:
+#### Apple-portal setup (one-time, ~5 min)
+
+There used to be a "Keychain Sharing" capability you'd toggle on
+the App ID page. Apple removed it — every App ID now gets
+keychain access automatically (Eskimo, [forum/782084](https://developer.apple.com/forums/thread/782084)).
+The authorization is in the **provisioning profile** instead.
+
+1. **App ID** at `developer.apple.com/account/resources/identifiers/list`
+   → "+" → App IDs → App. Bundle ID `com.fornado.ffs` (or any
+   bundle ID you own under your team). Skip the Capabilities
+   checkboxes — nothing applies here.
+2. **Profile** at `developer.apple.com/account/resources/profiles/list`
+   → "+" → scroll to the **Distribution** section → **Developer
+   ID** → select the App ID + the Developer ID Application cert.
+   Download → save as `secrets/embedded.provisionprofile`.
+3. **Notarytool credentials.** Generate an app-specific password
+   at `account.apple.com/account/manage` → App-Specific Passwords
+   → "+", label "FFS notarytool". Then locally:
+   ```sh
+   xcrun notarytool store-credentials "ffs-notary" \
+     --apple-id <your-apple-id-email> \
+     --team-id 3S9R9K2L38 \
+     --password "xxxx-xxxx-xxxx-xxxx"
+   ```
+
+#### Local build / sign / notarize
 
 ```sh
-# Use *your* "Developer ID Application" identity here.
+# Build with the profile embedded at link time
+FFS_PROVISIONING_PROFILE="$(pwd)/secrets/embedded.provisionprofile" \
+  cargo build --release
+
+# Sign with the entitlements
 export FFS_SIGNING_IDENTITY="Developer ID Application: <Your Name> (<TeamID>)"
-cargo build --release
 ./scripts/codesign-macos.sh \
   target/release/ffs \
   target/release/ffs-daemon \
   target/release/ffs-mcp
+
+# Notarize each one (parallel-friendly — ~2-5 min each)
+for bin in ffs ffs-daemon ffs-mcp; do
+  /usr/bin/ditto -c -k --keepParent "target/release/$bin" "/tmp/$bin.zip"
+  xcrun notarytool submit "/tmp/$bin.zip" \
+    --keychain-profile ffs-notary --wait
+done
 ```
 
 Verify the entitlement was embedded:
@@ -194,9 +239,24 @@ codesign -d --entitlements -:- ./target/release/ffs-daemon
 # accordingly before re-signing.
 ```
 
-After reinstalling the signed binaries and restarting the daemon,
-`ffs identity show` will print `source: keychain`. The pubkey
-must stay identical across reboots; if it changes, the
+Verify the provisioning profile section made it in:
+
+```sh
+otool -l ./target/release/ffs-daemon | grep __provisioning
+# Should print: sectname __provisioning  segname __TEXT
+```
+
+Verify Gatekeeper accepts the notarized binary:
+
+```sh
+spctl --assess --type install --verbose=4 ./target/release/ffs-daemon
+# Expected: source=Notarized Developer ID
+# (note: --type install, not --type execute, for raw Mach-O CLI binaries)
+```
+
+After reinstalling the signed+notarized binaries and restarting
+the daemon, `ffs identity show` will print `source: keychain`.
+The pubkey must stay identical across reboots; if it changes, the
 troubleshooting guide's "Keychain access from launchd / systemd
 daemons" section has the diagnostic recipe.
 

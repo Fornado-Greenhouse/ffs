@@ -47,7 +47,40 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      # Decode the Apple-issued provisioning profile (Developer ID
+      # subtype) so the build embeds it via __TEXT,__provisioning.
+      # AMFI requires this on every Mach-O claiming the restricted
+      # `keychain-access-groups` entitlement (ADR-023). Builds
+      # without the secret produce an unsigned/unauthorized binary
+      # that the daemon's runtime gate (`is_signed_with_keychain_
+      # entitlement`) detects and routes around — same behavior
+      # contributor forks see.
+      - name: Stage provisioning profile (macOS)
+        id: stage-profile
+        if: startsWith(matrix.os, 'macos')
+        env:
+          MACOS_PROVISIONING_PROFILE_B64: ${{ secrets.MACOS_PROVISIONING_PROFILE_B64 }}
+        run: |
+          if [[ -z "${MACOS_PROVISIONING_PROFILE_B64:-}" ]]; then
+            echo "MACOS_PROVISIONING_PROFILE_B64 not set; build will not embed a profile" >&2
+            echo "staged=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/ffs-codesign"
+          echo "$MACOS_PROVISIONING_PROFILE_B64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/ffs-codesign/embedded.provisionprofile"
+          echo "profile_path=$RUNNER_TEMP/ffs-codesign/embedded.provisionprofile" \
+            >>"$GITHUB_OUTPUT"
+          echo "staged=true" >>"$GITHUB_OUTPUT"
+
       - name: Build ffs-cli
+        env:
+          # Set on macOS-staged builds so each binary crate's
+          # build.rs embeds the profile via the linker section. On
+          # Linux/Windows or when the secret is missing, this stays
+          # empty and the build.rs is a no-op.
+          FFS_PROVISIONING_PROFILE: ${{ steps.stage-profile.outputs.profile_path }}
         run: cargo build --release --target ${{ matrix.target }} --bin ffs
 
       - name: Verify static linkage (Linux musl)
@@ -62,19 +95,34 @@ jobs:
         run: |
           file target/${{ matrix.target }}/release/${{ matrix.artifact }}
           otool -L target/${{ matrix.target }}/release/${{ matrix.artifact }}
+          # Sanity-check the provisioning section is actually present
+          # when the secret was staged. Failure here means the build.rs
+          # didn't pick up the env var — fail loudly rather than ship
+          # an unsigned-at-AMFI artifact.
+          if [[ "${{ steps.stage-profile.outputs.staged }}" == "true" ]]; then
+            otool -l target/${{ matrix.target }}/release/${{ matrix.artifact }} \
+              | grep -q "sectname __provisioning" \
+              || { echo "::error::profile staged but not embedded; build.rs did not fire"; exit 1; }
+          fi
 
-      # Codesign the macOS binary with the keychain-access-group
-      # entitlement so the daemon's keychain path works at runtime
-      # (task_33 + ADR-023). Three repo secrets need to be set:
+      # Codesign + notarize the macOS binary (task_33 + ADR-023).
+      # Required secrets:
       #   MACOS_SIGNING_CERT_P12 — base64-encoded .p12 export of a
       #     "Developer ID Application" cert + private key.
       #   MACOS_SIGNING_CERT_PASSWORD — password the .p12 was
       #     exported with.
       #   MACOS_SIGNING_IDENTITY — codesign identity string, e.g.,
       #     "Developer ID Application: Alex Foley (3S9R9K2L38)".
+      #   MACOS_PROVISIONING_PROFILE_B64 — base64 of the Apple-issued
+      #     Developer ID provisioning profile (staged above; without
+      #     it, AMFI will SIGKILL the binary at exec).
+      #   MACOS_NOTARYTOOL_APPLE_ID — Apple ID email.
+      #   MACOS_NOTARYTOOL_TEAM_ID — 10-char team identifier.
+      #   MACOS_NOTARYTOOL_PASSWORD — app-specific password from
+      #     appleid.apple.com (NOT the Apple ID password itself).
       # When any of them is missing, the workflow skips signing and
-      # leaves the unsigned binary in place so forks without
-      # signing infrastructure can still build releases.
+      # ships the unsigned binary so forks without Apple Developer
+      # accounts can still produce releases.
       - name: Import signing certificate (macOS)
         id: import-cert
         if: startsWith(matrix.os, 'macos')
@@ -107,6 +155,7 @@ jobs:
         if: >-
           startsWith(matrix.os, 'macos') &&
           steps.import-cert.outputs.imported == 'true' &&
+          steps.stage-profile.outputs.staged == 'true' &&
           env.MACOS_SIGNING_IDENTITY != ''
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
@@ -114,6 +163,42 @@ jobs:
           export FFS_SIGNING_IDENTITY="$MACOS_SIGNING_IDENTITY"
           ./scripts/codesign-macos.sh \
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+      # Notarize the signed binary so macOS Gatekeeper will admit it
+      # for downloaded installs. notarytool requires a zip wrapper
+      # around bare Mach-O binaries.
+      - name: Notarize macOS binary
+        if: >-
+          startsWith(matrix.os, 'macos') &&
+          steps.import-cert.outputs.imported == 'true' &&
+          steps.stage-profile.outputs.staged == 'true' &&
+          env.MACOS_SIGNING_IDENTITY != '' &&
+          env.MACOS_NOTARYTOOL_APPLE_ID != '' &&
+          env.MACOS_NOTARYTOOL_TEAM_ID != '' &&
+          env.MACOS_NOTARYTOOL_PASSWORD != ''
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARYTOOL_APPLE_ID: ${{ secrets.MACOS_NOTARYTOOL_APPLE_ID }}
+          MACOS_NOTARYTOOL_TEAM_ID: ${{ secrets.MACOS_NOTARYTOOL_TEAM_ID }}
+          MACOS_NOTARYTOOL_PASSWORD: ${{ secrets.MACOS_NOTARYTOOL_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BIN=target/${{ matrix.target }}/release/${{ matrix.artifact }}
+          ZIP="$RUNNER_TEMP/${{ matrix.artifact }}.zip"
+          /usr/bin/ditto -c -k --keepParent "$BIN" "$ZIP"
+          xcrun notarytool submit "$ZIP" \
+            --apple-id "$MACOS_NOTARYTOOL_APPLE_ID" \
+            --team-id "$MACOS_NOTARYTOOL_TEAM_ID" \
+            --password "$MACOS_NOTARYTOOL_PASSWORD" \
+            --wait
+          # Mach-O CLI binaries can't have a ticket stapled onto
+          # them (no segment to embed it in); Gatekeeper does an
+          # online lookup against Apple's CDN by content hash.
+          # spctl --assess --type install is the right query for
+          # raw Mach-O (--type execute is .app-bundle-shaped).
+          spctl --assess --type install --verbose=4 "$BIN" \
+            || { echo "::error::spctl rejected notarized binary"; exit 1; }
+          rm -f "$ZIP"
 
       - name: Verify linkage (Windows)
         if: matrix.os == 'windows-latest'

@@ -402,12 +402,27 @@ async fn signed_daemon_produces_stable_keychain_identity_across_boots() {
     let data_dir = tmp.path().to_path_buf();
     seed_data_dir(&data_dir);
 
-    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+    // Pick the daemon binary path. `CARGO_BIN_EXE_ffs-daemon`
+    // points to cargo's debug-build, which cargo/nextest may relink
+    // (and adhoc-resign) mid-test — that's fine for every other
+    // integration test, but it strips the Developer ID signature
+    // we need for this one. The recommended flow is:
+    //     cargo build --release
+    //     ./scripts/codesign-macos.sh target/release/ffs-daemon
+    //     export FFS_SIGNED_DAEMON_BIN="$PWD/target/release/ffs-daemon"
+    //     export FFS_SIGNING_IDENTITY="…"
+    //     cargo nextest run … signed_daemon_…
+    // The env-var override is the way we point at a stable signed
+    // binary that cargo won't touch.
+    let bin: std::path::PathBuf = match std::env::var("FFS_SIGNED_DAEMON_BIN") {
+        Ok(p) => std::path::PathBuf::from(p),
+        Err(_) => std::path::PathBuf::from(env!("CARGO_BIN_EXE_ffs-daemon")),
+    };
 
     // First boot: fresh data dir, no env-var keys, no
     // FFS_KEYRING_DISABLE. The signed binary should hit the
     // keychain, generate a new pair, persist them.
-    let child1 = Command::new(bin)
+    let child1 = Command::new(&bin)
         .env("FFS_DATA_DIR", &data_dir)
         .env_remove("FFS_OWNER_KEY_HEX")
         .env_remove("FFS_SQLCIPHER_KEY_HEX")
@@ -442,7 +457,7 @@ async fn signed_daemon_produces_stable_keychain_identity_across_boots() {
     // Second boot: SAME data dir, same envs. The keychain should
     // already have the entries; this boot must log
     // `owner_source=keychain` and the pubkey must match.
-    let child2 = Command::new(bin)
+    let child2 = Command::new(&bin)
         .env("FFS_DATA_DIR", &data_dir)
         .env_remove("FFS_OWNER_KEY_HEX")
         .env_remove("FFS_SQLCIPHER_KEY_HEX")

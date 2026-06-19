@@ -402,19 +402,52 @@ empty context).
 
 ### Diagnose
 
-Run the helper directly and inspect the entitlement payload:
+Three Apple-side gates exist before the keychain path becomes
+active; each has a different failure mode.
+
+**Gate 1 — codesigning + entitlement.** Run:
 
 ```sh
 codesign -d --entitlements -:- ~/.local/bin/ffs-daemon
 ```
 
 - If the output contains `<string>3S9R9K2L38.com.ffs.shared</string>`,
-  the binary is signed and entitled. The keychain path will be
-  active.
+  the binary is signed and entitled.
 - If the output says "code object is not signed at all" or the
   access group is missing, the binary is in the unsigned dev-build
   state. The daemon detects this at startup and routes around the
   keychain automatically.
+
+**Gate 2 — notarization.** Run:
+
+```sh
+spctl --assess --type install --verbose=4 ~/.local/bin/ffs-daemon
+```
+
+- `source=Notarized Developer ID, accepted` → notarized.
+- `source=Unnotarized Developer ID, rejected` → Apple hasn't
+  scanned this binary. macOS Gatekeeper will refuse to launch
+  it. See Fix B step "notarize each".
+
+**Gate 3 — provisioning profile.** Run:
+
+```sh
+otool -l ~/.local/bin/ffs-daemon | grep -A1 "sectname __provisioning"
+```
+
+- Output contains `sectname __provisioning  segname __TEXT` and a
+  non-zero size → the profile is embedded.
+- No output → the binary will be `SIGKILL`ed by AMFI the moment
+  you try to run it (exit 137, zero stderr, no diagnosable log
+  message). `keychain-access-groups` is a *restricted* entitlement
+  that requires an Apple-signed provisioning profile authorizing
+  it. See Fix B step "build with the profile embedded".
+
+The `keychain-access-groups` capability used to be a toggle on
+the App ID page at developer.apple.com — Apple removed it. Every
+App ID now gets keychain access automatically; authorization is
+provided by the embedded profile. See Apple DTS Eskimo at
+[forum/782084](https://developer.apple.com/forums/thread/782084).
 
 ### Fix A — unsigned dev build (no Apple Developer Program)
 
@@ -439,8 +472,27 @@ The daemon then takes the env-var path automatically.
 
 ### Fix B — signed release build (Apple Developer Program)
 
-1. Sign the three FFS binaries with your Developer ID Application
-   identity (per ADR-023):
+The technical-friend-checklist's Step 2 Path B has the full
+recipe. Short form below.
+
+1. Apple-portal one-time setup:
+   - Create an App ID at developer.apple.com (any bundle ID you
+     own; capability checkboxes don't matter).
+   - Create a Developer ID Distribution profile for it; download
+     as `secrets/embedded.provisionprofile`.
+   - Generate an app-specific password at
+     `account.apple.com/account/manage` and save it locally via
+     `xcrun notarytool store-credentials "ffs-notary" …`.
+2. Build with the profile embedded at link time:
+   ```sh
+   FFS_PROVISIONING_PROFILE="$(pwd)/secrets/embedded.provisionprofile" \
+     cargo build --release
+   ```
+   If your team ID differs from `3S9R9K2L38`, edit
+   `entitlements/ffs.entitlements.plist` AND the
+   `FFS_ACCESS_GROUP` constant in
+   `crates/ffs-core/src/store/keyring_macos.rs` first.
+3. Sign each binary:
    ```sh
    export FFS_SIGNING_IDENTITY="Developer ID Application: <Your Name> (<TeamID>)"
    ./scripts/codesign-macos.sh \
@@ -448,14 +500,17 @@ The daemon then takes the env-var path automatically.
      target/release/ffs-daemon \
      target/release/ffs-mcp
    ```
-   You'll need to change the team ID inside
-   `entitlements/ffs.entitlements.plist` AND the
-   `FFS_ACCESS_GROUP` constant in
-   `crates/ffs-core/src/store/keyring_macos.rs` if yours differs
-   from `3S9R9K2L38`. Then re-sign.
-2. Unset `FFS_KEYRING_DISABLE` in the service environment.
-3. Confirm signing with the `codesign -d` command above.
-4. Restart the daemon. The next `ffs identity show` will print
+4. Notarize each binary:
+   ```sh
+   for bin in ffs ffs-daemon ffs-mcp; do
+     /usr/bin/ditto -c -k --keepParent "target/release/$bin" "/tmp/$bin.zip"
+     xcrun notarytool submit "/tmp/$bin.zip" \
+       --keychain-profile ffs-notary --wait
+   done
+   ```
+5. Unset `FFS_KEYRING_DISABLE` in the service environment.
+6. Confirm all three gates with the diagnostics above.
+7. Restart the daemon. The next `ffs identity show` will print
    `source: keychain` and the pubkey will stay stable across
    reboots.
 
