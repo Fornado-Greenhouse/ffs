@@ -18,21 +18,42 @@ toml = { workspace = true }
 jsonschema = { workspace = true }
 notify = { workspace = true }
 rusqlite = { workspace = true }
-keyring = { workspace = true }
 base64 = { workspace = true }
-
-# macOS-only: drop down to `security-framework` for the keychain
-# helpers so we can set `kSecAttrAccessGroup` (keyring v3 doesn't
-# expose it). The Linux / Windows paths keep going through keyring.
-# Per ADR-023.
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { workspace = true }
 rand = { workspace = true }
 tera = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, features = ["parsing", "formatting", "macros"] }
 tokio = { workspace = true }
 async-trait = { workspace = true }
+
+# Per-OS keychain backends. Keyring v3's feature set unifies poorly
+# across targets — enabling `linux-native-sync-persistent` pulls
+# `dbus-secret-service` (needs libdbus-1-dev at the C level, and
+# fails Windows resolution), and `apple-native` is wasted because
+# the macOS path uses `security-framework` directly to set
+# `kSecAttrAccessGroup` (ADR-023). Splitting by target keeps each
+# build minimal.
+[target.'cfg(target_os = "macos")'.dependencies]
+# Direct security-framework calls so we can set kSecAttrAccessGroup
+# (keyring v3 doesn't expose that knob — see ADR-023). Keyring
+# itself isn't a dep on macOS; the `cfg(not(target_os = "macos"))`
+# branches in store::keyring are stripped at compile time here.
+security-framework = "3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# `linux-native` enables the kernel-keyring backend (linux-keyutils);
+# no DBus / Secret Service involvement, no system libs required.
+# Suitable for FFS's MVP cross-platform story.
+keyring = { version = "3", default-features = false, features = [
+    "linux-native",
+    "crypto-rust",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = [
+    "windows-native",
+    "crypto-rust",
+] }
 
 [dev-dependencies]
 proptest = { workspace = true }

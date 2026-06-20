@@ -47,23 +47,11 @@ notify = "6"
 
 # Storage and OS keychain
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
-# `apple-native` enables the real macOS Keychain Services backend
-# (pulls in `security-framework`). Without it keyring v3 silently
-# falls back to its in-process mock backend on macOS — see task_33
-# + ADR-023. Linux gets `linux-native-sync-persistent` so SecretService
-# is the backend. Windows gets `windows-native`.
-keyring = { version = "3", default-features = false, features = [
-    "apple-native",
-    "linux-native-sync-persistent",
-    "windows-native",
-    "crypto-rust",
-] }
+# `keyring` is NOT in workspace.dependencies because its features
+# don't unify across targets cleanly — see ffs-core/Cargo.toml's
+# per-OS [target.'cfg(...)'.dependencies] blocks where the version
+# + features get pinned per-platform.
 base64 = "0.22"
-# Drop-to-`security-framework` macOS keychain calls so `ffs-core` can
-# set `kSecAttrAccessGroup` explicitly — keyring v3 doesn't expose
-# that knob (see ADR-023). The version is pinned to the same major as
-# what keyring v3.6 + `apple-native` already pulls in.
-security-framework = "3"
 
 # Templating
 tera = "1"
