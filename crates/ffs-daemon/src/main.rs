@@ -532,22 +532,30 @@ fn codesign_entitlements_output(path: &Path) -> Option<String> {
 /// string anywhere in the output. False positives would require a
 /// binary that genuinely carries our access group, which is the
 /// signed state we want anyway.
+///
+/// macOS-only because the only call site is the macOS-gated
+/// `is_signed_with_keychain_entitlement`; defining it on
+/// Linux / Windows produces a `dead_code` warning that the
+/// workspace's `-D warnings` config promotes to a build error.
+#[cfg(target_os = "macos")]
 fn entitlements_contain_ffs_access_group(output: &str) -> bool {
     // Mirrors `ffs_core::store::keyring_macos::FFS_ACCESS_GROUP`,
     // which is the canonical source of truth. Inlined here to keep
-    // this helper buildable on every OS (the macOS module isn't
-    // present elsewhere).
+    // this helper free of the macOS-only module (which isn't
+    // present on other OSes).
     output.contains("3S9R9K2L38.com.ffs.shared")
 }
 
 /// Returns `true` when the running binary is code-signed with the
 /// `keychain-access-groups = [3S9R9K2L38.com.ffs.shared]`
-/// entitlement (macOS) — the precondition for the keychain path to
+/// entitlement — the precondition for the macOS keychain path to
 /// actually persist across daemon restarts under launchd, per
-/// ADR-023. On non-macOS hosts always returns `true` because the
-/// entitlement concept is macOS-specific; the platform's own
-/// keychain backend (SecretService on Linux, Credential Manager on
-/// Windows) handles its own access model.
+/// ADR-023. macOS-only: on Linux / Windows the keychain path uses
+/// the keyring crate's native backend (SecretService / Credential
+/// Manager), whose access model doesn't involve provisioning
+/// profiles. The gate at the only call site
+/// (`keychain_path_enabled`) is itself `#[cfg(target_os = "macos")]`
+/// so the non-macOS path simply doesn't reference this function.
 #[cfg(target_os = "macos")]
 fn is_signed_with_keychain_entitlement() -> bool {
     let Ok(exe) = std::env::current_exe() else {
@@ -557,11 +565,6 @@ fn is_signed_with_keychain_entitlement() -> bool {
         return false;
     };
     entitlements_contain_ffs_access_group(&output)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn is_signed_with_keychain_entitlement() -> bool {
-    true
 }
 
 /// Composite gate: the keychain path is taken iff the user hasn't
@@ -800,15 +803,25 @@ mod tests {
         assert!(decode_hex_32(&bad).is_err());
     }
 
-    // ---- task_33 signed-binary detection ----
+    // ---- task_33 signed-binary detection (macOS-only) ----
+    //
+    // These tests exercise `entitlements_contain_ffs_access_group`
+    // which only exists on macOS (the parser is dead code on
+    // Linux / Windows because the gate at its only call site is
+    // itself macOS-only). Gate the whole sub-module so non-macOS
+    // builds skip compiling them.
 
-    /// codesign emits a `keychain-access-groups` block containing
-    /// the access-group string when the binary is signed with the
-    /// FFS entitlements plist. The detection treats any match
-    /// across the merged stdout+stderr as signed.
-    #[test]
-    fn entitlements_match_when_codesign_output_carries_access_group() {
-        let output = r#"<?xml version="1.0" encoding="UTF-8"?>
+    #[cfg(target_os = "macos")]
+    mod entitlements_parser {
+        use super::*;
+
+        /// codesign emits a `keychain-access-groups` block containing
+        /// the access-group string when the binary is signed with the
+        /// FFS entitlements plist. The detection treats any match
+        /// across the merged stdout+stderr as signed.
+        #[test]
+        fn entitlements_match_when_codesign_output_carries_access_group() {
+            let output = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -819,34 +832,35 @@ mod tests {
 </dict>
 </plist>
 "#;
-        assert!(entitlements_contain_ffs_access_group(output));
-    }
+            assert!(entitlements_contain_ffs_access_group(output));
+        }
 
-    /// A binary signed with the wrong (or no) keychain group must
-    /// be classified as unsigned for our purposes.
-    #[test]
-    fn entitlements_miss_when_access_group_is_different() {
-        let output = r#"<plist version="1.0"><dict>
+        /// A binary signed with the wrong (or no) keychain group must
+        /// be classified as unsigned for our purposes.
+        #[test]
+        fn entitlements_miss_when_access_group_is_different() {
+            let output = r#"<plist version="1.0"><dict>
     <key>keychain-access-groups</key>
     <array><string>3S9R9K2L38.com.someoneelse</string></array>
 </dict></plist>"#;
-        assert!(!entitlements_contain_ffs_access_group(output));
-    }
+            assert!(!entitlements_contain_ffs_access_group(output));
+        }
 
-    /// `codesign -d --entitlements -` against an unsigned binary
-    /// emits a single line like "code object is not signed at all"
-    /// on stderr. No access-group string → unsigned.
-    #[test]
-    fn entitlements_miss_when_codesign_says_unsigned() {
-        let output = "code object is not signed at all\n";
-        assert!(!entitlements_contain_ffs_access_group(output));
-    }
+        /// `codesign -d --entitlements -` against an unsigned binary
+        /// emits a single line like "code object is not signed at all"
+        /// on stderr. No access-group string → unsigned.
+        #[test]
+        fn entitlements_miss_when_codesign_says_unsigned() {
+            let output = "code object is not signed at all\n";
+            assert!(!entitlements_contain_ffs_access_group(output));
+        }
 
-    /// Empty output (codesign tool absent on a CI runner without
-    /// the Xcode command-line tools, say) → treat as unsigned.
-    #[test]
-    fn entitlements_miss_on_empty_output() {
-        assert!(!entitlements_contain_ffs_access_group(""));
+        /// Empty output (codesign tool absent on a CI runner without
+        /// the Xcode command-line tools, say) → treat as unsigned.
+        #[test]
+        fn entitlements_miss_on_empty_output() {
+            assert!(!entitlements_contain_ffs_access_group(""));
+        }
     }
 
     // `keychain_path_enabled` honors FFS_KEYRING_DISABLE; that
