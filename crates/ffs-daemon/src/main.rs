@@ -40,7 +40,9 @@
 //!   for both `FFS_OWNER_KEY_HEX` and `FFS_SQLCIPHER_KEY_HEX`.
 //! - `FFS_INGEST_STABILITY_MS` — how long a newly-discovered `.md`
 //!   file under `$FFS_DATA_DIR/ingest/` must sit with unchanged
-//!   content before the watcher submits it (default 60_000 ms).
+//!   content before the watcher submits it (default 30_000 ms;
+//!   was 60_000 ms in task_31, tuned down 2026-06 — see
+//!   `ingest_watcher::DEFAULT_STABILITY_WINDOW` for the history).
 //!   `0` disables the window — useful in tests that don't want
 //!   to wait, and for the "drop a finished note" flow where the
 //!   user already wrote the file in another tool.
@@ -344,10 +346,9 @@ async fn run() -> Result<(), StartupError> {
     // `FFS_INGEST_STABILITY_MS` controls the per-file stability
     // window — how long a newly-discovered file must sit with
     // unchanged content before the watcher submits it. Default
-    // 60_000 ms gives the user space to compose a note in
-    // Obsidian's new-note flow without the daemon snatching a
-    // half-written file. `0` disables the window (used by the
-    // e2e tests for determinism).
+    // 30_000 ms balances "give compose-in-place room" with "drop-
+    // in flow shouldn't feel broken." `0` disables the window
+    // (used by the e2e tests for determinism).
     let stability_window = std::env::var("FFS_INGEST_STABILITY_MS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())

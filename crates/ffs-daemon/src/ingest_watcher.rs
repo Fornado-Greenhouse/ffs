@@ -50,7 +50,17 @@ pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// note in-place (e.g., Obsidian's "New note" action) without the
 /// daemon snatching a half-written file. `0` disables the window,
 /// restoring the task_26 "submit on first event" behavior.
-pub const DEFAULT_STABILITY_WINDOW: Duration = Duration::from_secs(60);
+///
+/// History: task_31 originally landed this at 60 s on the theory
+/// that compose-in-place was the load-bearing UX. Live use in
+/// 2026-06 showed 60 s of "nothing visible happening" after a
+/// drop-in felt broken. Dropped to 30 s — still long enough that
+/// an Obsidian "New note" + a few sentences of thoughtful typing
+/// (with the natural 5-15 s pauses) stays inside the window,
+/// short enough that drop-in feels reasonable.
+/// `FFS_INGEST_STABILITY_MS` overrides for users who want a
+/// different cadence.
+pub const DEFAULT_STABILITY_WINDOW: Duration = Duration::from_secs(30);
 
 /// Cadence at which the event loop checks pending files for
 /// stabilization. Independent of the poll interval (which drives
