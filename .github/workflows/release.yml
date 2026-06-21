@@ -21,12 +21,12 @@ jobs:
             archive_ext: tar.gz
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact: ffs
-            archive_ext: tar.gz
+            artifact: FFS.app
+            archive_ext: zip
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: ffs
-            archive_ext: tar.gz
+            artifact: FFS.app
+            archive_ext: zip
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: ffs.exe
@@ -47,14 +47,42 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      # Decode the Apple-issued provisioning profile (Developer ID
-      # subtype) so the build embeds it via __TEXT,__provisioning.
-      # AMFI requires this on every Mach-O claiming the restricted
-      # `keychain-access-groups` entitlement (ADR-023). Builds
-      # without the secret produce an unsigned/unauthorized binary
-      # that the daemon's runtime gate (`is_signed_with_keychain_
-      # entitlement`) detects and routes around — same behavior
-      # contributor forks see.
+      # macOS builds all three FFS binaries because the FFS.app
+      # bundle (per ADR-025) wraps all three under one App ID.
+      # Linux + Windows ship just the CLI; matrix.artifact tracks
+      # the per-OS expectation.
+      - name: Build (macOS — all three FFS binaries for the bundle)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            --bin ffs --bin ffs-daemon --bin ffs-mcp
+
+      - name: Build (Linux + Windows — CLI only)
+        if: ${{ !startsWith(matrix.os, 'macos') }}
+        run: cargo build --release --target ${{ matrix.target }} --bin ffs
+
+      - name: Verify static linkage (Linux musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          file target/${{ matrix.target }}/release/ffs
+          # On musl, ldd typically prints "statically linked" or fails to find dyn deps.
+          ldd target/${{ matrix.target }}/release/ffs || true
+
+      - name: Verify linkage (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          for bin in ffs ffs-daemon ffs-mcp; do
+            file "target/${{ matrix.target }}/release/$bin"
+            otool -L "target/${{ matrix.target }}/release/$bin"
+          done
+
+      # Stage the Apple-issued provisioning profile (Developer ID
+      # subtype) so scripts/codesign-macos.sh embeds it as the
+      # bundle's Contents/embedded.provisionprofile file. AMFI
+      # reads it from that file path (ADR-025). When the secret
+      # is missing the bundle still gets built but stays
+      # unsigned-by-AMFI; the daemon's runtime gate routes
+      # around it.
       - name: Stage provisioning profile (macOS)
         id: stage-profile
         if: startsWith(matrix.os, 'macos')
@@ -62,7 +90,7 @@ jobs:
           MACOS_PROVISIONING_PROFILE_B64: ${{ secrets.MACOS_PROVISIONING_PROFILE_B64 }}
         run: |
           if [[ -z "${MACOS_PROVISIONING_PROFILE_B64:-}" ]]; then
-            echo "MACOS_PROVISIONING_PROFILE_B64 not set; build will not embed a profile" >&2
+            echo "MACOS_PROVISIONING_PROFILE_B64 not set; bundle will not be signed-with-entitlement" >&2
             echo "staged=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
@@ -74,38 +102,7 @@ jobs:
             >>"$GITHUB_OUTPUT"
           echo "staged=true" >>"$GITHUB_OUTPUT"
 
-      - name: Build ffs-cli
-        env:
-          # Set on macOS-staged builds so each binary crate's
-          # build.rs embeds the profile via the linker section. On
-          # Linux/Windows or when the secret is missing, this stays
-          # empty and the build.rs is a no-op.
-          FFS_PROVISIONING_PROFILE: ${{ steps.stage-profile.outputs.profile_path }}
-        run: cargo build --release --target ${{ matrix.target }} --bin ffs
-
-      - name: Verify static linkage (Linux musl)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: |
-          file target/${{ matrix.target }}/release/${{ matrix.artifact }}
-          # On musl, ldd typically prints "statically linked" or fails to find dyn deps.
-          ldd target/${{ matrix.target }}/release/${{ matrix.artifact }} || true
-
-      - name: Verify linkage (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: |
-          file target/${{ matrix.target }}/release/${{ matrix.artifact }}
-          otool -L target/${{ matrix.target }}/release/${{ matrix.artifact }}
-          # Sanity-check the provisioning section is actually present
-          # when the secret was staged. Failure here means the build.rs
-          # didn't pick up the env var — fail loudly rather than ship
-          # an unsigned-at-AMFI artifact.
-          if [[ "${{ steps.stage-profile.outputs.staged }}" == "true" ]]; then
-            otool -l target/${{ matrix.target }}/release/${{ matrix.artifact }} \
-              | grep -q "sectname __provisioning" \
-              || { echo "::error::profile staged but not embedded; build.rs did not fire"; exit 1; }
-          fi
-
-      # Codesign + notarize the macOS binary (task_33 + ADR-023).
+      # Codesign + notarize the macOS bundle (task_35 + ADR-025).
       # Required secrets:
       #   MACOS_SIGNING_CERT_P12 — base64-encoded .p12 export of a
       #     "Developer ID Application" cert + private key.
@@ -115,13 +112,13 @@ jobs:
       #     "Developer ID Application: Alex Foley (3S9R9K2L38)".
       #   MACOS_PROVISIONING_PROFILE_B64 — base64 of the Apple-issued
       #     Developer ID provisioning profile (staged above; without
-      #     it, AMFI will SIGKILL the binary at exec).
+      #     it, AMFI will SIGKILL the daemon at exec).
       #   MACOS_NOTARYTOOL_APPLE_ID — Apple ID email.
       #   MACOS_NOTARYTOOL_TEAM_ID — 10-char team identifier.
       #   MACOS_NOTARYTOOL_PASSWORD — app-specific password from
       #     appleid.apple.com (NOT the Apple ID password itself).
       # When any of them is missing, the workflow skips signing and
-      # ships the unsigned binary so forks without Apple Developer
+      # ships the unsigned bundle so forks without Apple Developer
       # accounts can still produce releases.
       - name: Import signing certificate (macOS)
         id: import-cert
@@ -151,7 +148,11 @@ jobs:
           rm -f /tmp/ffs-signing-cert.p12
           echo "imported=true" >>"$GITHUB_OUTPUT"
 
-      - name: Codesign macOS binary
+      # Construct + sign FFS.app via the same script Path B's local
+      # flow uses. The script reads the provisioning profile from
+      # FFS_PROVISIONING_PROFILE when set (CI uses the staged
+      # runner-temp file) and from secrets/ otherwise.
+      - name: Construct + sign FFS.app (macOS)
         if: >-
           startsWith(matrix.os, 'macos') &&
           steps.import-cert.outputs.imported == 'true' &&
@@ -159,15 +160,22 @@ jobs:
           env.MACOS_SIGNING_IDENTITY != ''
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          FFS_PROVISIONING_PROFILE: ${{ steps.stage-profile.outputs.profile_path }}
         run: |
           export FFS_SIGNING_IDENTITY="$MACOS_SIGNING_IDENTITY"
           ./scripts/codesign-macos.sh \
-            target/${{ matrix.target }}/release/${{ matrix.artifact }}
+            target/${{ matrix.target }}/release/ffs \
+            target/${{ matrix.target }}/release/ffs-daemon \
+            target/${{ matrix.target }}/release/ffs-mcp
 
-      # Notarize the signed binary so macOS Gatekeeper will admit it
-      # for downloaded installs. notarytool requires a zip wrapper
-      # around bare Mach-O binaries.
-      - name: Notarize macOS binary
+      # Notarize the signed artifacts so macOS Gatekeeper admits
+      # them for downloaded installs. Three submissions per arch:
+      # one for FFS.app (the daemon bundle), one each for the
+      # standalone ffs + ffs-mcp Mach-Os. The bundle gets a
+      # stapled ticket (works on bundles); the standalones rely
+      # on Gatekeeper's online CDN lookup at first launch (raw
+      # Mach-O can't be stapled).
+      - name: Notarize + staple macOS artifacts
         if: >-
           startsWith(matrix.os, 'macos') &&
           steps.import-cert.outputs.imported == 'true' &&
@@ -177,49 +185,100 @@ jobs:
           env.MACOS_NOTARYTOOL_TEAM_ID != '' &&
           env.MACOS_NOTARYTOOL_PASSWORD != ''
         env:
-          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           MACOS_NOTARYTOOL_APPLE_ID: ${{ secrets.MACOS_NOTARYTOOL_APPLE_ID }}
           MACOS_NOTARYTOOL_TEAM_ID: ${{ secrets.MACOS_NOTARYTOOL_TEAM_ID }}
           MACOS_NOTARYTOOL_PASSWORD: ${{ secrets.MACOS_NOTARYTOOL_PASSWORD }}
         run: |
           set -euo pipefail
-          BIN=target/${{ matrix.target }}/release/${{ matrix.artifact }}
-          ZIP="$RUNNER_TEMP/${{ matrix.artifact }}.zip"
-          /usr/bin/ditto -c -k --keepParent "$BIN" "$ZIP"
-          xcrun notarytool submit "$ZIP" \
-            --apple-id "$MACOS_NOTARYTOOL_APPLE_ID" \
-            --team-id "$MACOS_NOTARYTOOL_TEAM_ID" \
-            --password "$MACOS_NOTARYTOOL_PASSWORD" \
-            --wait
-          # Mach-O CLI binaries can't have a ticket stapled onto
-          # them (no segment to embed it in); Gatekeeper does an
-          # online lookup against Apple's CDN by content hash.
-          # spctl --assess --type install is the right query for
-          # raw Mach-O (--type execute is .app-bundle-shaped).
-          spctl --assess --type install --verbose=4 "$BIN" \
-            || { echo "::error::spctl rejected notarized binary"; exit 1; }
-          rm -f "$ZIP"
+          REL="target/${{ matrix.target }}/release"
+          APP="$REL/FFS.app"
+          # Pack each artifact into its own zip.
+          /usr/bin/ditto -c -k --keepParent "$APP"        "$RUNNER_TEMP/FFS.app.zip"
+          /usr/bin/ditto -c -k --keepParent "$REL/ffs"    "$RUNNER_TEMP/ffs.zip"
+          /usr/bin/ditto -c -k --keepParent "$REL/ffs-mcp" "$RUNNER_TEMP/ffs-mcp.zip"
+          # Submit them in parallel; notarytool blocks on --wait
+          # so background each submission and `wait` at the end.
+          for z in FFS.app ffs ffs-mcp; do
+            xcrun notarytool submit "$RUNNER_TEMP/$z.zip" \
+              --apple-id "$MACOS_NOTARYTOOL_APPLE_ID" \
+              --team-id "$MACOS_NOTARYTOOL_TEAM_ID" \
+              --password "$MACOS_NOTARYTOOL_PASSWORD" \
+              --wait &
+          done
+          wait
+          # Only the bundle supports stapler; the standalone
+          # Mach-Os rely on Gatekeeper's online ticket lookup
+          # (which Apple recommends with a small CDN cache).
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type install --verbose=4 "$APP"     || { echo "::error::spctl rejected notarized bundle"; exit 1; }
+          spctl --assess --type install --verbose=4 "$REL/ffs"     || { echo "::error::spctl rejected notarized ffs"; exit 1; }
+          spctl --assess --type install --verbose=4 "$REL/ffs-mcp" || { echo "::error::spctl rejected notarized ffs-mcp"; exit 1; }
+          rm -f "$RUNNER_TEMP/FFS.app.zip" "$RUNNER_TEMP/ffs.zip" "$RUNNER_TEMP/ffs-mcp.zip"
 
       - name: Verify linkage (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          dir target\${{ matrix.target }}\release\${{ matrix.artifact }}
+          dir target\${{ matrix.target }}\release\ffs.exe
 
-      - name: Package (Linux/macOS)
-        if: matrix.os != 'windows-latest'
+      # Package step is per-OS.
+      #   Linux:   ffs-<target>.tar.gz containing the static binary
+      #   macOS:   FFS-<target>.app.zip containing the signed +
+      #            notarized + stapled bundle
+      #   Windows: ffs-<target>.zip containing ffs.exe
+      - name: Package (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           cd target/${{ matrix.target }}/release
-          tar -czf ../../../ffs-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+          tar -czf ../../../ffs-${{ matrix.target }}.tar.gz ffs
+
+      - name: Package (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+          REL=target/${{ matrix.target }}/release
+          # Stage the three artifacts together: the daemon bundle
+          # (FFS.app/) plus the two standalone Mach-Os (ffs +
+          # ffs-mcp). install.sh expects this layout when it
+          # locates the bundle via `locate_bundle` and the raw
+          # binaries via `locate_binary` (per task_35 / ADR-025).
+          STAGE="$RUNNER_TEMP/ffs-stage"
+          mkdir -p "$STAGE"
+          if [[ -d "$REL/FFS.app" ]]; then
+            cp -R "$REL/FFS.app" "$STAGE/FFS.app"
+          else
+            echo "::warning::FFS.app bundle not built (signing secrets missing); shipping raw daemon"
+            cp "$REL/ffs-daemon" "$STAGE/ffs-daemon"
+          fi
+          cp "$REL/ffs"     "$STAGE/ffs"
+          cp "$REL/ffs-mcp" "$STAGE/ffs-mcp"
+          /usr/bin/ditto -c -k --keepParent "$STAGE" "FFS-${{ matrix.target }}.zip"
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path target/${{ matrix.target }}/release/${{ matrix.artifact }} `
+            -Path target/${{ matrix.target }}/release/ffs.exe `
             -DestinationPath ffs-${{ matrix.target }}.zip
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        uses: actions/upload-artifact@v4
         with:
           name: ffs-${{ matrix.target }}
-          path: ffs-${{ matrix.target }}.${{ matrix.archive_ext }}
+          path: ffs-${{ matrix.target }}.tar.gz
+
+      - name: Upload (macOS)
+        if: startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFS-${{ matrix.target }}
+          path: FFS-${{ matrix.target }}.zip
+
+      - name: Upload (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffs-${{ matrix.target }}
+          path: ffs-${{ matrix.target }}.zip

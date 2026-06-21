@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: OS keychain integration for owner signing key and SQLCipher DEK
 type: infra
 complexity: low
@@ -7,7 +7,19 @@ dependencies:
   - task_22
   - task_24
   - task_33
+  - task_35
 ---
+
+> **Closed 2026-06-20.** Empirical close achieved via task_35's
+> daemon-only `.app` bundle wrapping. The integration test
+> `signed_daemon_produces_stable_keychain_identity_across_boots`
+> passed: two consecutive daemon boots against the same
+> `$FFS_DATA_DIR` produced the SAME owner pubkey AND the second
+> boot reported `owner_source=keychain`. The launchd identity-
+> drift bug this task was scoped against is fixed. See ADR-025
+> for the implementation correction (provisioning profile as a
+> file inside `Contents/`, not a Mach-O section) and task_35
+> for the bundle-wrapping work.
 
 > **Reopened 2026-06-06.** The code helpers (`encode_key`,
 > `decode_key`, `owner_key_from_keyring`, the daemon precedence

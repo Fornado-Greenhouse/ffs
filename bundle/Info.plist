@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Source Info.plist for the FFS.app bundle (task_35 + ADR-025).
+  Copied verbatim into `FFS.app/Contents/Info.plist` by
+  `scripts/codesign-macos.sh` (and by the CI release workflow)
+  before codesigning the bundle.
+
+  Why each key earns its place:
+
+  * CFBundleIdentifier — matches the `com.apple.application-identifier`
+    inside the embedded provisioning profile, minus the team-ID
+    prefix that macOS prepends automatically. AMFI uses this to
+    decide whether the binary's restricted entitlement claims are
+    authorized. The profile we use authorizes
+    `3S9R9K2L38.com.fornado.ffs`; CFBundleIdentifier matches the
+    non-prefixed form `com.fornado.ffs`.
+
+  * CFBundleExecutable — names the bundle's PRIMARY executable
+    (`ffs-daemon`). Empirical finding during task_35: when
+    multiple Mach-Os live in one bundle's MacOS/, only the
+    primary gets its Info.plist bound to its codesign signature;
+    auxiliary Mach-Os report `Info.plist=not bound` and AMFI
+    refuses to authorize their entitlement claims even though the
+    same provisioning profile is right there in Contents/. So we
+    keep a single primary (the daemon) inside the bundle and
+    ship `ffs` + `ffs-mcp` as standalone signed+notarized
+    Mach-Os outside the bundle. The CLI doesn't need
+    `keychain-access-groups` anyway — it talks to the daemon
+    over the UDS socket; only the daemon hits the OS keychain.
+
+  * LSUIElement = true — keeps the bundle headless. Without it,
+    macOS would treat FFS.app as a regular Dock-bound GUI
+    application: it would appear in the Dock when running, claim
+    a Cmd-Tab slot, and look semantically wrong. LSUIElement
+    declares "this bundle has no GUI; don't surface it in user-
+    visible app surfaces."
+
+  * CFBundlePackageType = APPL — standard for application
+    bundles. Apple infers this from the bundle structure anyway,
+    but stating it explicitly defends against future stricter
+    bundle validators.
+
+  * LSMinimumSystemVersion — the keychain-access-group path needs
+    macOS 11 (Big Sur) for the kSecAttrAccessGroup behavior we
+    rely on. Setting the minimum here matches the Cargo
+    workspace's effective macOS support floor.
+
+  CFBundleVersion / CFBundleShortVersionString stay numerically
+  bumpable so future releases can produce distinguishable
+  notarization submissions.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.fornado.ffs</string>
+    <key>CFBundleName</key>
+    <string>FFS Daemon</string>
+    <key>CFBundleDisplayName</key>
+    <string>Foley File System Daemon</string>
+    <key>CFBundleExecutable</key>
+    <string>ffs-daemon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Alexander Foley. All rights reserved.</string>
+</dict>
+</plist>

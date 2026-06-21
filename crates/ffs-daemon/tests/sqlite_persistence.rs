@@ -406,14 +406,25 @@ async fn signed_daemon_produces_stable_keychain_identity_across_boots() {
     // points to cargo's debug-build, which cargo/nextest may relink
     // (and adhoc-resign) mid-test — that's fine for every other
     // integration test, but it strips the Developer ID signature
-    // we need for this one. The recommended flow is:
-    //     cargo build --release
-    //     ./scripts/codesign-macos.sh target/release/ffs-daemon
-    //     export FFS_SIGNED_DAEMON_BIN="$PWD/target/release/ffs-daemon"
+    // we need for this one. The recommended flow per task_35 /
+    // ADR-025:
+    //     cargo build --release --workspace --bins
+    //     ./scripts/codesign-macos.sh \
+    //         target/release/ffs \
+    //         target/release/ffs-daemon \
+    //         target/release/ffs-mcp
+    //     # notarize + staple per docs/onboarding/technical-friend-checklist.md
+    //     export FFS_SIGNED_DAEMON_BIN="$PWD/target/release/FFS.app/Contents/MacOS/ffs-daemon"
     //     export FFS_SIGNING_IDENTITY="…"
     //     cargo nextest run … signed_daemon_…
-    // The env-var override is the way we point at a stable signed
-    // binary that cargo won't touch.
+    //
+    // The env-var must point at the daemon Mach-O INSIDE the
+    // FFS.app bundle, not at a standalone copy of the binary.
+    // AMFI resolves the embedded provisioning profile + Info.plist
+    // by walking up to Contents/ from the executable's path; a
+    // standalone copy of the binary (or a symlink that resolves
+    // outside Contents/MacOS/) would launch but SIGKILL because
+    // the bundle metadata isn't reachable.
     let bin: std::path::PathBuf = match std::env::var("FFS_SIGNED_DAEMON_BIN") {
         Ok(p) => std::path::PathBuf::from(p),
         Err(_) => std::path::PathBuf::from(env!("CARGO_BIN_EXE_ffs-daemon")),
@@ -429,6 +440,12 @@ async fn signed_daemon_produces_stable_keychain_identity_across_boots() {
         .env_remove("FFS_KEYRING_DISABLE")
         .env("FFS_INGEST_STABILITY_MS", "0")
         .env("FFS_LOG", "info")
+        // tracing-subscriber emits ANSI color escapes by default;
+        // the test's `contains("owner=")` substring searches against
+        // captured stderr fail when the `=` sits between escape
+        // sequences. NO_COLOR is the standard opt-out
+        // (no-color.org); tracing-subscriber honors it.
+        .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -464,6 +481,12 @@ async fn signed_daemon_produces_stable_keychain_identity_across_boots() {
         .env_remove("FFS_KEYRING_DISABLE")
         .env("FFS_INGEST_STABILITY_MS", "0")
         .env("FFS_LOG", "info")
+        // tracing-subscriber emits ANSI color escapes by default;
+        // the test's `contains("owner=")` substring searches against
+        // captured stderr fail when the `=` sits between escape
+        // sequences. NO_COLOR is the standard opt-out
+        // (no-color.org); tracing-subscriber honors it.
+        .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

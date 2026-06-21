@@ -7,9 +7,15 @@
     <string>com.ffs.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <!-- @PREFIX@ is rewritten by installer/install.sh to the
-             user's chosen binary prefix (default $HOME/.local). -->
-        <string>@PREFIX@/bin/ffs-daemon</string>
+        <!-- @FFS_APP@ is rewritten by installer/install.sh to the
+             absolute path of the installed FFS.app bundle (default
+             $HOME/.local/Applications/FFS.app). The daemon binary
+             must be invoked by its real path inside the bundle so
+             macOS Code Signing Services resolves the embedded
+             provisioning profile + Info.plist correctly; launchd's
+             plist resolution doesn't follow symlinks into bundles
+             (per task_35 / ADR-025). -->
+        <string>@FFS_APP@/Contents/MacOS/ffs-daemon</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>

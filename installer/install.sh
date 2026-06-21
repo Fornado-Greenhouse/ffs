@@ -134,13 +134,22 @@ script_dir() {
 
 # Locate a binary either next to the installer (release archive
 # layout) or in the workspace target/release directory.
+#
+# On macOS, when invoked from a release archive that ships an
+# FFS.app bundle, the installer prefers the bundle and uses its
+# Mach-O paths as canonical (so the daemon is run with its
+# embedded provisioning profile + Info.plist intact at runtime,
+# per ADR-025).
 locate_binary() {
     local name="$1"
     local SCRIPT_HOME
     SCRIPT_HOME="$(script_dir)"
     local candidates=(
+        "$SCRIPT_HOME/FFS.app/Contents/MacOS/$name"
+        "$SCRIPT_HOME/bin/$PLATFORM-$ARCH_TAG/FFS.app/Contents/MacOS/$name"
         "$SCRIPT_HOME/bin/$PLATFORM-$ARCH_TAG/$name"
         "$SCRIPT_HOME/bin/$name"
+        "$SCRIPT_HOME/../target/release/FFS.app/Contents/MacOS/$name"
         "$SCRIPT_HOME/../target/release/$name"
         "$SCRIPT_HOME/../../target/release/$name"
     )
@@ -151,6 +160,28 @@ locate_binary() {
         fi
     done
     echo "install.sh: cannot locate binary '$name' — looked in: ${candidates[*]}" >&2
+    return 1
+}
+
+# Locate the FFS.app bundle (macOS only). Returns the absolute
+# path to the bundle if found; empty string + non-zero exit
+# otherwise. Used to drive the bundle-install path when a release
+# was built with codesign-macos.sh.
+locate_bundle() {
+    local SCRIPT_HOME
+    SCRIPT_HOME="$(script_dir)"
+    local candidates=(
+        "$SCRIPT_HOME/FFS.app"
+        "$SCRIPT_HOME/bin/$PLATFORM-$ARCH_TAG/FFS.app"
+        "$SCRIPT_HOME/../target/release/FFS.app"
+        "$SCRIPT_HOME/../../target/release/FFS.app"
+    )
+    for c in "${candidates[@]}"; do
+        if [ -d "$c/Contents/MacOS" ]; then
+            (cd "$c" && pwd -P)
+            return 0
+        fi
+    done
     return 1
 }
 
@@ -174,8 +205,19 @@ install_seed_file() {
 }
 
 # -------- bin placement --------
+#
+# Linux and Windows install raw binaries directly into the
+# user's PATH. macOS installs an FFS.app bundle to
+# ~/.local/Applications/ and symlinks each Mach-O into
+# $PREFIX/bin/, so the daemon resolved by symlink still
+# launches with its embedded provisioning profile + Info.plist
+# (ADR-025).
 
-install_binaries() {
+# Default bundle install location. Resolved in main() so the
+# launchd plist template renderer can pick it up via @FFS_APP@.
+FFS_APP_DST=""
+
+install_binaries_linux() {
     say "installing binaries to $PREFIX/bin"
     ensure_dir "$PREFIX/bin"
     for name in ffs ffs-daemon ffs-mcp; do
@@ -183,6 +225,77 @@ install_binaries() {
         src="$(locate_binary "$name")"
         run "install -m 0755 '$src' '$PREFIX/bin/$name'"
     done
+}
+
+install_binaries_macos() {
+    local bundle_src
+    if ! bundle_src="$(locate_bundle)"; then
+        say "WARN: FFS.app bundle not found; falling back to raw-binary install."
+        say "WARN: Without the bundle, AMFI will SIGKILL the daemon when it claims"
+        say "WARN: the keychain-access-groups entitlement (ADR-025). The daemon's"
+        say "WARN: runtime gate routes around it via env-var/generate, so the"
+        say "WARN: install still works — it just doesn't get the keychain story."
+        install_binaries_linux
+        return 0
+    fi
+
+    FFS_APP_DST="$HOME/.local/Applications/FFS.app"
+    ensure_dir "$(dirname "$FFS_APP_DST")"
+    ensure_dir "$PREFIX/bin"
+
+    # Idempotent install of the bundle. `rsync -a --delete` would
+    # be cleaner but is not POSIX-guaranteed; `rm -rf` + `cp -R`
+    # gets us the same effective behavior and avoids assumptions.
+    if [ -d "$FFS_APP_DST" ]; then
+        run "rm -rf '$FFS_APP_DST'"
+    fi
+    say "installing FFS.app bundle to $FFS_APP_DST"
+    run "cp -R '$bundle_src' '$FFS_APP_DST'"
+
+    # Per ADR-025: only ffs-daemon lives inside FFS.app (it's the
+    # binary that needs the keychain-access-groups entitlement);
+    # ffs and ffs-mcp ship as standalone signed Mach-Os.
+    #
+    # Lay them down accordingly:
+    #   ~/.local/bin/ffs-daemon  -> symlink into the bundle
+    #   ~/.local/bin/ffs         -> regular file install
+    #   ~/.local/bin/ffs-mcp     -> regular file install
+    #
+    # For each, if a pre-task_35 raw binary OR symlink exists,
+    # remove it before installing the correct shape. Avoids the
+    # half-upgraded "old binary in PATH, new bundle on disk"
+    # state where running the CLI picks up the unsigned old build.
+
+    # 1. ffs-daemon: symlink into the bundle (AMFI walks the
+    #    bundle structure from the executable's path at exec, so
+    #    the symlink target — not the symlink path — is what
+    #    matters; symlink works fine for CLI invocation).
+    local daemon_link="$PREFIX/bin/ffs-daemon"
+    local daemon_target="$FFS_APP_DST/Contents/MacOS/ffs-daemon"
+    if [ -e "$daemon_link" ] || [ -L "$daemon_link" ]; then
+        run "rm -f '$daemon_link'"
+    fi
+    run "ln -snf '$daemon_target' '$daemon_link'"
+    say "symlinked ffs-daemon -> $daemon_target"
+
+    # 2. ffs + ffs-mcp: install the standalone signed Mach-Os
+    for name in ffs ffs-mcp; do
+        local link="$PREFIX/bin/$name"
+        if [ -L "$link" ]; then
+            run "rm -f '$link'"
+        fi
+        local src
+        src="$(locate_binary "$name")"
+        run "install -m 0755 '$src' '$link'"
+    done
+    say "installed ffs, ffs-mcp standalone binaries into $PREFIX/bin"
+}
+
+install_binaries() {
+    case "$PLATFORM" in
+        macos) install_binaries_macos ;;
+        linux) install_binaries_linux ;;
+    esac
     if ! printf ':%s:' "$PATH" | grep -q ":$PREFIX/bin:"; then
         say "NOTE: $PREFIX/bin is not on \$PATH — add 'export PATH=\"$PREFIX/bin:\$PATH\"' to your shell rc."
     fi
@@ -285,12 +398,31 @@ install_launchd_plist() {
         echo "install.sh: missing launchd template" >&2
         return 1
     fi
+    # Resolve the daemon binary path the plist's ProgramArguments
+    # line will point at. The bundle case is canonical (ADR-025):
+    # @FFS_APP@/Contents/MacOS/ffs-daemon. The raw-binary fallback
+    # substitutes a path that, combined with the template's
+    # /Contents/MacOS/ffs-daemon suffix, resolves correctly via
+    # `..` traversal — `$PREFIX/bin/x/../..` lands back at
+    # $PREFIX/bin where the raw symlink lives.
+    local ffs_app_sub
+    if [ -n "${FFS_APP_DST:-}" ]; then
+        ffs_app_sub="$FFS_APP_DST"
+    else
+        # raw-binary fallback: daemon lives at $PREFIX/bin/ffs-daemon.
+        # Build an @FFS_APP@ value such that
+        # @FFS_APP@/Contents/MacOS/ffs-daemon ≡ $PREFIX/bin/ffs-daemon.
+        ffs_app_sub="$PREFIX/bin/PLACEHOLDER/../.."
+        say "WARN: no FFS.app bundle; daemon launches raw and skips the keychain path."
+    fi
+
     if [ "$DRY_RUN" -eq 1 ]; then
         printf '+ render launchd plist -> %s\n' "$plist_file"
     else
         sed \
             -e "s|@PREFIX@|$PREFIX|g" \
             -e "s|@HOME@|$HOME|g" \
+            -e "s|@FFS_APP@|$ffs_app_sub|g" \
             "$template" > "$plist_file"
     fi
     say "installed launchd plist at $plist_file"

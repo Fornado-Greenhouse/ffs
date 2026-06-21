@@ -403,51 +403,80 @@ empty context).
 ### Diagnose
 
 Three Apple-side gates exist before the keychain path becomes
-active; each has a different failure mode.
+active; each has a different failure mode. Diagnose in order;
+later gates assume earlier ones pass.
+
+**The CLI binaries on disk are symlinks** (task_35 / ADR-025).
+The real Mach-Os live under
+`~/.local/Applications/FFS.app/Contents/MacOS/`. Resolve the
+symlink before running any codesign / spctl diagnostic, or pass
+the bundle path directly:
+
+```sh
+APP=~/.local/Applications/FFS.app
+DAEMON="$APP/Contents/MacOS/ffs-daemon"
+# Quick check that the symlink lands inside a bundle:
+readlink ~/.local/bin/ffs-daemon
+# Expected output: …/FFS.app/Contents/MacOS/ffs-daemon
+```
 
 **Gate 1 — codesigning + entitlement.** Run:
 
 ```sh
-codesign -d --entitlements -:- ~/.local/bin/ffs-daemon
+codesign -d --entitlements - "$DAEMON"
 ```
 
-- If the output contains `<string>3S9R9K2L38.com.ffs.shared</string>`,
-  the binary is signed and entitled.
+- If the output contains
+  `<string>3S9R9K2L38.com.ffs.shared</string>`, the binary is
+  signed and entitled.
 - If the output says "code object is not signed at all" or the
-  access group is missing, the binary is in the unsigned dev-build
-  state. The daemon detects this at startup and routes around the
-  keychain automatically.
+  access group is missing, the bundle is unsigned. The daemon
+  detects this at startup and routes around the keychain
+  automatically.
 
-**Gate 2 — notarization.** Run:
+**Gate 2 — notarization + stapled ticket.** Run:
 
 ```sh
-spctl --assess --type install --verbose=4 ~/.local/bin/ffs-daemon
+spctl --assess --type install --verbose=4 "$APP"
+xcrun stapler validate "$APP"
 ```
 
-- `source=Notarized Developer ID, accepted` → notarized.
+- `source=Notarized Developer ID, accepted` AND
+  `The validate action worked!` → notarized + stapled. The
+  bundle launches without a CDN round-trip on first run.
 - `source=Unnotarized Developer ID, rejected` → Apple hasn't
-  scanned this binary. macOS Gatekeeper will refuse to launch
-  it. See Fix B step "notarize each".
+  scanned the bundle. macOS Gatekeeper will refuse to launch
+  it. See Fix B step "notarize the bundle".
+- spctl OK + `does not have a ticket stapled` → notarized but
+  ticket not attached. Bundle launches but Gatekeeper hits the
+  CDN on first run (works on a connected machine; fails
+  offline). Run `xcrun stapler staple "$APP"` to fix.
 
-**Gate 3 — provisioning profile.** Run:
+**Gate 3 — embedded provisioning profile.** Run:
 
 ```sh
-otool -l ~/.local/bin/ffs-daemon | grep -A1 "sectname __provisioning"
+ls "$APP/Contents/embedded.provisionprofile"
+security cms -D -i "$APP/Contents/embedded.provisionprofile" \
+  | grep -A1 keychain-access-groups
 ```
 
-- Output contains `sectname __provisioning  segname __TEXT` and a
-  non-zero size → the profile is embedded.
-- No output → the binary will be `SIGKILL`ed by AMFI the moment
-  you try to run it (exit 137, zero stderr, no diagnosable log
-  message). `keychain-access-groups` is a *restricted* entitlement
-  that requires an Apple-signed provisioning profile authorizing
-  it. See Fix B step "build with the profile embedded".
+- File exists AND the profile authorizes
+  `3S9R9K2L38.*` or `3S9R9K2L38.com.ffs.shared` → AMFI will
+  authorize the entitlement at exec.
+- File missing → the daemon will be `SIGKILL`ed by AMFI the
+  moment it tries to run (exit 137, zero stderr, no
+  diagnosable log message). `keychain-access-groups` is a
+  *restricted* entitlement that requires an Apple-signed
+  provisioning profile authorizing it. See Fix B step "Apple-
+  portal setup".
 
 The `keychain-access-groups` capability used to be a toggle on
 the App ID page at developer.apple.com — Apple removed it. Every
 App ID now gets keychain access automatically; authorization is
-provided by the embedded profile. See Apple DTS Eskimo at
-[forum/782084](https://developer.apple.com/forums/thread/782084).
+provided by the embedded provisioning profile inside the .app
+bundle (ADR-025). See Apple DTS Eskimo at
+[forum/743979](https://developer.apple.com/forums/thread/743979)
+for the canonical statement.
 
 ### Fix A — unsigned dev build (no Apple Developer Program)
 
@@ -470,29 +499,30 @@ WARN ffs-daemon: macOS binary is not signed with `3S9R9K2L38.com.ffs.shared`
 
 The daemon then takes the env-var path automatically.
 
-### Fix B — signed release build (Apple Developer Program)
+### Fix B — signed release bundle (Apple Developer Program)
 
 The technical-friend-checklist's Step 2 Path B has the full
 recipe. Short form below.
 
 1. Apple-portal one-time setup:
-   - Create an App ID at developer.apple.com (any bundle ID you
-     own; capability checkboxes don't matter).
+   - Create an App ID at developer.apple.com (bundle ID
+     `com.fornado.ffs` or anything you own — must match
+     `bundle/Info.plist`'s CFBundleIdentifier; capability
+     checkboxes don't matter).
    - Create a Developer ID Distribution profile for it; download
      as `secrets/embedded.provisionprofile`.
    - Generate an app-specific password at
      `account.apple.com/account/manage` and save it locally via
      `xcrun notarytool store-credentials "ffs-notary" …`.
-2. Build with the profile embedded at link time:
+2. Build the three FFS binaries:
    ```sh
-   FFS_PROVISIONING_PROFILE="$(pwd)/secrets/embedded.provisionprofile" \
-     cargo build --release
+   cargo build --release --workspace --bins
    ```
    If your team ID differs from `3S9R9K2L38`, edit
-   `entitlements/ffs.entitlements.plist` AND the
-   `FFS_ACCESS_GROUP` constant in
-   `crates/ffs-core/src/store/keyring_macos.rs` first.
-3. Sign each binary:
+   `entitlements/ffs.entitlements.plist`, the `FFS_ACCESS_GROUP`
+   constant in `crates/ffs-core/src/store/keyring_macos.rs`, AND
+   the `CFBundleIdentifier` in `bundle/Info.plist` first.
+3. Construct + sign the `FFS.app` bundle:
    ```sh
    export FFS_SIGNING_IDENTITY="Developer ID Application: <Your Name> (<TeamID>)"
    ./scripts/codesign-macos.sh \
@@ -500,15 +530,16 @@ recipe. Short form below.
      target/release/ffs-daemon \
      target/release/ffs-mcp
    ```
-4. Notarize each binary:
+4. Notarize + staple the bundle (single submission for all three Mach-Os):
    ```sh
-   for bin in ffs ffs-daemon ffs-mcp; do
-     /usr/bin/ditto -c -k --keepParent "target/release/$bin" "/tmp/$bin.zip"
-     xcrun notarytool submit "/tmp/$bin.zip" \
-       --keychain-profile ffs-notary --wait
-   done
+   /usr/bin/ditto -c -k --keepParent target/release/FFS.app /tmp/FFS.app.zip
+   xcrun notarytool submit /tmp/FFS.app.zip \
+     --keychain-profile ffs-notary --wait
+   xcrun stapler staple target/release/FFS.app
    ```
-5. Unset `FFS_KEYRING_DISABLE` in the service environment.
+5. Re-run `installer/install.sh` to refresh `~/.local/Applications/FFS.app`
+   and the symlinks in `$PREFIX/bin`. Unset `FFS_KEYRING_DISABLE`
+   in the launchd plist's `EnvironmentVariables` block.
 6. Confirm all three gates with the diagnostics above.
 7. Restart the daemon. The next `ffs identity show` will print
    `source: keychain` and the pubkey will stay stable across

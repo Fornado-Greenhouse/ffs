@@ -156,31 +156,40 @@ owner pubkey: z…
 source:       env_var
 ```
 
-### Path B: OS-keychain-pinned (macOS — requires codesigning + notarization + provisioning profile)
+### Path B: OS-keychain-pinned (macOS — requires codesigning + notarization + .app bundle)
 
-Task_33 lands codesigning + a `keychain-access-groups` entitlement
-so the launchd-spawned daemon and the interactive CLI share one
-logical keychain bucket (see ADR-023 for the mechanism). Three
-Apple-side gates have to be crossed before this works:
+Task_33 set up the codesigning + entitlement + notarization infra
+(ADR-023). Task_35 corrected the implementation after empirical
+investigation proved that AMFI doesn't read the Mach-O
+`__TEXT,__provisioning` section the original recipe relied on —
+the provisioning profile has to be a *file* at
+`Contents/embedded.provisionprofile` inside a `.app` bundle (per
+ADR-025). The three Apple-side gates that need crossing:
 
 1. **Developer ID Application certificate** — you have one from
    joining the Apple Developer Program.
-2. **Notarization** — Apple's automated scan of the signed binary;
-   without it, macOS Gatekeeper rejects it.
-3. **Embedded provisioning profile** — Apple-signed authorization
-   that lets your binary claim the restricted
-   `keychain-access-groups` entitlement. Without it, AMFI silently
-   `SIGKILL`s the binary at exec.
+2. **Notarization** — Apple's automated scan of the signed
+   bundle; after acceptance, `xcrun stapler staple` attaches the
+   ticket to the bundle so Gatekeeper verifies offline.
+3. **`.app` bundle with `Contents/embedded.provisionprofile`** —
+   the Apple-supported way to authorize the restricted
+   `keychain-access-groups` entitlement on a CLI binary. Without
+   the bundle wrapping, AMFI silently `SIGKILL`s the daemon at
+   exec.
 
 The repo carries the code-side pieces:
 
+- `bundle/Info.plist` — Info.plist source with
+  `CFBundleIdentifier=com.fornado.ffs` + `LSUIElement=true`.
 - `entitlements/ffs.entitlements.plist` declares
   `keychain-access-groups = [3S9R9K2L38.com.ffs.shared]`.
-- `scripts/codesign-macos.sh` signs the three FFS binaries.
-- Each binary crate's `build.rs` embeds the profile via
-  `__TEXT,__provisioning` when `FFS_PROVISIONING_PROFILE` is set.
+- `scripts/codesign-macos.sh` constructs `FFS.app` from three
+  pre-built binaries, copies the Info.plist and provisioning
+  profile into `Contents/`, then `codesign --force --deep`s the
+  bundle.
 - `crates/ffs-core/src/store/keyring_macos.rs` calls
-  `security-framework` directly with `kSecAttrAccessGroup` set.
+  `security-framework` directly with `kSecAttrAccessGroup` set
+  so the entitlement is load-bearing at runtime.
 
 #### Apple-portal setup (one-time, ~5 min)
 
@@ -191,8 +200,9 @@ The authorization is in the **provisioning profile** instead.
 
 1. **App ID** at `developer.apple.com/account/resources/identifiers/list`
    → "+" → App IDs → App. Bundle ID `com.fornado.ffs` (or any
-   bundle ID you own under your team). Skip the Capabilities
-   checkboxes — nothing applies here.
+   bundle ID you own under your team — must match
+   `bundle/Info.plist`'s `CFBundleIdentifier`). Skip the
+   Capabilities checkboxes; they don't apply here.
 2. **Profile** at `developer.apple.com/account/resources/profiles/list`
    → "+" → scroll to the **Distribution** section → **Developer
    ID** → select the App ID + the Developer ID Application cert.
@@ -207,58 +217,66 @@ The authorization is in the **provisioning profile** instead.
      --password "xxxx-xxxx-xxxx-xxxx"
    ```
 
-#### Local build / sign / notarize
+#### Local build / bundle / sign / notarize
 
 ```sh
-# Build with the profile embedded at link time
-FFS_PROVISIONING_PROFILE="$(pwd)/secrets/embedded.provisionprofile" \
-  cargo build --release
+# Build all three FFS binaries (no special env vars needed —
+# the bundle gets composed from these by codesign-macos.sh)
+cargo build --release --workspace --bins
 
-# Sign with the entitlements
+# Construct + sign the FFS.app bundle
 export FFS_SIGNING_IDENTITY="Developer ID Application: <Your Name> (<TeamID>)"
 ./scripts/codesign-macos.sh \
   target/release/ffs \
   target/release/ffs-daemon \
   target/release/ffs-mcp
+# Produces target/release/FFS.app/ — signed but not yet notarized
 
-# Notarize each one (parallel-friendly — ~2-5 min each)
-for bin in ffs ffs-daemon ffs-mcp; do
-  /usr/bin/ditto -c -k --keepParent "target/release/$bin" "/tmp/$bin.zip"
-  xcrun notarytool submit "/tmp/$bin.zip" \
-    --keychain-profile ffs-notary --wait
-done
+# Notarize the bundle (single submission for all three Mach-Os)
+/usr/bin/ditto -c -k --keepParent target/release/FFS.app /tmp/FFS.app.zip
+xcrun notarytool submit /tmp/FFS.app.zip \
+  --keychain-profile ffs-notary --wait
+
+# Staple the notarization ticket onto the bundle so Gatekeeper
+# verifies offline on first launch — bundles support stapler,
+# raw Mach-O binaries do not.
+xcrun stapler staple target/release/FFS.app
 ```
 
 Verify the entitlement was embedded:
 
 ```sh
-codesign -d --entitlements -:- ./target/release/ffs-daemon
+codesign -d --entitlements - target/release/FFS.app/Contents/MacOS/ffs-daemon
 # Should print a plist mentioning `3S9R9K2L38.com.ffs.shared`.
 # If your TeamID differs, change the entitlements file (and the
-# FFS_ACCESS_GROUP constant in ffs-core::store::keyring_macos)
-# accordingly before re-signing.
+# FFS_ACCESS_GROUP constant in ffs-core::store::keyring_macos AND
+# the CFBundleIdentifier in bundle/Info.plist) accordingly before
+# re-signing.
 ```
 
-Verify the provisioning profile section made it in:
+Verify the bundle structure is correct:
 
 ```sh
-otool -l ./target/release/ffs-daemon | grep __provisioning
-# Should print: sectname __provisioning  segname __TEXT
+ls target/release/FFS.app/Contents/
+# Expected: Info.plist  MacOS  _CodeSignature  embedded.provisionprofile
 ```
 
-Verify Gatekeeper accepts the notarized binary:
+Verify Gatekeeper accepts the notarized bundle:
 
 ```sh
-spctl --assess --type install --verbose=4 ./target/release/ffs-daemon
-# Expected: source=Notarized Developer ID
-# (note: --type install, not --type execute, for raw Mach-O CLI binaries)
+spctl --assess --type install --verbose=4 target/release/FFS.app
+# Expected: accepted, source=Notarized Developer ID
+# (--type install, not --type execute, because this is a headless
+# CLI bundle not a GUI .app)
 ```
 
-After reinstalling the signed+notarized binaries and restarting
-the daemon, `ffs identity show` will print `source: keychain`.
-The pubkey must stay identical across reboots; if it changes, the
-troubleshooting guide's "Keychain access from launchd / systemd
-daemons" section has the diagnostic recipe.
+After running `installer/install.sh` to land the bundle at
+`~/.local/Applications/FFS.app` and symlink the three binaries
+into `~/.local/bin/`, restart the daemon. `ffs identity show`
+will print `source: keychain` and the pubkey will stay identical
+across reboots. If it changes, the troubleshooting guide's
+"Keychain access from launchd / systemd daemons" section has the
+diagnostic recipe.
 
 If you don't have an Apple Developer Program membership, stay on
 Path A. The daemon will detect the unsigned state, log a one-time
