@@ -1,0 +1,5 @@
+Is there a reason you don't see the compozy skills in .claude and offer them as slash commands?
+
+---
+
+sure copy them on over
