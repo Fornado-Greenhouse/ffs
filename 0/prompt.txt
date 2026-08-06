@@ -3,3 +3,15 @@ Is there a reason you don't see the compozy skills in .claude and offer them as 
 ---
 
 sure copy them on over
+
+---
+
+Great!  I resumed you from the re-opened folder.  Do we need a new .gitignore here that works as effectively as the one did before?
+
+---
+
+Do we need to commit / push anything that we just did?
+
+---
+
+yes please fix and commit
