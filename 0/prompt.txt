@@ -369,3 +369,31 @@ task_36 is now the tracer bullet: engines, schema-driven prompts, provenance, co
 `compozy tasks validate --name ffs-mvp` reports `all tasks valid (45 scanned)`.</result>
 <usage><subagent_tokens>347953</subagent_tokens><tool_uses>5</tool_uses><duration_ms>141255</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>ab398928e169d789f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/ab398928e169d789f.output</output-file>
+<status>completed</status>
+<summary>Agent "ADR-032/033 proposed; reshape task_39, task_40" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: wrote ADR-032 and ADR-033, added their governance-index rows, amended task_39, and reshaped task_40. Nothing committed.
+
+**Files**
+- `.compozy/tasks/ffs-mvp/adrs/adr-032.md` (new, Proposed, adr-027 shape)
+- `.compozy/tasks/ffs-mvp/adrs/adr-033.md` (new, Proposed, adr-027 shape)
+- `.compozy/tasks/ffs-mvp/adrs/README.md` (ADR-032 and ADR-033 rows in the all-ADRs table; ADR-032 added to the fastpath and obsidian-plugin rows; ADR-033 added to the federation row; `skills/courier/` added to the skills row with ADR-009 and task_40; "No active holds." kept)
+- `.compozy/tasks/ffs-mvp/task_39.md` (dependencies now task_29, task_38, task_44, task_45; "Amended 2026-09-14 (ADR-032 proposed, spike task_44)" overview paragraph; the review-surface requirement is now three-branch: inbox file if ADR-032 is accepted, panel as previously specified if rejected, hybrid otherwise; `max_per_day` default "per task_44 finding"; new subtask 39.11 for the `inbox_decision` edit kind, inbox materialization, suppression coverage, and parser tests, closed as not applicable if the spike rejects; references and success criteria updated; no boxes checked)
+- `.compozy/tasks/ffs-mvp/task_40.md` (retitled and reshaped: `skills/courier/` stdlib bundle with `courier.toml`, keychain-only secrets, ledger plus `entity.search` dedup, dry-run mode, opt-in `fetch.mode = "cookies"` with per-item fallback and `fetch:` frontmatter, synthetic `.eml` fixtures only, `health.summary.courier` and auditor line, `ffs courier run|status`; the agent-hosted `ffs-courier` SKILL.md reframed as the alternative; intake contract, mentions/participants shapes, `content_hash`, URL dedup, digest note, and `entity.search` v2 kept; dependencies task_37, task_38, task_43, task_45; subtasks renumbered 40.1 to 40.10; no boxes checked)
+
+`compozy tasks validate --name ffs-mvp` → `all tasks valid (45 scanned)`.
+
+**ADR-032 proposes:** the quarantine is also a projection, `inbox/&lt;YYYY-MM-DD&gt;.md`, with per-proposal sections and a strict checkbox grammar (accept, reject, candidate picks with comment-carried entity ids, "someone new", "these are different people", undo, merge, keep separate) that a new fast-path `inbox_decision` edit kind turns into daemon calls, re-materialized through the suppression registry; the panel keeps its five urgent items plus a count and a link; spike task_44 decides accept, reject, or hybrid.
+
+**ADR-033 asks the owner to decide:** whether federation stays shipped and tested but gets no new work until task_41's briefing has been in daily use for two consecutive weeks, with the workspace test gate and peer-version-skew tolerance as the guardrails, and cross-peer `same_as`, `[ontology]` vocabulary agreement, and cabinet-sharing as the questions that reopen when it lifts.
+
+Two notes: em-dashes remain only in task_40's file-list separators and the contract's literal bullet grammar, matching the existing task template convention used by task_36 through task_39; and task_40 now assumes the daemon scheduler from task_41 subtask 41.3, with `ffs courier run` as the by-hand fallback until it lands.</result>
+<usage><subagent_tokens>385790</subagent_tokens><tool_uses>87</tool_uses><duration_ms>321227</duration_ms></usage>
+</task-notification>
