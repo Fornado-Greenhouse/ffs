@@ -49,6 +49,8 @@
 | 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | pending | low | task_26 |
 | 44 | Spike: review load and the review surface (gates task_39) | pending | low | task_19, task_29 |
 | 45 | Scribe v3: multi-entity proposals + entity resolver (ADR-030, ADR-031) | pending | high | task_36, task_38 |
+| 46 | Attestations, derived status, and staleness (ADR-034 local half) | pending | medium | task_38, task_41 |
+| 47 | Shared intake and shared accuracy over federation (ADR-034 federation half) | pending | high | task_15, task_40, task_45, task_46 |
 
 ## Build order (as of 2026-09-14)
 
@@ -59,6 +61,8 @@
 5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule, with a Hermes or OpenClaw agent as an optional front end; `ffs_search` v2 and URL dedup.
 6. **Task 39.** Auto-file policy (ADR-029) with the review surface chosen by ADR-032's outcome from task_44.
 7. **Task 41.** The morning briefing, last, because it reads everything the others write.
+8. **Task 46.** Attestations and staleness, local (ADR-034 local half): makes "is it still accurate" a question the substrate answers before any peer exists; the owner's accept is the first attestation, windows per predicate, the briefing nags about facts past their window.
+9. **Task 47.** Shared intake and shared accuracy over federation (ADR-034 federation half), when ADR-033 lifts: subscriptions, article dedup by key, peer-derived atoms as proposals, peer attestations counted with source independence.
 
 ### Known gaps carried
 
@@ -66,5 +70,5 @@
 - Press reports announcement dates, not start dates, so an affiliation's `valid_from` is the article date.
 - Real article text never enters git; corpus fixtures are paraphrased or kept under `$FFS_DATA_DIR`.
 - Atom volume of about 36,000 a year fits the envelope for roughly three years, after which the PRD's indefinite-accumulation question is due.
-- `entity.same_as` across federated peers is open; two substrates mint different ids for the same person by design.
-- Federation itself is deferred behind the intake pipeline per ADR-033 (proposed).
+- `entity.same_as` across federated peers: two substrates mint different ids for the same person by design; ADR-034 (proposed) covers articles automatically and people via dispute review.
+- Federation itself is deferred behind the intake pipeline per ADR-033 (accepted); ADR-034 (proposed) is the reason it resumes.
