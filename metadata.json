@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2FZ6A75JM41HMD8ESXQTT7M",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".compozy/tasks/ffs-mvp/_tasks.md",
+    ".compozy/tasks/ffs-mvp/adrs/adr-032.md",
+    ".compozy/tasks/ffs-mvp/adrs/adr-033.md",
+    ".compozy/tasks/ffs-mvp/task_36.md",
+    ".compozy/tasks/ffs-mvp/task_38.md",
+    ".compozy/tasks/ffs-mvp/task_41.md",
+    ".compozy/tasks/ffs-mvp/task_42.md",
+    ".compozy/tasks/ffs-mvp/task_43.md",
+    ".compozy/tasks/ffs-mvp/task_44.md",
+    ".compozy/tasks/ffs-mvp/task_45.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1352,
+    "cache_creation_tokens": 523059,
+    "cache_read_tokens": 14047732,
+    "output_tokens": 86630,
+    "api_call_count": 63
+  }
+}
