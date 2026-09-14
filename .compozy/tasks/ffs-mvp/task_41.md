@@ -36,6 +36,7 @@ Amended 2026-09-14 (ADR-030, ADR-031). Two research findings reshape the derivat
 - MUST add an optional `kind` parameter to `audit.query` (`daily_summary` | `briefing`, default `daily_summary` for backward compatibility) and thread it through the `ffs_audit_query` MCP tool schema so an agent can read the latest briefing and draft outreach; `ffs health` SHOULD gain `--briefing` to print the latest one.
 - MUST keep the auditor Python stdlib-only (ADR-009) and MUST NOT let the briefing computation exceed the skill's `timeout_ms`; if the window's atom count exceeds a documented ceiling the auditor truncates lists (top-N by count) and says so in `narrative`.
 - MUST NOT auto-promote, auto-contact, or auto-merge anyone: every promotion is a quarantined proposal; every follow-up is a suggestion in text; every merge and every "keep separate" is an explicit owner click that produces an owner-signed atom. The briefing reads the graph; it does not write to it except to publish itself.
+- MUST label every affiliation date in the briefing as "as reported <date>" (the article's `published_at` or the affiliation atom's `valid_from`, whichever the resolver set), because press reports announcements, not start dates; a known gap carried from the 2026-09-14 plan review, not a bug to fix here.
 - SHOULD describe the briefing (what it contains, how often, how to change cadence) in `docs/onboarding/first-use-guide.md` and add the `briefings/` family to the path-library overview.
 </requirements>
 

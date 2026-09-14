@@ -39,9 +39,32 @@
 | 33 | macOS code signing + keychain-access-groups so task_27 works under launchd | completed | high | task_01, task_22, task_27 |
 | 34 | Windows daemon path correctness: fastpath path normalization + scribe budget + named-pipe e2e | completed | high | task_07, task_09, task_11, task_22 |
 | 35 | macOS .app bundle wrapping so the keychain entitlement actually works | completed | high | task_22, task_27, task_33 |
-| 36 | Scribe v2: predicate-schema-driven extraction with pluggable engines | pending | high | task_11, task_26, task_32, task_38 |
+| 36 | Scribe v2: predicate-schema-driven extraction with pluggable engines | pending | high | task_11, task_26, task_32, task_42 |
 | 37 | Agent memory convention: adopt okf-agent-memory practices (ADR-027) | completed | medium | task_16, task_23 |
-| 38 | Filing cabinet: registry-declared path families + business-graph predicates and wikilinked templates (ADR-028) | pending | high | task_20, task_21, task_25, task_37 |
-| 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_36, task_38 |
-| 40 | Courier intake contract + ffs_search v2 + URL dedup | pending | medium | task_36, task_37, task_38 |
+| 38 | Filing cabinet: registry-declared path families + business-graph predicates and wikilinked templates (ADR-028) | pending | high | task_20, task_21, task_25, task_36, task_37 |
+| 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_38, task_44, task_45 |
+| 40 | Courier intake contract + ffs_search v2 + URL dedup | pending | medium | task_37, task_38, task_43, task_45 |
 | 41 | Morning briefing: movers-and-shakers summary from the auditor | pending | medium | task_13, task_38, task_39, task_40 |
+| 42 | Spike: extraction quality on real business-press articles (gates task_36) | pending | low | task_11 |
+| 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | pending | low | task_26 |
+| 44 | Spike: review load and the review surface (gates task_39) | pending | low | task_19, task_29 |
+| 45 | Scribe v3: multi-entity proposals + entity resolver (ADR-030, ADR-031) | pending | high | task_36, task_38 |
+
+## Build order (as of 2026-09-14)
+
+1. **Tasks 42, 43, 44 in parallel** (one to two days). Spikes that gate everything below: extraction quality decides whether the LLM engine can carry the pipeline, intake reality decides the courier's shape, review load decides the review surface and the auto-file cap. Findings notes only, no production code.
+2. **Task 36, slim.** The tracer bullet: the `llm` engine against the three existing predicates, so a readable daily digest lands in the vault before any refactor. No dependency on task_38.
+3. **Task 38.** Filing cabinet and identity (ADR-028, ADR-030, ADR-031): registry-declared path families, opaque ids, the business-graph predicates, wikilinked templates. The big refactor, now informed by real extraction output from task_36.
+4. **Task 45.** Scribe v3: multi-entity proposals and the three-outcome resolver, split out of task_36 because it needs both the LLM engine and the new predicates.
+5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule, with a Hermes or OpenClaw agent as an optional front end; `ffs_search` v2 and URL dedup.
+6. **Task 39.** Auto-file policy (ADR-029) with the review surface chosen by ADR-032's outcome from task_44.
+7. **Task 41.** The morning briefing, last, because it reads everything the others write.
+
+### Known gaps carried
+
+- Org-to-org relationships (subsidiaries, parents) are not modeled; affiliation is person-to-org only.
+- Press reports announcement dates, not start dates, so an affiliation's `valid_from` is the article date.
+- Real article text never enters git; corpus fixtures are paraphrased or kept under `$FFS_DATA_DIR`.
+- Atom volume of about 36,000 a year fits the envelope for roughly three years, after which the PRD's indefinite-accumulation question is due.
+- `entity.same_as` across federated peers is open; two substrates mint different ids for the same person by design.
+- Federation itself is deferred behind the intake pipeline per ADR-033 (proposed).
