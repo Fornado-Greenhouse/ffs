@@ -159,3 +159,28 @@ Out of scope, noted only: the plugin's `openHit` slug (`displayName` with spaces
 Two observations outside my scope, for the parent: `main.rs` shows no periodic auditor driver (only the scribe and ingest watcher are wired), so task_41's subtask 41.3 is written as "confirm and add"; and the scribe currently never fills `note.references[]`, which task_40 assigns to itself since the digest note depends on it.</result>
 <usage><subagent_tokens>275619</subagent_tokens><tool_uses>8</tool_uses><duration_ms>177793</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>aa8dc5100a59362dd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/aa8dc5100a59362dd.output</output-file>
+<status>completed</status>
+<summary>Agent "ADR-029 + task_39 + governance index rows" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: ADR-029, task_39, and governance-index rows for ADR-028/029. Done, nothing committed.
+
+Files:
+- `.compozy/tasks/ffs-mvp/adrs/adr-029.md` (new)
+- `.compozy/tasks/ffs-mvp/task_39.md` (new; status pending, type backend, complexity high, deps task_29/36/38, subtasks 39.1–39.8)
+- `.compozy/tasks/ffs-mvp/adrs/README.md` (edited: ADR-028 added to predicate, projection/starter, and obsidian-plugin rows; ADR-029 added to capability and quarantine rows; ADR-028 and ADR-029 rows appended to the all-ADRs table; "No active holds." kept)
+
+ADR-029 decision in three lines:
+1. A new capability action `Accept`, granted by an ordinary owner-signed `capability.grant` atom to the submitting agent's identity, scoped to predicates with an optional `max_per_day` cap; evaluated by the existing evaluator, default off, revoked by supersession.
+2. Auto-accept fires only for proposals the quarantine classifies as additive (new entity, append to a spec's `additive_sections`, or a record of an append-only predicate like `source.article`/`event.business`); anything superseding an existing scalar, tagged `conflicts` by the scribe, or hitting a multi-leaf head always routes to review.
+3. Auto-filed atoms carry an `auto_accept` provenance entry naming the grant hash; the daily summary lists them with per-item undo via a new `ingest.retract` (supersede with `valid_to`, never erase).
+
+Facts checked while writing: no retraction verb and no `capability` CLI subcommand exist today (task_39 adds both); the on-disk task_36 does not yet mention a `resolution` field, so ADR-029 references it as "task_36 as amended" and task_39 lists task_36 as a dependency for that reason.</result>
+<usage><subagent_tokens>286932</subagent_tokens><tool_uses>11</tool_uses><duration_ms>216515</duration_ms></usage>
+</task-notification>
