@@ -39,5 +39,9 @@
 | 33 | macOS code signing + keychain-access-groups so task_27 works under launchd | completed | high | task_01, task_22, task_27 |
 | 34 | Windows daemon path correctness: fastpath path normalization + scribe budget + named-pipe e2e | completed | high | task_07, task_09, task_11, task_22 |
 | 35 | macOS .app bundle wrapping so the keychain entitlement actually works | completed | high | task_22, task_27, task_33 |
-| 36 | Scribe v2: predicate-schema-driven extraction with pluggable engines | pending | high | task_11, task_26, task_32 |
+| 36 | Scribe v2: predicate-schema-driven extraction with pluggable engines | pending | high | task_11, task_26, task_32, task_38 |
 | 37 | Agent memory convention: adopt okf-agent-memory practices (ADR-027) | completed | medium | task_16, task_23 |
+| 38 | Filing cabinet: registry-declared path families + business-graph predicates and wikilinked templates (ADR-028) | pending | high | task_20, task_21, task_25, task_37 |
+| 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_36, task_38 |
+| 40 | Courier intake contract + ffs_search v2 + URL dedup | pending | medium | task_36, task_37, task_38 |
+| 41 | Morning briefing: movers-and-shakers summary from the auditor | pending | medium | task_13, task_38, task_39, task_40 |

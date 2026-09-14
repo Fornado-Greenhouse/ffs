@@ -7,6 +7,7 @@ dependencies:
   - task_11
   - task_26
   - task_32
+  - task_38
 ---
 
 # Task 36: Scribe v2 — predicate-schema-driven extraction with pluggable engines
@@ -15,6 +16,8 @@ dependencies:
 The scribe's regex heuristics hit their structural ceiling on 2026-06-21: `Jon Jones.md`, a key-value contact card, was extracted as a `contact.person` named **"Bones Occupation"** — two random title-case words stitched across lines by the name-bigram scan. The postmortem catalogued five failure modes (filename ignored; `Field: value` card shape unrecognized; field labels treated as name candidates; no filename cross-check; verbatim typo propagation) and a deeper diagnosis: scribe ignores the predicate registry entirely and hardcodes two predicate shapes, so extraction can never keep pace with the substrate's schema.
 
 ADR-026 records the decision this task implements: an `ExtractionEngine` seam inside the skill bundle with a `heuristic` engine (today's code, offline default) and an `llm` engine (stdlib-HTTP to a configurable backend — localhost Ollama or the Anthropic Messages API, strictly opt-in); prompts **generated from the registered predicate specs' `claim_schema`s**; LLM output validated against those same schemas; engine+model recorded in provenance; a golden-corpus eval harness so engine quality is measured rather than vibed. ADR-009's stdlib-only constraint shapes everything: `urllib` for HTTP, `tomllib` for predicate specs, zero pip deps.
+
+Amended 2026-09-14 for the newspaper / movers-and-shakers goal (ADR-028, ADR-029). The scribe is the clerk in that pipeline: one business-press article dropped into `ingest/` has to become one `source.article` proposal plus the people, organizations, and events it mentions, each filed against an entity that may already exist. That adds three things to this task — a multi-entity proposal envelope, daemon-side entity resolution so a second article about the same person updates her file instead of creating a twin, and business-press fixtures in the golden corpus. The schema-driven prompt builder already picks up ADR-028's predicates with no code change; task_38 therefore becomes a dependency.
 
 <critical>
 - ALWAYS READ the PRD and TechSpec before starting
@@ -35,6 +38,9 @@ ADR-026 records the decision this task implements: an `ExtractionEngine` seam in
 - MUST NOT add any pip dependency to the skill bundle, and MUST NOT change the skills-host wire protocol (the skill reads predicate TOMLs from disk; config arrives as env vars through the existing daemon → skills-host → subprocess path).
 - SHOULD document engine configuration and the privacy posture (exactly what leaves the machine, when, to whom) in `docs/onboarding/first-use-guide.md` and the technical-friend checklist.
 - SHOULD verify Anthropic API request shape against current docs at implementation time rather than trusting this spec's memory of it.
+- MUST support multi-entity extraction per submission (amended 2026-09-14, ADR-028): one article submission yields one `source.article` proposal plus N `person.generic`, M `org.company`, and K `event.business` proposals. Every proposal in the set MUST carry the article URL in provenance, and proposals MUST cross-reference each other by entity id (or display name when the id is not yet assigned) so the article's `mentions[]`, the event's `parties[]` and `source`, and the person's `organization` resolve to the same entities after acceptance. The proposals envelope on the skills-host wire MUST stay backward compatible (a single-proposal result is the degenerate case).
+- MUST perform entity resolution on the daemon side before enqueueing (amended 2026-09-14, ADR-028): in `crates/ffs-daemon/src/scribe.rs`, look up existing entities by `display_name` and `aliases[]` within the same predicate family (case-insensitive, whitespace-normalized); when a match is found, attach the existing entity id so acceptance supersedes or extends that entity rather than creating a duplicate; record `resolution: "existing" | "new"` on the proposal so the review UI can show it and so task_39's additive-vs-conflict rule can act on it. The slug-uniqueness rule from ADR-028 applies when a new id is minted.
+- MUST extend the golden corpus with at least five business-press fixtures (amended 2026-09-14): an executive hire, a funding round, an acquisition, a real-estate opening, and a profile piece, each paired with expected multi-entity proposals (article + people + orgs + events) and each scored by the existing per-field precision/recall scorer.
 </requirements>
 
 ## Subtasks
@@ -47,6 +53,9 @@ ADR-026 records the decision this task implements: an `ExtractionEngine` seam in
 - [ ] 36.7 Heuristic hygiene: filename source, card-shape key-value parsing, field-label stop-words. Corpus must show the Jon Jones fixture extracting as `contact.person` with `display_name: Jon Jones`, `phone: 919-428-4074`, occupation captured.
 - [ ] 36.8 Docs: engine setup, privacy statement, model recommendations; update first-use-guide + technical-friend checklist.
 - [ ] 36.9 Live validation: drop the original Jon Jones card into `ingest/` under (a) default heuristic and (b) an opted-in `llm` backend; both must produce a correctly named contact proposal in the quarantine.
+- [ ] 36.10 Multi-entity proposal envelope + prompt rendering for every registered predicate, including ADR-028's `org.company`, `source.article`, `event.business`, and `person.generic` v2; cross-references between proposals in one set; wire shape stays backward compatible.
+- [ ] 36.11 Daemon-side entity resolution in `scribe.rs` (display_name + aliases, same family) with the `resolution: existing | new` field carried through quarantine storage and `ingest.list_pending`; ADR-028 slug rule on newly minted ids.
+- [ ] 36.12 Business-press corpus fixtures (hire, funding, acquisition, opening, profile) with expected multi-entity proposals; scorer covers per-predicate precision/recall across the set.
 
 ## Implementation Details
 Current structure: `skills/scribe/extraction.py` (pure functions: `extract_contact_person_unstructured`, `detect_phone_numbers`, `extract_note`, venue masking, stop lists) invoked by the skill entry script via the skills-host stdio protocol; daemon side in `crates/ffs-daemon/src/scribe.rs` translates results into `Proposal`s. The engine seam lives entirely on the Python side; the Rust side only gains the provenance fields and env passthrough.
@@ -82,6 +91,9 @@ Failure-fallback shape: `llm` engine errors are caught per-submission, logged in
 - Heuristic hygiene fixes closing the "Bones Occupation" class **(REQUIRED)**.
 - Unit tests with 80%+ coverage on new Python modules **(REQUIRED)**.
 - Updated docs (engine setup + privacy statement).
+- Multi-entity proposal sets with cross-references and article provenance **(REQUIRED, amended 2026-09-14)**.
+- Daemon-side entity resolution with `resolution: existing | new` on every proposal **(REQUIRED, amended 2026-09-14)**.
+- Five business-press corpus fixtures scored per predicate **(REQUIRED, amended 2026-09-14)**.
 
 ## Tests
 - Unit tests:
@@ -95,6 +107,9 @@ Failure-fallback shape: `llm` engine errors are caught per-submission, logged in
   - [ ] `ingest_pipeline_e2e` unchanged and green (heuristic default).
   - [ ] Env-gated llm e2e: with `FFS_SCRIBE_ENGINE=llm` and a reachable backend, a dropped card produces a schema-valid proposal with `engine: llm` provenance; skips cleanly otherwise.
   - [ ] Corpus scorer runs in CI for heuristic; documented invocation for out-of-band llm scoring.
+  - [ ] Multi-entity: the executive-hire fixture yields one `source.article`, one `person.generic`, one `org.company`, and one `event.business` (`kind: hire`) proposal, all carrying the article URL in provenance and cross-referencing by entity id.
+  - [ ] Entity resolution: a second fixture mentioning an already-stored person resolves to the existing entity id with `resolution: "existing"`; an unknown person yields `resolution: "new"` with an ADR-028-unique slug.
+  - [ ] `ingest.list_pending` exposes `resolution` on every proposal in a multi-entity set.
 - Test coverage target: >=80%
 - All tests must pass
 
