@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2ES90MJ7HY1DSPTFDC4YEPK",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".compozy/tasks/ffs-mvp/_techspec.md",
+    ".compozy/tasks/ffs-mvp/adrs/README.md",
+    ".compozy/tasks/ffs-mvp/adrs/adr-027.md",
+    "ARCHITECTURE.md",
+    "README.md",
+    "crates/ffs-mcp/src/lib.rs",
+    "crates/ffs-mcp/src/tools.rs",
+    "crates/ffs-mcp/src/transport.rs",
+    "crates/ffs-mcp/tests/mcp_integration.rs",
+    "docs/agent-memory/CONVENTION.md",
+    "docs/agent-memory/README.md",
+    "docs/agent-memory/skill/ffs-memory/SKILL.md",
+    "docs/onboarding/first-use-guide.md",
+    "docs/onboarding/technical-friend-checklist.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 626,
+    "cache_creation_tokens": 204978,
+    "cache_read_tokens": 3670931,
+    "output_tokens": 25728,
+    "api_call_count": 25
+  }
+}
