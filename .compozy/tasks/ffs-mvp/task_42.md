@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Spike: extraction quality on real business-press articles (gates task_36)"
 type: docs
 complexity: low
@@ -36,12 +36,16 @@ PASS criterion: the Claude engine reaches precision >= 0.85 and recall >= 0.75 o
 What changes on FAIL: if Claude fails, task_36's `llm` engine scope shrinks to `source.article` plus `note` extraction only (no people, orgs, or affiliations from press), ADR-029's auto-file default stays off indefinitely, and task_45's resolver is re-scoped to owner-typed content. If only the local model fails, the local-only path is documented in task_36 as "digest only" and the first-use guide says so.
 </requirements>
 
+## Result (2026-09-14)
+
+Executed with one deliberate deviation, recorded in the findings note: the corpus was five CLTtoday newsletters (6AM City, personal-use license) rather than ten CBJ article bodies, because spike task_43 found that the ACBJ User Agreement prohibits automated access and any LLM operation over bizjournals.com content. Claude Sonnet 5 (via the Claude Code CLI in headless mode; no Messages API key was available) PASSED every criterion with margin: people 1.00 P / 1.00 R, orgs 1.00 / 0.96, affiliations 1.00 / 1.00, events 0.91 / 0.88 strict, zero schema-invalid proposals out of 111, zero hallucinated names. llama3.1:8b FAILED everything except org precision (people 0.21 / 0.38, affiliations 0.08 / 0.14, 25 of 72 proposals schema-invalid). Findings: `docs/research/spikes/task-42-extraction-quality.md`. Consequences: task_36's schema-driven design stands unchanged; the local-only tier at 8B is "digest only", so the validator plus heuristic fallback is load-bearing; two orgs already appeared under variant names, the alias case task_45's resolver exists for.
+
 ## Subtasks
-- [ ] 42.1 Collect ten CBJ articles into a gitignored spike directory; hand-label people, orgs, affiliations, events per article before any model run.
-- [ ] 42.2 Throwaway stdlib prompt renderer from `starter/predicates/*.toml` requesting the proposals envelope with `summary` and `{display, context}` mentions.
-- [ ] 42.3 Run all ten through the Anthropic Messages API and at least one local Ollama model; capture raw outputs, latency, tokens, cost.
-- [ ] 42.4 Score precision/recall per engine per predicate; catalogue failure modes; check the ADR-030 weight hints on the sample.
-- [ ] 42.5 Write `docs/research/spikes/task-42-extraction-quality.md` with the verdict first, tables, failure-mode counts, and the concrete scope changes for task_36 and task_45.
+- [x] 42.1 Collect ten CBJ articles into a gitignored spike directory; hand-label people, orgs, affiliations, events per article before any model run.
+- [x] 42.2 Throwaway stdlib prompt renderer from `starter/predicates/*.toml` requesting the proposals envelope with `summary` and `{display, context}` mentions.
+- [x] 42.3 Run all ten through the Anthropic Messages API and at least one local Ollama model; capture raw outputs, latency, tokens, cost.
+- [x] 42.4 Score precision/recall per engine per predicate; catalogue failure modes; check the ADR-030 weight hints on the sample.
+- [x] 42.5 Write `docs/research/spikes/task-42-extraction-quality.md` with the verdict first, tables, failure-mode counts, and the concrete scope changes for task_36 and task_45.
 
 ## Implementation Details
 The spike lives entirely outside the build. The prompt renderer reads the same TOML the daemon loads, so a positive result transfers to task_36 subtask 36.2 unchanged. Ollama's chat endpoint and the Anthropic Messages API are both JSON over HTTP; `urllib.request` is enough. Score with a small hand-written comparison, not a framework.
@@ -68,9 +72,9 @@ The spike lives entirely outside the build. The prompt renderer reads the same T
 
 ## Tests
 - Verification is the hand-labeled comparison; no automated tests are added by this spike.
-- [ ] Ground truth written before model outputs were viewed (state the timestamps in the note).
-- [ ] Every article has a scored row for each engine.
-- [ ] The verdict paragraph cites the numbers that decide it.
+- [x] Ground truth written before model outputs were viewed (state the timestamps in the note).
+- [x] Every article has a scored row for each engine.
+- [x] The verdict paragraph cites the numbers that decide it.
 
 ## Success Criteria
 - The findings note exists, states PASS or FAIL in its first paragraph, and task_36's requirements are amended (or confirmed unchanged) with a reference to it.

@@ -45,7 +45,7 @@
 | 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_38, task_44, task_45 |
 | 40 | Courier intake contract + ffs_search v2 + URL dedup | pending | medium | task_37, task_38, task_43, task_45 |
 | 41 | Morning briefing: movers-and-shakers summary from the auditor | pending | medium | task_13, task_38, task_39, task_40 |
-| 42 | Spike: extraction quality on real business-press articles (gates task_36) | pending | low | task_11 |
+| 42 | Spike: extraction quality on real business-press articles (gates task_36) | completed | low | task_11 |
 | 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | pending | low | task_26 |
 | 44 | Spike: review load and the review surface (gates task_39) | pending | low | task_19, task_29 |
 | 45 | Scribe v3: multi-entity proposals + entity resolver (ADR-030, ADR-031) | pending | high | task_36, task_38 |
