@@ -284,3 +284,31 @@ Verified while writing: the store and federation pull do not consult the registr
 Out of scope, noted: ADR-031's Implementation Notes reference `entity.same_as`/`entity.different_from` claim shapes from the track 1 memo; the ADR-030 fork should confirm those field names (`target`, `reason`, `criterion` / `other`, `criterion`) match what it writes.</result>
 <usage><subagent_tokens>340889</subagent_tokens><tool_uses>8</tool_uses><duration_ms>239152</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a7b0fab973fcd7869</task-id>
+<tool-use-id>toolu_014HsV6C7H6gXjYLjxYsDD3q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a7b0fab973fcd7869.output</output-file>
+<status>completed</status>
+<summary>Agent "Amend task_40, task_41, governance index" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: amended task_40, task_41, and the ADR governance index for ADR-030/031. Done; nothing committed. The one remaining em-dash on an added line is the contract's literal bullet grammar `- &lt;Name&gt; — &lt;context&gt;`, kept on purpose.
+
+**Files**
+- `.compozy/tasks/ffs-mvp/task_40.md`
+- `.compozy/tasks/ffs-mvp/task_41.md`
+- `.compozy/tasks/ffs-mvp/adrs/README.md`
+
+**task_40**: the article contract now yields `mentions[]` as `{entity, display, context}` and `participants[]` as `{entity, display, role}` with ids filled by the resolver (courier never supplies ids), adds optional `content_hash` frontmatter as a second dedup key, makes the `&lt;publication&gt;-&lt;date&gt;-&lt;title&gt;` slug a basename and blocking key rather than the identity, switches digest links to `[[target|display]]`, and redefines `entity.search` v2 as the resolver's candidate generator: four-tier ordering (exact name, alias, prior count from accepted resolutions, FTS rank via the store's unexposed `search_fts`), `matched_on` as `display_name | alias | fts | other`, `same_as` chain following, `different_from` exclusion via a `context_entity` argument, and the reconciliation shape documented on the MCP tool with the W3C facade noted as later. Subtasks 40.8 and 40.9 and eleven tests were added; `matched_on: ["aliases"]` became `matched_on: "alias"`.
+
+**task_41**: changes are now derived from `affiliation` atom activity (`joined` / `left` / `retitled`) plus `org_changed` from org scalars, never from person scalars; new people are entity ids minted in the window; promotion and follow-up matching is by resolved entity id through affiliation atoms; two new claim lists and template sections, "Needs your eye" (ambiguous proposals with candidates, rendered as the reconciliation picker) and "Possible duplicates" (alias-overlap pairs with Merge writing `entity.same_as`, Keep separate writing `entity.different_from`, and Undo merge by supersession); subtask 41.8 and nine tests added; the no-auto rule now also covers merges.
+
+**README**: ADR-030 and ADR-031 rows added, ADR-028 status set to "Accepted; amended by ADR-030, ADR-031", ADR-030 added to the atom.rs, projection, daemon, and MCP rows, ADR-031 added to the predicate/starter, projection, and skills rows, new rows for `docs/research/` and `docs/ontology-alignment.md` (context), "No active holds." kept.
+
+`compozy tasks validate --name ffs-mvp` reports `all tasks valid (41 scanned)`.
+
+Outside my scope, noted only: task_41 references "the merge RPC ADR-030 specifies" and task_39's reconciliation picker by description, not by name, since neither ADR-030 nor task_39's amendment was on disk when I wrote this; whoever owns those should confirm the RPC name and picker wording match.</result>
+<usage><subagent_tokens>365231</subagent_tokens><tool_uses>46</tool_uses><duration_ms>290206</duration_ms></usage>
+</task-notification>
