@@ -1,0 +1,231 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2H1MTY1DS56M25MAYDKKDY4",
+  "session_id": "af7c00f1-b4ce-4505-8d35-b5ec4e0c9341",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T22:47:19.864435Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "save_step_count": 4,
+  "files_touched": [
+    "docs/research/2026-09-14-agent-work-distribution.md",
+    "docs/research/2026-09-14-federated-feeds.md",
+    "docs/research/2026-09-14-shared-accuracy.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-7",
+  "turn_id": "92f40c16d7d7",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1564,
+    "cache_creation_tokens": 868594,
+    "cache_read_tokens": 17887933,
+    "output_tokens": 103176,
+    "api_call_count": 75
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-goal-2026-09-14T01:32:22.806698Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "3a0c281baba0",
+      "timestamp": "2026-09-14T01:32:22.806698Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01W1FjK8eYw6scz7kqwtatCt",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "92f40c16d7d7",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30,
+        "end": 31,
+        "entry_ids": [
+          "e9ee3f4f-b247-46e0-b362-d7be417895b7"
+        ],
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 24
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T22:47:19.721251Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1081,
+    "human_modified": 6,
+    "human_removed": 0,
+    "total_committed": 1081,
+    "total_lines_changed": 1093,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 2033,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4020,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/research/2026-09-14-federated-feeds.md": 207
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 2030,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4227,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/research/2026-09-14-agent-work-distribution.md": 204
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 2090,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4431,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/research/2026-09-14-shared-accuracy.md": 264
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 2238,
+      "user_lines_removed": 6,
+      "agent_lines_added": 4695,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        ".compozy/tasks/ffs-mvp/_tasks.md": 6,
+        ".compozy/tasks/ffs-mvp/adrs/README.md": 5,
+        ".compozy/tasks/ffs-mvp/adrs/adr-034.md": 182,
+        ".compozy/tasks/ffs-mvp/task_46.md": 107,
+        ".compozy/tasks/ffs-mvp/task_47.md": 112
+      },
+      "user_removed_per_file": {
+        ".compozy/tasks/ffs-mvp/_tasks.md": 2,
+        ".compozy/tasks/ffs-mvp/adrs/README.md": 4
+      }
+    }
+  ]
+}
