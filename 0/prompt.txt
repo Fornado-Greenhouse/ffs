@@ -484,3 +484,33 @@ Design section recommends, for ADR-034 now: an `attestation` predicate (subject 
 Unverified items are marked: exact Dynamo N/R/W wording and the Dong 2009 abstract (PDFs did not render), the CIKM 2025 paper body (403), and one 2026 arXiv preprint not read.</result>
 <usage><subagent_tokens>390936</subagent_tokens><tool_uses>37</tool_uses><duration_ms>238175</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a0dee6402d3499db3</task-id>
+<tool-use-id>toolu_01WJMAwZUMKuvXSs9AZ9HbCX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a0dee6402d3499db3.output</output-file>
+<status>completed</status>
+<summary>Agent "ADR-034 + tasks 46/47 + index rows" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: wrote ADR-034, task_46, task_47, added the ADR-034 index rows and task rows 46/47 plus build-order steps 8 and 9; validated. Nothing committed.
+
+Files
+- `.compozy/tasks/ffs-mvp/adrs/adr-034.md` (new, 182 lines, no em-dashes, adr-027 shape)
+- `.compozy/tasks/ffs-mvp/task_46.md` (new; status pending, type backend, complexity medium, deps task_38, task_41; subtasks 46.1 to 46.8, none checked)
+- `.compozy/tasks/ffs-mvp/task_47.md` (new; status pending, type backend, complexity high, deps task_15, task_40, task_45, task_46; "Blocked by ADR-033 until the briefing has been in daily use for two consecutive weeks" in the Overview; subtasks 47.1 to 47.9, 47.9 conditional on spike 43; none checked)
+- `.compozy/tasks/ffs-mvp/adrs/README.md` (ADR-034 row in the all-ADRs table; ADR-034 added to the federation, quarantine, projection, and skills rows; "No active holds." kept)
+- `.compozy/tasks/ffs-mvp/_tasks.md` (rows 46 and 47 after 45; build-order steps 8 and 9; the two Known-gaps bullets reworded as directed, ADR-033 now shown as accepted)
+
+`compozy tasks validate --name ffs-mvp` reports `all tasks valid (47 scanned)`.
+
+ADR-034's decision in four lines
+1. Local half (task_46): an `attestation` predicate whose entity is the attested atom's content hash, claim {as_of, basis [re_read_same_source, independent_source, primary_source, owner_knowledge, contradicted_by], source, note}, signed by the attester; the owner's accept auto-emits one so k = 1 needs no extra click.
+2. An `[attestation]` table in predicate specs (k default 1, window_days optional, independent default true; affiliation and person.generic 90 days, org.company 180, articles and events no window) and a derived, never stored, status per head: current / unconfirmed / stale / disputed / deprecated, rendered as frontmatter and an "as of" line, counted by the auditor, nagged by the briefing's "Past their window"; supersession carries `correction.reason: world_changed | never_true`; nothing automatic ever changes an existing fact.
+3. Federation half (task_47): `source.article` is the shared queue with no leases or leader; per-(peer, predicate) subscriptions with their own watermarks and a `predicates` filter on the atoms endpoint; dedup after the fact by normalized url plus content_hash with automatic `same_as` for articles only; the courier checks pulled keys before fetching; a `courier.run` announce atom; `courier.claim` only if spike 43 shows fetch is expensive.
+4. Trust and quorum: a peer's derived people, orgs, affiliations, and events arrive as quarantine proposals with `kind: federation` under an `Accept` grant naming the peer key; articles and attestations pull as atoms; a new `Attest` capability action gates whose attestations count; quorum counts distinct independent sources so two readers of one article are one confirmation; cross-peer contradictions route to review as `disputed`, never auto-resolved.
+
+Noted, outside my scope: the shared-accuracy memo uses `re_read_source` and an org window of 365 where the directive specified `re_read_same_source` and 180; the ADR follows the directive. The Known-gaps bullet for federation previously said "(proposed)" for ADR-033 and now says "(accepted)", which matches the ADR's on-disk status.</result>
+<usage><subagent_tokens>427200</subagent_tokens><tool_uses>16</tool_uses><duration_ms>304301</duration_ms></usage>
+</task-notification>
