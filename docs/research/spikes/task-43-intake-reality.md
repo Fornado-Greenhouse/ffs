@@ -78,4 +78,27 @@ Scope changes: task_40's `fetch.mode = "cookies"` option and the `ffs-courier` a
 
 - Owner decision on section 6 item 3.
 - IMAP or OAuth choice for the Workspace mailbox (task_40).
-- A first primary-source probe (SEC EDGAR full-text search and the NC Secretary of State registry) to confirm they are machine-readable without terms conflicts.
+- Primary-source probe: done, see section 8.
+
+## 8. Primary-source probe (added 2026-09-14)
+
+Probe run against live endpoints; full notes with sample queries stay under `$FFS_DATA_DIR/spikes/primary-sources-probe.md`. Two public-record feeds already corroborate this week's CBJ headlines: the county permit feed returned a $41.1M data-center upfit, a $16.9M library, and an $11.6M Target alteration issued since 2026-09-01, two of which match CBJ stories from the same week, and the Council API returned the 2026-09-14 agenda with rezoning petitioners named. These are the independent confirmations ADR-034 counts.
+
+## Ranking (value for the movers-and-shakers cabinet x ease and permissibility of automated intake)
+
+| Rank | Source | Machine-readable | Terms for automation | Value | Verdict |
+|---|---|---|---|---|---|
+| 1 | Mecklenburg County permits, ArcGIS FeatureServer `AccelaAllPermits` | Yes, REST JSON, no key | Public record, county GIS; no automation clause found | High: who is building what, for how much, owner LLC names | Add first |
+| 2 | Charlotte City Council, Legistar Web API (`webapi.legistar.com/v1/charlottenc`) | Yes, JSON, no token needed for Charlotte | Granicus API is public; 1,000-row cap per query | High: rezonings, contracts, incentive votes, with petitioner names | Add second |
+| 3 | SEC EDGAR full-text search and `data.sec.gov` submissions | Yes, JSON, 10 req/s with a declared User-Agent | Fair-access policy permits declared automated clients | Medium-high for public companies (8-K officer changes, 13G, Form 4); thin for private Charlotte firms | Add third |
+| 4 | Company newsroom RSS: Duke Energy, Truist | Yes, RSS XML | Press releases are meant to be redistributed | Medium: executive hires and moves straight from the source | Add as a feed list, cheap |
+| 5 | NC Secretary of State business registry | No public API; weekly CSV via paid data subscription | Web search: "Automated or scripted searches ... are not permitted" | High for entity resolution (officers, addresses, aliases) | Later, via subscription |
+| 6 | Mecklenburg Register of Deeds (meckrod.manatron.com) | Web portal only, login for full access | Disclaimer only; no automation clause found | Medium: property sales and grantor/grantee | Later, manual or licensed |
+| 7 | NC courts (eCourts Portal, RPA program) | RPA online $495 setup; extracts need a $5,000 bond | Licensed access only | Low-medium for this cabinet | Not now |
+| 8 | Charlotte Observer (McClatchy), Axios Charlotte | No | Both prohibit scraping and use for AI/ML per their terms (see below) | High editorially | Pointer sources only, like CBJ |
+| 9 | Bank of America and Honeywell newsrooms, Charlotte Regional Business Alliance | No RSS found | n/a | Medium | Skip or manual |
+
+### Recommendation
+Add, after CLTtoday: (1) Mecklenburg County permits via the ArcGIS FeatureServer, (2) Charlotte City Council via the Legistar Web API. Both are public records with JSON endpoints, no keys, no automation prohibition, and both name the entities the cabinet is about (owner LLCs, petitioners, contractors) on the actual decision dates. Then EDGAR (declared User-Agent, 10 req/s) for the public companies, and the Duke and Truist RSS feeds as a cheap fourth. NC SoS data subscription is the resolver's alias table and should be priced when task_45 starts.
+
+Out of scope, noticed: owner names on permits are frequently LLC vehicles; the resolver will need an org-to-org "vehicle of" relationship or an alias rule to connect Digital Moores Chapel LLC to Digital Realty, which the plan's known-gaps list already flags as unmodeled.
