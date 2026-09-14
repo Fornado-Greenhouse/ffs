@@ -71,7 +71,7 @@ The primary technical trade-off is heterogeneity for predictability: three toolc
 - **`ffs-core`** (Rust library): atom envelope, signing/verification, multihash addressing, capability evaluator, predicate-spec loader, projection renderer, SQLite store. The shared brain used by every binary.
 - **`ffs-daemon`** (Rust binary): long-running per-user process. Owns `store.db`, the filesystem watchers, the fast-path classifier, the skill subprocess host, the federation HTTPS server, and the local JSON-RPC server.
 - **`ffs-cli`** (Rust binary, statically linked): single binary distributed for Linux/macOS/Windows. Resolves `ffs://` URLs by talking to the local daemon over UDS / named pipe.
-- **`ffs-mcp`** (Rust binary): MCP server exposing the six MVP tools (`ffs_query`, `ffs_render_projection`, `ffs_resolve_url`, `ffs_author_atom`, `ffs_inspect_predicate`, `ffs_audit_query`). Thin wrapper translating MCP tool calls to JSON-RPC against the daemon.
+- **`ffs-mcp`** (Rust binary): MCP server exposing the six MVP tools (`ffs_query`, `ffs_render_projection`, `ffs_resolve_url`, `ffs_author_atom`, `ffs_inspect_predicate`, `ffs_audit_query`) plus `ffs_search` and `ffs_list_path` (ADR-027). Thin wrapper translating MCP tool calls to JSON-RPC against the daemon.
 - **`ffs-federation`** (Rust crate, embedded in daemon): mTLS HTTPS server and client. Owns the bridge handshake, capability-filtered atom serving, and pull-sync scheduling.
 - **`ffs-fastpath`** (Rust crate, embedded in daemon): reverse-map classifier consuming projection file diffs and producing supersession atoms or routing to ingest.
 - **`ffs-skills-host`** (Rust crate, embedded in daemon): subprocess host for Python skills. Routes scribe/librarian/auditor invocations and brokers their substrate access through the daemon's JSON-RPC layer.
@@ -221,7 +221,7 @@ claim: {
 | `GET /federation/v1/intersection/<entity>` | Intersection check for `intersection/with/<peer>/` |
 | `POST /federation/v1/revocation-notice` | Optional immediate-revocation push |
 
-**MCP tools** (six MVP tools per PRD § Core Features § FFS-MCP server): `ffs_query`, `ffs_render_projection`, `ffs_resolve_url`, `ffs_author_atom`, `ffs_inspect_predicate`, `ffs_audit_query`. Each tool is a thin translator: validate agent capability → translate to JSON-RPC method → call daemon → translate response.
+**MCP tools** (six MVP tools per PRD § Core Features § FFS-MCP server, plus two per ADR-027): `ffs_query`, `ffs_render_projection`, `ffs_resolve_url`, `ffs_author_atom`, `ffs_inspect_predicate`, `ffs_audit_query`, `ffs_search`, `ffs_list_path`. Each tool is a thin translator: validate agent capability → translate to JSON-RPC method → call daemon → translate response.
 
 ## Integration Points
 

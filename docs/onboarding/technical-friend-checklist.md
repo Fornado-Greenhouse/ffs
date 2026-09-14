@@ -416,6 +416,12 @@ Leave them with:
 - Your contact info for the inevitable "something looks weird"
   question.
 
+If they (or you) will point an AI agent at the substrate through
+`ffs-mcp`, install the `ffs-memory` skill and hand the agent the
+[Agent Memory Convention](../agent-memory/README.md). It teaches
+search-before-write and the rule that a proposal is not a saved
+atom until they accept it in the daily summary.
+
 ## You're done
 
 The substrate is theirs now. They own it, they hold the keys,

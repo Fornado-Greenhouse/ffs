@@ -214,3 +214,8 @@ is lost.
 
 For the deeper "why" behind FFS, the [project
 README](../../README.md) is the best starting point.
+
+If you point an AI agent at your substrate, it should follow the
+[Agent Memory Convention](../agent-memory/README.md): search
+before it writes, and treat what it submits as a proposal you
+review, not as something already saved.

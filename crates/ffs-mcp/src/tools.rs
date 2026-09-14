@@ -1,8 +1,11 @@
-//! The six MVP MCP tools. Each tool exposes:
+//! The eight MCP tools: the six MVP tools per ADR-013 plus
+//! `ffs_search` and `ffs_list_path` per ADR-027 (the FFS Agent Memory
+//! Convention — search-before-write and progressive disclosure need
+//! a lightweight search + listing surface). Each tool exposes:
 //!
 //! - A `name` matching ADR-013 (`ffs_query`, `ffs_render_projection`,
 //!   `ffs_resolve_url`, `ffs_author_atom`, `ffs_inspect_predicate`,
-//!   `ffs_audit_query`).
+//!   `ffs_audit_query`) or ADR-027 (`ffs_search`, `ffs_list_path`).
 //! - A JSON Schema `inputSchema` so MCP-aware clients can validate
 //!   arguments before the call.
 //! - A translator that turns the MCP `arguments` object into the
@@ -20,7 +23,15 @@ use serde_json::Value;
 use crate::daemon_client::{DaemonClient, DaemonError};
 use crate::protocol::{Tool, ToolCallResult};
 
-/// Build the six-tool catalog the MCP server advertises on
+/// Default hit count for `ffs_search` when the agent omits `limit`.
+/// Small on purpose: the convention (ADR-027) wants agents to read a
+/// handful of lightweight hits and drill in, not page through the
+/// substrate.
+pub const SEARCH_DEFAULT_LIMIT: u64 = 10;
+/// Hard ceiling for `ffs_search` `limit` — larger requests are clamped.
+pub const SEARCH_MAX_LIMIT: u64 = 50;
+
+/// Build the eight-tool catalog the MCP server advertises on
 /// `tools/list`. The JSON Schemas are intentionally tolerant — most
 /// fields are optional so an agent can call a tool with the
 /// minimum required arguments and iterate.
@@ -38,6 +49,39 @@ pub fn tool_catalog() -> Vec<Tool> {
                     "entity": {"type": "string", "description": "Entity id to query."},
                     "predicate": {"type": "string", "description": "Optional predicate filter."},
                     "as_of": {"type": "string", "description": "Optional ISO 8601 bitemporal cutoff."}
+                }
+            }),
+        },
+        Tool {
+            name: "ffs_search".into(),
+            description: "Search-before-write: find existing entities by name/title before \
+                          proposing new content. Returns lightweight hits (entity, \
+                          predicate, display_name) — inspect with ffs_query or \
+                          ffs_render_projection only for the hits you actually need. \
+                          Results are capability-filtered."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "description": "Case-insensitive substring matched against entity display names / note titles."},
+                    "limit": {"type": "integer", "description": "Maximum hits to return (default 10, max 50).", "minimum": 1, "maximum": SEARCH_MAX_LIMIT, "default": SEARCH_DEFAULT_LIMIT}
+                }
+            }),
+        },
+        Tool {
+            name: "ffs_list_path".into(),
+            description: "Progressive disclosure: enumerate a projection listing (e.g. \
+                          contacts/by-name/S/ or notes/recent/) instead of scanning the \
+                          substrate. Read the listing, then drill into individual entries \
+                          with ffs_render_projection."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": {"type": "string", "description": "Projection listing path (e.g. contacts/by-name/S/ or notes/recent/)."},
+                    "page": {"type": "integer", "description": "Optional page number for paginated listings."}
                 }
             }),
         },
@@ -70,8 +114,14 @@ pub fn tool_catalog() -> Vec<Tool> {
         },
         Tool {
             name: "ffs_author_atom".into(),
-            description: "Submit content for scribing into the ingest quarantine. Stamps \
-                          provenance with the agent's identity."
+            description: "Submit markdown for scribing into the ingest QUARANTINE. The \
+                          result is a submission_id for a PROPOSAL, not a committed atom: \
+                          nothing is persisted until the user accepts it in the daily \
+                          summary. Report the outcome as \"proposed\", never \"saved\". \
+                          Search first (ffs_search) and prefer extending an existing \
+                          entity over proposing a duplicate; qualify inferences in the \
+                          content (\"the agent infers ...\") rather than stating them as \
+                          facts. Stamps provenance with the agent's identity."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -119,6 +169,8 @@ pub async fn dispatch_tool_call(
 ) -> ToolCallResult {
     match tool_name {
         "ffs_query" => translate_ffs_query(arguments, daemon).await,
+        "ffs_search" => translate_ffs_search(arguments, daemon).await,
+        "ffs_list_path" => translate_list_path(arguments, daemon).await,
         "ffs_render_projection" => translate_render_projection(arguments, daemon).await,
         "ffs_resolve_url" => translate_resolve_url(arguments, daemon).await,
         "ffs_author_atom" => translate_author_atom(arguments, daemon, agent_uri).await,
@@ -150,6 +202,36 @@ async fn translate_ffs_query(args: Value, daemon: &dyn DaemonClient) -> ToolCall
         params["as_of"] = serde_json::json!(a);
     }
     forward(daemon, "atom.list", params).await
+}
+
+async fn translate_ffs_search(args: Value, daemon: &dyn DaemonClient) -> ToolCallResult {
+    let query = match args.get("query").and_then(|v| v.as_str()) {
+        Some(q) => q.to_string(),
+        None => return ToolCallResult::tool_error("missing required argument: query", None),
+    };
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(SEARCH_DEFAULT_LIMIT)
+        .clamp(1, SEARCH_MAX_LIMIT);
+    forward(
+        daemon,
+        "entity.search",
+        serde_json::json!({"query": query, "limit": limit}),
+    )
+    .await
+}
+
+async fn translate_list_path(args: Value, daemon: &dyn DaemonClient) -> ToolCallResult {
+    let path = match args.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => return ToolCallResult::tool_error("missing required argument: path", None),
+    };
+    let mut params = serde_json::json!({"path": path});
+    if let Some(page) = args.get("page").and_then(|v| v.as_u64()) {
+        params["page"] = serde_json::json!(page);
+    }
+    forward(daemon, "path.list", params).await
 }
 
 async fn translate_render_projection(args: Value, daemon: &dyn DaemonClient) -> ToolCallResult {
@@ -359,12 +441,14 @@ mod tests {
     // -- catalog --
 
     #[test]
-    fn catalog_contains_the_six_mvp_tools() {
+    fn catalog_contains_the_eight_tools() {
         let names: Vec<_> = tool_catalog().into_iter().map(|t| t.name).collect();
         assert_eq!(
             names,
             vec![
                 "ffs_query",
+                "ffs_search",
+                "ffs_list_path",
                 "ffs_render_projection",
                 "ffs_resolve_url",
                 "ffs_author_atom",
@@ -482,6 +566,116 @@ mod tests {
         let text = extract_text(&r);
         assert!(text.contains("unknown tool"));
         assert!(text.contains("ffs_query"));
+    }
+
+    // -- ffs_search / ffs_list_path (ADR-027) --
+
+    #[tokio::test]
+    async fn ffs_search_translates_to_entity_search_with_query_and_limit() {
+        let c = RecorderClient::new();
+        c.set_ok("entity.search", serde_json::json!({"results": []}));
+        dispatch_tool_call(
+            "ffs_search",
+            serde_json::json!({"query": "sara", "limit": 3}),
+            &c,
+            "agent",
+        )
+        .await;
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "entity.search");
+        assert_eq!(seen[0].1["query"], "sara");
+        assert_eq!(seen[0].1["limit"], 3);
+    }
+
+    #[tokio::test]
+    async fn ffs_search_limit_defaults_to_ten() {
+        let c = RecorderClient::new();
+        c.set_ok("entity.search", serde_json::json!({"results": []}));
+        dispatch_tool_call("ffs_search", serde_json::json!({"query": "x"}), &c, "agent").await;
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen[0].1["limit"], SEARCH_DEFAULT_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn ffs_search_limit_clamps_at_fifty() {
+        let c = RecorderClient::new();
+        c.set_ok("entity.search", serde_json::json!({"results": []}));
+        dispatch_tool_call(
+            "ffs_search",
+            serde_json::json!({"query": "x", "limit": 9999}),
+            &c,
+            "agent",
+        )
+        .await;
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen[0].1["limit"], SEARCH_MAX_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn ffs_search_missing_query_errors_without_calling_daemon() {
+        let c = RecorderClient::new();
+        let r = dispatch_tool_call("ffs_search", serde_json::json!({}), &c, "agent").await;
+        assert!(r.is_error);
+        let text = extract_text(&r);
+        assert!(
+            text.contains("missing required argument: query"),
+            "got: {text}"
+        );
+        assert!(c.seen.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn ffs_list_path_translates_to_path_list_with_path_and_page() {
+        let c = RecorderClient::new();
+        c.set_ok("path.list", serde_json::json!({"markdown": "- Sara"}));
+        dispatch_tool_call(
+            "ffs_list_path",
+            serde_json::json!({"path": "contacts/by-name/S/", "page": 2}),
+            &c,
+            "agent",
+        )
+        .await;
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen[0].0, "path.list");
+        assert_eq!(seen[0].1["path"], "contacts/by-name/S/");
+        assert_eq!(seen[0].1["page"], 2);
+    }
+
+    #[tokio::test]
+    async fn ffs_list_path_omits_page_when_not_given() {
+        let c = RecorderClient::new();
+        c.set_ok("path.list", serde_json::json!({"markdown": ""}));
+        dispatch_tool_call(
+            "ffs_list_path",
+            serde_json::json!({"path": "notes/recent/"}),
+            &c,
+            "agent",
+        )
+        .await;
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen[0].1["path"], "notes/recent/");
+        assert!(seen[0].1.get("page").is_none());
+    }
+
+    #[tokio::test]
+    async fn ffs_list_path_missing_path_errors_without_calling_daemon() {
+        let c = RecorderClient::new();
+        let r = dispatch_tool_call("ffs_list_path", serde_json::json!({}), &c, "agent").await;
+        assert!(r.is_error);
+        assert!(extract_text(&r).contains("missing required argument: path"));
+        assert!(c.seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ffs_author_atom_description_is_honest_about_persistence() {
+        let tool = tool_catalog()
+            .into_iter()
+            .find(|t| t.name == "ffs_author_atom")
+            .unwrap();
+        assert!(tool.description.contains("QUARANTINE"));
+        assert!(tool.description.contains("PROPOSAL"));
+        assert!(tool.description.contains("never \"saved\""));
     }
 
     // -- resolve_url --

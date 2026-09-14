@@ -195,6 +195,25 @@ Until 1.0, prefer breaking change + clear migration over backward-compatibility 
 
 ---
 
+## Knowledge discipline (ADR-027)
+
+This repo's persistent memory is `ARCHITECTURE.md`, the ADRs, and the task files under `.compozy/tasks/ffs-mvp/` — not the chat. A future session has none of this conversation; anything it would otherwise have to rediscover belongs in one of those three places. The practice is adopted from [okf-agent-memory](https://github.com/okf-memory/okf-agent-memory) per [ADR-027](.compozy/tasks/ffs-mvp/adrs/adr-027.md).
+
+**Read before write.** Before substantial work under a path, open [`.compozy/tasks/ffs-mvp/adrs/README.md`](.compozy/tasks/ffs-mvp/adrs/README.md) and read the ADRs listed for that path. Respect the tier: `constraint` binds the edit; `hold` means stop and ask the user before touching the path; `context` is background. Search the existing ADRs and task files before proposing a new one — prefer updating an ADR's Implementation Notes or a task's Overview over creating a near-duplicate.
+
+**Progressive disclosure.** Use the ADR index and `Grep` to find the one or two ADRs a task needs. Do not read all 27 ADRs to answer a question one row of the index answers.
+
+**End-of-task knowledge review.** Before declaring a task done, ask:
+
+- Did I make a decision that changes a public type, the atom envelope, the capability evaluator, federation transport, the MCP tool set, or any stability-commitment surface? → new ADR (sequential number), plus a row or an added reference in the governance index.
+- Did I change an invariant, a concurrency rule, or a component boundary? → update `ARCHITECTURE.md`.
+- Did I discover something non-obvious (a folklore fix that doesn't work, a platform quirk, a failure mode)? → record it in the task file's Overview or the relevant ADR's Implementation Notes, the way ADR-023/025 and task_36 do.
+- Did nothing above apply? → write nothing. Do not manufacture a low-value entry to have something to show.
+
+**Persistence honesty.** Never report an ADR, doc, or task file as written unless it exists on disk — verify with `ls` or `Read` before claiming it. Never flip an ADR to `Accepted` or a task to `completed` on the user's behalf when the work was only proposed or partially delivered. The same rule the substrate enforces on agents (a quarantined proposal is not a saved atom) applies to us and the repo's own memory.
+
+---
+
 ## Verification before completion claims
 
 Every "task complete", "tests pass", "ready to commit" claim requires fresh verification evidence. The full template lives in the `cy-final-verify` skill; the short form is:

@@ -1,5 +1,6 @@
 //! `ffs-mcp` library: MCP protocol types, daemon-client abstraction,
-//! and the six MVP tool translators.
+//! and the eight tool translators (six MVP per ADR-013 + `ffs_search`
+//! and `ffs_list_path` per ADR-027).
 //!
 //! The MCP server is structured as a library so unit + integration
 //! tests can drive `dispatch_request` directly, plus a thin
@@ -15,15 +16,16 @@
 //!   implementation lives in the daemon binary's onboarding scripts
 //!   (task_22); tests inject the in-process variant in
 //!   `tests/mcp_integration.rs`.
-//! - `tools.rs` — the six tools with JSON schemas and translators
+//! - `tools.rs` — the eight tools with JSON schemas and translators
 //!   that map MCP arguments → daemon JSON-RPC params and the
 //!   responses back.
 //! - `transport.rs` — line-delimited JSON-RPC over an async reader
 //!   / writer (stdin/stdout in production; in-memory pipes in
 //!   tests).
 //!
-//! See ADR-013 (MCP server in MVP) and ADR-008 (speak MCP at the
-//! boundary).
+//! See ADR-013 (MCP server in MVP), ADR-008 (speak MCP at the
+//! boundary), and ADR-027 (agent memory convention: the search +
+//! listing tools).
 
 pub mod daemon_client;
 pub mod protocol;
@@ -192,7 +194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_the_six_mvp_tools() {
+    async fn tools_list_returns_the_eight_tools() {
         let resp = server()
             .handle(McpRequest {
                 jsonrpc: "2.0".into(),
@@ -206,8 +208,10 @@ mod tests {
                 let tools = result["tools"].as_array().expect("tools array");
                 let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
                 assert!(names.contains(&"ffs_query"));
+                assert!(names.contains(&"ffs_search"));
+                assert!(names.contains(&"ffs_list_path"));
                 assert!(names.contains(&"ffs_author_atom"));
-                assert_eq!(names.len(), 6);
+                assert_eq!(names.len(), 8);
             }
             other => panic!("expected Success; got {other:?}"),
         }

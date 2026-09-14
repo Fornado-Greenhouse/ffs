@@ -2,7 +2,7 @@
 
 The Foley File System (FFS) is a records-shaped substrate for personal knowledge that you own, classify, and share at sub-record granularity with peers. This document is the architectural orientation: what FFS is, how it's structured, what invariants the implementation maintains, how concurrency and security work, and where to look for more depth.
 
-This doc is meant to be self-contained on first read. The full product specification, technical specification, and 21 architecture decision records live under [`.compozy/tasks/ffs-mvp/`](.compozy/tasks/ffs-mvp/) and are linked by name throughout.
+This doc is meant to be self-contained on first read. The full product specification, technical specification, and 27 architecture decision records live under [`.compozy/tasks/ffs-mvp/`](.compozy/tasks/ffs-mvp/) and are linked by name throughout.
 
 ---
 
@@ -259,7 +259,7 @@ Pre-1.0, breaking changes are possible everywhere with notice. Post-1.0, this su
 - The `ffs://` URL scheme.
 - The atom envelope shape (the `v` field is the migration knob).
 - The JSON-RPC method set used by the CLI, Obsidian plugin, and MCP server.
-- The six MVP MCP tool signatures.
+- The MCP tool signatures (six MVP tools per ADR-013, plus `ffs_search` and `ffs_list_path` per ADR-027).
 - The TOML predicate-spec format.
 
 **Internal (free to change):**
@@ -289,8 +289,9 @@ Full roadmap: [PRD § Phased Rollout Plan](.compozy/tasks/ffs-mvp/_prd.md).
 
 - [Product Requirements Document](.compozy/tasks/ffs-mvp/_prd.md) — what FFS is for and who it's for.
 - [Technical Specification](.compozy/tasks/ffs-mvp/_techspec.md) — implementation design, build order, integration points.
-- [Architecture Decision Records](.compozy/tasks/ffs-mvp/adrs/) — 21 ADRs covering product (001–014) and technical (015–021) decisions.
-- [Task breakdown](.compozy/tasks/ffs-mvp/_tasks.md) — 23-task implementation plan in dependency order.
+- [Architecture Decision Records](.compozy/tasks/ffs-mvp/adrs/) — 27 ADRs covering product (001–014), technical (015–021), and post-MVP (022+) decisions; [`adrs/README.md`](.compozy/tasks/ffs-mvp/adrs/README.md) is the path-to-ADR governance index.
+- [Task breakdown](.compozy/tasks/ffs-mvp/_tasks.md) — 37-task implementation plan in dependency order.
+- [FFS Agent Memory Convention](docs/agent-memory/CONVENTION.md) — the behavioral contract for agents using FFS as persistent memory (ADR-027).
 - [AARM specification](https://aarm.dev) — Autonomous Action Runtime Management.
 
 ### Contributing

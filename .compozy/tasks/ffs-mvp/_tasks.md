@@ -40,3 +40,4 @@
 | 34 | Windows daemon path correctness: fastpath path normalization + scribe budget + named-pipe e2e | completed | high | task_07, task_09, task_11, task_22 |
 | 35 | macOS .app bundle wrapping so the keychain entitlement actually works | completed | high | task_22, task_27, task_33 |
 | 36 | Scribe v2: predicate-schema-driven extraction with pluggable engines | pending | high | task_11, task_26, task_32 |
+| 37 | Agent memory convention: adopt okf-agent-memory practices (ADR-027) | completed | medium | task_16, task_23 |

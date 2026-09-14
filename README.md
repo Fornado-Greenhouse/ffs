@@ -79,7 +79,7 @@ Sarah's full contact is the head of supersession chains for several atoms like t
 | Filesystem watcher + fast-path classifier | ⏳ planned | Sub-200ms editor edits become atoms |
 | Skills host (scribe, librarian, auditor) | ⏳ planned | Python agents under daemon supervision |
 | Federation transport (mTLS pull-based) | ⏳ planned | Bilateral peer-to-peer, fingerprint-pinned |
-| MCP server (six MVP tools) | ⏳ planned | AARM-conformant boundary for AI agents |
+| MCP server (eight tools) | ⏳ planned | AARM-conformant boundary for AI agents |
 | Obsidian plugin | ⏳ planned | The end-user surface |
 
 The full 23-task plan in dependency order: [`.compozy/tasks/ffs-mvp/_tasks.md`](.compozy/tasks/ffs-mvp/_tasks.md).
@@ -106,14 +106,16 @@ Full design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Decision-by-decision history:
 
 ## MCP agents
 
-FFS ships `ffs-mcp`, a Model Context Protocol server that any MCP-aware agent (Claude Code, ChatGPT desktop, framework-agnostic agents) can spawn as a subprocess. It exposes six tools, each translating to a daemon JSON-RPC call with capability checks at the daemon boundary:
+FFS ships `ffs-mcp`, a Model Context Protocol server that any MCP-aware agent (Claude Code, ChatGPT desktop, framework-agnostic agents) can spawn as a subprocess. It exposes eight tools (six MVP tools per ADR-013, plus `ffs_search` and `ffs_list_path` per ADR-027's agent memory convention), each translating to a daemon JSON-RPC call with capability checks at the daemon boundary:
 
 | Tool | Purpose |
 |---|---|
 | `ffs_query` | List atoms about an entity (capability-filtered) |
+| `ffs_search` | Search entities by name/title before proposing new content — search-before-write (ADR-027) |
+| `ffs_list_path` | Enumerate a projection listing for progressive disclosure instead of scanning the substrate (ADR-027) |
 | `ffs_render_projection` | Render a projection path to markdown |
 | `ffs_resolve_url` | Resolve `ffs://` URLs (atom / entity / path) |
-| `ffs_author_atom` | Submit content for scribing into the ingest quarantine |
+| `ffs_author_atom` | Propose content into the ingest quarantine — a proposal, not a committed atom, until the user accepts it |
 | `ffs_inspect_predicate` | Return a predicate spec (schema + reverse-map rules) |
 | `ffs_audit_query` | Return recent auditor.daily_summary atoms |
 

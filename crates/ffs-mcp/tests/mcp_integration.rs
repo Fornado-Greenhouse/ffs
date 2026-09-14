@@ -1,9 +1,13 @@
 //! End-to-end integration: a stub MCP client speaks JSON-RPC through
 //! `serve()` to an `McpServer` that's wired to a real `Dispatcher`
-//! via an in-process `DaemonClient`. Exercises all four
-//! required-by-spec integration scenarios:
+//! via an in-process `DaemonClient`. Exercises the four
+//! required-by-spec integration scenarios plus the ADR-027 search
+//! tool:
 //!
-//! - `tools/list` returns the six MVP tools.
+//! - `tools/list` returns the eight tools (six MVP + `ffs_search` +
+//!   `ffs_list_path`).
+//! - `ffs_search` returns a capability-filtered hit for an inserted
+//!   contact.
 //! - `ffs_query` returns capability-filtered atoms.
 //! - `ffs_author_atom` with an out-of-scope claim returns a
 //!   structured capability error.
@@ -197,7 +201,7 @@ async fn round_trip(server: McpServer, requests: Vec<Value>) -> Vec<Value> {
 }
 
 #[tokio::test]
-async fn tools_list_returns_six_tools_end_to_end() {
+async fn tools_list_returns_eight_tools_end_to_end() {
     let (dispatcher, _) = make_dispatcher(true);
     let server = McpServer::new(Arc::new(InProcessDaemonClient { dispatcher }), "test-agent");
     let responses = round_trip(
@@ -211,9 +215,11 @@ async fn tools_list_returns_six_tools_end_to_end() {
     .await;
     assert_eq!(responses.len(), 1);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 8);
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert!(names.contains(&"ffs_query"));
+    assert!(names.contains(&"ffs_search"));
+    assert!(names.contains(&"ffs_list_path"));
     assert!(names.contains(&"ffs_author_atom"));
     assert!(names.contains(&"ffs_resolve_url"));
     assert!(names.contains(&"ffs_audit_query"));
@@ -244,6 +250,36 @@ async fn ffs_query_returns_capability_filtered_atoms() {
     // atom envelopes). Sara's atom should be in there.
     assert!(text.contains("Sara_Chen"), "got: {text}");
     assert!(text.contains("display_name"), "got: {text}");
+}
+
+#[tokio::test]
+async fn ffs_search_returns_hit_for_inserted_contact_end_to_end() {
+    let (dispatcher, store) = make_dispatcher(true);
+    insert_contact(&*store, "Sara_Chen", "Sara Chen", "2026-05-27T08:00:00Z");
+    insert_contact(&*store, "Bob_Lee", "Bob Lee", "2026-05-27T08:00:01Z");
+    let server = McpServer::new(Arc::new(InProcessDaemonClient { dispatcher }), "test-agent");
+    let responses = round_trip(
+        server,
+        vec![serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "ffs_search",
+                "arguments": {"query": "sara", "limit": 5}
+            }
+        })],
+    )
+    .await;
+    let result = &responses[0]["result"];
+    assert_eq!(result["isError"], false, "got: {result}");
+    let text = result["content"][0]["text"].as_str().unwrap();
+    let body: Value = serde_json::from_str(text).unwrap();
+    let hits = body["results"].as_array().expect("results array");
+    assert_eq!(hits.len(), 1, "got: {text}");
+    assert_eq!(hits[0]["display_name"], "Sara Chen");
+    assert_eq!(hits[0]["entity"], "Sara_Chen");
+    assert_eq!(hits[0]["predicate"], "contact.person");
 }
 
 #[tokio::test]
