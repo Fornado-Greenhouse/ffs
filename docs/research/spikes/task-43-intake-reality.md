@@ -53,6 +53,8 @@ ACBJ User Agreement, last revised 2024-08-13, `https://www.bizjournals.com/usera
 
 Stated remedies: termination or suspension of the account with or without notice; binding individual arbitration.
 
+The owner's position (2026-09-15): these clauses target nefarious use; clipping articles into an internal library under a subscription is long-standing practice. The software records the terms and leaves the judgment to the owner.
+
 Reading: an automated courier that fetches full bizjournals.com articles, and any LLM extraction over stored bizjournals.com content, is what these clauses name, regardless of whether the bot wall can be passed. Parsing the subscriber's own email for headlines and URLs is the subscriber's own mail and is not covered. Filing title, url, date, and publication as a `source.article` record with no content is the defensible floor.
 
 6AM City Legal (`https://6amcity.com/legal`, last revised 2025-03-01): a "non-transferable, non-sublicensable, non-exclusive, revocable, limited license to use and access the Site solely for your own personal, noncommercial use"; no copying, reproducing, or republishing of the Site or Services; no unreasonable load. No clause names large language models. Reading one's own subscribed newsletter and keeping a private, personal summary of the entities it names sits inside that license; republishing the blurbs would not.
@@ -69,11 +71,11 @@ Recommended and adopted by ADR-035:
 
 1. **Courier shape: deterministic skill bundle, email-only intake.** Not a browser agent. Read the Workspace mailbox, decode CBJ links, file `source.article` pointers (title, url, date, publication, no content), and file CLTtoday items as full submissions with blurb text and attribution.
 2. **CBJ is a pointer source.** No fetch, no article text, no LLM over CBJ content. The briefing links the owner to articles; what the owner reads and writes down enters as the owner's own note.
-3. **Full fetch is dropped from Phase 1**, on terms grounds. It is not an opt-in flag; it is out unless the owner decides to accept the account risk explicitly.
+3. **Fetch and clip are per-publisher owner settings** (owner's decision, 2026-09-15; ADR-035 amendment): `$FFS_DATA_DIR/config/sources.toml` carries `intake = pointer | clip` and `fetch = off | session | scheduled` per publisher, defaulting to `pointer` / `session` for terms-restricted publishers. The software does not refuse a publisher by domain and does not adjudicate the owner's license; it records the terms above and complies with the owner's setting. During the morning read the owner may say "clip this" and the article is filed under the `clip` tier.
 4. **Primary sources are the next intake sources**, and they double as ADR-034's independent confirmations: company newsrooms and press releases, SEC EDGAR, the NC Secretary of State business registry, Mecklenburg County permits and deeds, city and town council agendas. CBJ headlines become the trigger that tells the courier which primary sources to read.
 5. **Spike 42 runs on newsletter blurbs and primary-source text**, not on CBJ bodies (done; see `task-42-extraction-quality.md`).
 
-Scope changes: task_40's `fetch.mode = "cookies"` option and the `ffs-courier` agent-hosted alternative both lose their CBJ use case; keep the mechanism only if a permitted source needs it. task_43 subtask 43.3 (cookie-jar fetch) is closed as not applicable.
+Scope changes: task_40 gains `sources.toml` and a scheduled-fetch path that is implemented but disabled for terms-restricted publishers by the starter file; task_48 gains "clip this". task_43 subtask 43.3 (cookie-jar fetch variants) stays closed as not run; task_40's 40.11 tests that path with a stub and records that the bot wall may still block a stdlib client.
 
 ## 7. Open items
 
