@@ -35,7 +35,8 @@ Result against the PASS criterion (at least 70 percent of items yielding people 
 | Plain fetch, `/charlotte/feed/news` | 403 |
 | Plain fetch, `feeds.bizjournals.com/bizj_charlotte` | 403 (XML content type, body blocked) |
 | Plain fetch, browser user agent, homepage | 403 |
-| Signed-in Chrome profile, article URL | Paywall preview only: "Preview this article", one sentence. The profile was not signed in to bizjournals.com. |
+| Chrome profile before sign-in, article URL | Paywall preview only: "Preview this article", one sentence. |
+| Chrome profile after the owner signed in to bizjournals.com, same URL | Full article rendered: no preview marker, 10 paragraphs, about 2,900 characters. Measured only; no content stored. Authenticated browser fetch works technically; the User Agreement in section 4 is the remaining blocker. |
 | Exported cookie jar plus stdlib urllib | Not run; moot given section 4 unless the owner overrides |
 
 A bot wall sits in front of the site and the RSS host. There is no unauthenticated escape hatch.
