@@ -43,14 +43,15 @@
 | 37 | Agent memory convention: adopt okf-agent-memory practices (ADR-027) | completed | medium | task_16, task_23 |
 | 38 | Filing cabinet: registry-declared path families + business-graph predicates and wikilinked templates (ADR-028) | pending | high | task_20, task_21, task_25, task_36, task_37 |
 | 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_38, task_44, task_45 |
-| 40 | Courier intake contract + ffs_search v2 + URL dedup | pending | medium | task_37, task_38, task_43, task_45 |
+| 40 | Courier: deterministic email-and-feeds intake + ffs_search v2 + URL dedup (pointers only for terms-restricted publishers) | pending | medium | task_37, task_38, task_43, task_45 |
 | 41 | Morning briefing: movers-and-shakers summary from the auditor | pending | medium | task_13, task_38, task_39, task_40 |
 | 42 | Spike: extraction quality on real business-press articles (gates task_36) | completed | low | task_11 |
-| 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | pending | low | task_26 |
+| 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | completed | low | task_26 |
 | 44 | Spike: review load and the review surface (gates task_39) | pending | low | task_19, task_29 |
 | 45 | Scribe v3: multi-entity proposals + entity resolver (ADR-030, ADR-031) | pending | high | task_36, task_38 |
 | 46 | Attestations, derived status, and staleness (ADR-034 local half) | pending | medium | task_38, task_41 |
 | 47 | Shared intake and shared accuracy over federation (ADR-034 federation half) | pending | high | task_15, task_40, task_45, task_46 |
+| 48 | Morning read: the owner-present reading session skill (ADR-035) | pending | medium | task_37, task_40, task_46 |
 
 ## Build order (as of 2026-09-14)
 
@@ -58,8 +59,9 @@
 2. **Task 36, slim.** The tracer bullet: the `llm` engine against the three existing predicates, so a readable daily digest lands in the vault before any refactor. No dependency on task_38.
 3. **Task 38.** Filing cabinet and identity (ADR-028, ADR-030, ADR-031): registry-declared path families, opaque ids, the business-graph predicates, wikilinked templates. The big refactor, now informed by real extraction output from task_36.
 4. **Task 45.** Scribe v3: multi-entity proposals and the three-outcome resolver, split out of task_36 because it needs both the LLM engine and the new predicates.
-5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule, with a Hermes or OpenClaw agent as an optional front end; `ffs_search` v2 and URL dedup.
-6. **Task 39.** Auto-file policy (ADR-029) with the review surface chosen by ADR-032's outcome from task_44.
+5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule: mailbox pointers and blurbs plus the county permit, Council, EDGAR, and RSS feeds; never a fetch of a terms-restricted publisher (ADR-035); `ffs_search` v2 and URL dedup.
+5b. **Task 48.** The morning read, as soon as the courier files its first agenda: the owner-present session that opens articles one at a time and files the owner's notes (ADR-035).
+6. **Task 39.** Auto-file policy (ADR-029) with the review surface chosen by ADR-032's outcome from task_44, which now measures the read (ADR-035 § 3), not a solo review pass.
 7. **Task 41.** The morning briefing, last, because it reads everything the others write.
 8. **Task 46.** Attestations and staleness, local (ADR-034 local half): makes "is it still accurate" a question the substrate answers before any peer exists; the owner's accept is the first attestation, windows per predicate, the briefing nags about facts past their window.
 9. **Task 47.** Shared intake and shared accuracy over federation (ADR-034 federation half), when ADR-033 lifts: subscriptions, article dedup by key, peer-derived atoms as proposals, peer attestations counted with source independence.
@@ -67,6 +69,7 @@
 ### Known gaps carried
 
 - Org-to-org relationships (subsidiaries, parents) are not modeled; affiliation is person-to-org only.
+- Permit owners are often LLC vehicles; an org-to-org "vehicle of" relationship is needed sooner than planned (from the task_43 primary-source probe).
 - Press reports announcement dates, not start dates, so an affiliation's `valid_from` is the article date.
 - Real article text never enters git; corpus fixtures are paraphrased or kept under `$FFS_DATA_DIR`.
 - Atom volume of about 36,000 a year fits the envelope for roughly three years, after which the PRD's indefinite-accumulation question is due.

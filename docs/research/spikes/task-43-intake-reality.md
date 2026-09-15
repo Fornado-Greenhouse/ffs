@@ -1,6 +1,6 @@
 # Spike 43: intake reality (findings, 2026-09-14)
 
-**Verdict: FAIL on the email-only criterion, and full fetch is blocked by the publisher's User Agreement, not by engineering.** The Charlotte Business Journal digest carries headlines and links only, so zero percent of items yield people or orgs from the email. Automated fetching of article bodies and any LLM operation over bizjournals.com content are prohibited by ACBJ's terms. The recommended courier shape is therefore: CBJ as a pointer source (title, url, date, publication from the email, no content), with entity extraction run on sources whose license permits personal use, starting with the CLTtoday newsletter. **Owner decision pending** on whether to accept the terms risk and build the authenticated full-fetch path anyway.
+**Verdict: FAIL on the email-only criterion, and full fetch is blocked by the publisher's User Agreement, not by engineering.** The Charlotte Business Journal digest carries headlines and links only, so zero percent of items yield people or orgs from the email. Automated fetching of article bodies and any LLM operation over bizjournals.com content are prohibited by ACBJ's terms. The recommended courier shape is therefore: CBJ as a pointer source (title, url, date, publication from the email, no content), with entity extraction run on sources whose license permits personal use, starting with the CLTtoday newsletter. **Owner decision (2026-09-14): ADR-035.** No unattended fetch of terms-restricted publishers; the assistant conducts an owner-present morning read instead, and the courier files pointers and permitted feeds only.
 
 Real email and article content stays under `$FFS_DATA_DIR/spikes/cbj/` and never enters this repository.
 
@@ -65,7 +65,7 @@ Attribution pattern that matters for ADR-034: many CLTtoday items end with a par
 
 ## 6. Decision output for task_40
 
-Recommended, pending the owner's decision:
+Recommended and adopted by ADR-035:
 
 1. **Courier shape: deterministic skill bundle, email-only intake.** Not a browser agent. Read the Workspace mailbox, decode CBJ links, file `source.article` pointers (title, url, date, publication, no content), and file CLTtoday items as full submissions with blurb text and attribution.
 2. **CBJ is a pointer source.** No fetch, no article text, no LLM over CBJ content. The briefing links the owner to articles; what the owner reads and writes down enters as the owner's own note.
@@ -77,7 +77,7 @@ Scope changes: task_40's `fetch.mode = "cookies"` option and the `ffs-courier` a
 
 ## 7. Open items
 
-- Owner decision on section 6 item 3.
+- Owner decision on section 6 item 3: made, ADR-035.
 - IMAP or OAuth choice for the Workspace mailbox (task_40).
 - Primary-source probe: done, see section 8.
 

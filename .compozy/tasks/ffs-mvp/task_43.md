@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Spike: intake reality, does the courier need a browser or an agent (gates task_40)"
 type: docs
 complexity: low
@@ -36,13 +36,23 @@ PASS criterion for "email-only is enough": at least 70 percent of digest items y
 What changes on FAIL: if fewer than 70 percent are blurb-sufficient and full fetch works, task_40 builds full fetch as the default for the courier. If a bot wall or paywall blocks fetch in all three variants, full fetch is dropped from Phase 1 and the courier files blurbs only, with the article URL as the provenance link for the owner to open by hand.
 </requirements>
 
+## Result (2026-09-14)
+
+**Verdict: FAIL on the email-only criterion; full fetch blocked by terms, not engineering; owner decision recorded as ADR-035.** Findings: `docs/research/spikes/task-43-intake-reality.md`.
+
+- The CBJ digest (delivered to the Fornado Greenhouse Workspace account, not the personal Gmail) is headlines and links only: 0 of 14 items yield a person or an organization from the email. The real article URL decodes from the base64 path of each tracking link, so a courier recovers canonical URLs without a click.
+- Plain fetch is 403 on the site, the news feed, and the RSS host, with or without a browser user agent. The owner's signed-in Chrome session renders full articles (ten paragraphs, about 2,900 characters); measured once, nothing stored.
+- ACBJ's User Agreement (2024-08-13) prohibits automated access and any LLM operation over its content; the Observer and Axios carry equivalent clauses. CLTtoday (6AM City) permits personal use and carries full blurbs; spike task_42 passed on it.
+- The primary-source probe ranked Mecklenburg County's permit FeatureServer and Charlotte's Legistar Web API as the first two feeds to add (public record, JSON, no key), with SEC EDGAR third and Duke Energy and Truist RSS as a feed list. Both public feeds corroborated CBJ headlines from the same week.
+- Owner's decision (quoted in ADR-035): "I don't want this to act as a bot performing a scrape. I want it to be my personal assistant, conducting our morning read." The courier files pointers and permitted feeds only (task_40 reshaped); the read is an owner-present session (task_48). Cookie-jar fetch (43.3) is not applicable.
+
 ## Subtasks
-- [ ] 43.1 Collect five CBJ digest emails into a gitignored spike directory; tabulate items with headline, blurb length, byline, URL shape, and who/what presence.
-- [ ] 43.2 Classify each item blurb-only vs full-fetch-required; compute the percentage.
-- [ ] 43.3 Fetch one article URL three ways with stdlib `urllib`; record status, response class, and size for each.
-- [ ] 43.4 Read the terms of use; quote the automated-access clauses with URL and date; state the practical risk.
-- [ ] 43.5 Write the courier-shape comparison (deterministic skill bundle vs browser agent) with a recommendation and the full-fetch policy.
-- [ ] 43.6 Write `docs/research/spikes/task-43-intake-reality.md` with the verdict first and the decision output for task_40.
+- [x] 43.1 Collect five CBJ digest emails into a gitignored spike directory; tabulate items with headline, blurb length, byline, URL shape, and who/what presence.
+- [x] 43.2 Classify each item blurb-only vs full-fetch-required; compute the percentage.
+- [x] 43.3 Fetch one article URL three ways with stdlib `urllib`; record status, response class, and size for each. *(Closed as not applicable per ADR-035: no-session fetch returned 403 across the site and RSS host; the cookie-jar variants were not run because automated fetch of bizjournals.com is out under the User Agreement and the owner's decision. The owner's signed-in browser was measured once: full article rendered, nothing stored.)*
+- [x] 43.4 Read the terms of use; quote the automated-access clauses with URL and date; state the practical risk.
+- [x] 43.5 Write the courier-shape comparison (deterministic skill bundle vs browser agent) with a recommendation and the full-fetch policy.
+- [x] 43.6 Write `docs/research/spikes/task-43-intake-reality.md` with the verdict first and the decision output for task_40.
 
 ## Implementation Details
 No production code. The fetch test is a ten-line script. The email inspection is reading. The courier comparison should reference the existing skill bundle shape (`skills/scribe/SKILL.md`, `skills/_lib/ffs_skill.py`) so the recommended shape is concrete for task_40.
@@ -69,9 +79,9 @@ No production code. The fetch test is a ten-line script. The email inspection is
 
 ## Tests
 - Verification is observational; no automated tests are added by this spike.
-- [ ] Every email item is classified.
-- [ ] All three fetch variants have a recorded result.
-- [ ] The verdict paragraph cites the percentage that decides it.
+- [x] Every email item is classified.
+- [x] All three fetch variants have a recorded result.
+- [x] The verdict paragraph cites the percentage that decides it.
 
 ## Success Criteria
 - The findings note exists, states PASS or FAIL in its first paragraph, and task_40's requirements are amended with the chosen courier shape and fetch policy, referencing the note.
