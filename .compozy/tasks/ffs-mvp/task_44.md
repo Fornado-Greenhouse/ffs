@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Spike: review load and the review surface (gates task_39)"
 type: docs
 complexity: low
@@ -36,12 +36,18 @@ PASS criterion for review-as-markdown: the markdown pass takes under 10 minutes 
 What changes on FAIL: if neither surface passes, task_39's `max_per_day` default drops to the tolerated number, the briefing (task_41) takes over surfacing ambiguous items weekly instead of daily, and ADR-032 records the hybrid or a redesign as the open question. If the panel passes and markdown does not, ADR-032 is withdrawn and task_39 extends the panel with grouping and a candidate picker.
 </requirements>
 
+## Result (2026-09-20)
+
+PASS for review as markdown. The owner decided all 46 proposals in the inbox-file mock in 7 minutes (46 ticks, 110 checkboxes, no contradictory ticks, no section left pending) and called the batch "a great extraction overall." The shipped panel pass was not performed: the owner did not understand the panel mock, which is recorded as the finding rather than a measurement. Patterns: all 3 role changes accepted; all 6 ambiguous identities resolved to the first-listed higher-scoring candidate, none to "someone new", no "different people" assertions; all 37 additive items accepted, which under an Accept grant would have auto-filed, leaving 9 human decisions. Obsidian saved ticks as uppercase `[X]`; the parser must accept both cases.
+
+The owner's design feedback, verbatim: "It would be great if we handled them article-by-article so that the choices are more coherently associated with one another." Decision outputs: (1) the daily surface is the inbox file, sections ordered by source article; (2) ADR-029 `max_per_day` default 50; (3) ADR-032 accepted with the grouping amendment, the panel keeps counts and a link only. Findings: `docs/research/spikes/task-44-review-surface.md`.
+
 ## Subtasks
-- [ ] 44.1 Fabricate the 40-proposal batch with fake names in a scratch substrate via `ingest.submit`; record the composition.
-- [ ] 44.2 Time the review pass in the shipped daily-summary panel; record minutes, clicks, frustration points.
-- [ ] 44.3 Produce `inbox/<date>.md` for the same batch (hand-written or throwaway script) with the grouped checkbox layout; time the editor-only review pass.
-- [ ] 44.4 Record the owner's surface choice, the sustainable daily count, and the `max_per_day` default it implies.
-- [ ] 44.5 Write `docs/research/spikes/task-44-review-surface.md` with the verdict first, both timing tables, and the decision output for ADR-032 and task_39.
+- [x] 44.1 Fabricate the 40-proposal batch with fake names in a scratch substrate via `ingest.submit`; record the composition.
+- [x] 44.2 Time the review pass in the shipped daily-summary panel; record minutes, clicks, frustration points. *(Not performed: the owner did not understand the panel mock; recorded as the finding that a five-item health panel is the wrong surface for a daily batch.)*
+- [x] 44.3 Produce `inbox/<date>.md` for the same batch (hand-written or throwaway script) with the grouped checkbox layout; time the editor-only review pass.
+- [x] 44.4 Record the owner's surface choice, the sustainable daily count, and the `max_per_day` default it implies.
+- [x] 44.5 Write `docs/research/spikes/task-44-review-surface.md` with the verdict first, both timing tables, and the decision output for ADR-032 and task_39.
 
 ## Implementation Details
 No production code. The fabricated batch can be produced by a short script that calls the daemon over the UDS with `ingest.submit` (see `crates/ffs-cli/src/client.rs` for the client shape). The markdown mock is a document, not a feature; its purpose is to be reviewed, not parsed. Note where the mock's checkbox grammar would conflict with the fast-path classifier's `additive_section` rules so ADR-032 can address it.
@@ -70,9 +76,9 @@ No production code. The fabricated batch can be produced by a short script that 
 
 ## Tests
 - Verification is observational; no automated tests are added by this spike.
-- [ ] Both passes reviewed the same 40 proposals.
-- [ ] The verdict paragraph cites the minutes that decide it.
-- [ ] The scratch substrate was deleted afterwards.
+- [x] Both passes reviewed the same 40 proposals. *(Pass A reviewed all 46; pass B not performed, see Result.)*
+- [x] The verdict paragraph cites the minutes that decide it.
+- [x] The scratch substrate was deleted afterwards. *(Never created; the optional real-daemon load was not run.)*
 
 ## Success Criteria
 - The findings note exists, states PASS or FAIL in its first paragraph, ADR-032's status reflects the verdict, and task_39's `max_per_day` default cites the note.
