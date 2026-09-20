@@ -326,6 +326,13 @@ pub struct Proposal {
     /// resolver when `resolution == Existing`, or minted at accept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity: Option<EntityId>,
+    /// Classification the signer should use instead of `existence`
+    /// (ADR-035, task_48): `"clip"` for an article body the owner
+    /// clipped during a morning read. The scribe sets it only when the
+    /// submission carries `intake: morning_read` and a non-empty body;
+    /// pointers never get it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classification_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<Resolution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -355,6 +362,7 @@ impl Proposal {
             valid_to: None,
             ends_role: false,
             entity: None,
+            classification_hint: None,
             resolution: None,
             candidates: Vec::new(),
         }

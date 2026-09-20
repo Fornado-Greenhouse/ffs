@@ -102,6 +102,16 @@ pub enum SourceKind {
     /// (4)); the `uri` is `correction:world_changed` or
     /// `correction:never_true`.
     Correction,
+    /// Filed during an owner-present morning read (ADR-035, task_48):
+    /// the `uri` is the article url the owner had open; the `hash` is
+    /// the submitted content's hash.
+    MorningRead,
+    /// The session a read-filed atom came from (ADR-035): the `uri` is
+    /// `ffs-session://<assistant identity>/<session id>?owner_present=true`
+    /// and the `hash` is the session id's digest. Lives beside
+    /// `MorningRead` because the envelope's provenance entry is frozen
+    /// at `{kind, uri, hash}` and carries no other fields.
+    Session,
 }
 
 /// Provenance entry pointing back to the source material that produced the atom.

@@ -146,6 +146,7 @@ def make_proposal(
     valid_to: Optional[str] = None,
     ends_role: bool = False,
     extra_provenance: Optional[List[Dict[str, Any]]] = None,
+    classification_hint: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build one wire proposal.
 
@@ -191,6 +192,10 @@ def make_proposal(
         out["valid_to"] = valid_to
     if ends_role:
         out["ends_role"] = True
+    if classification_hint:
+        # task_48 (ADR-035): "clip" for a morning-read article body; the
+        # daemon's signer maps it to the clip classification tier.
+        out["classification_hint"] = classification_hint
     return out
 
 
@@ -513,6 +518,18 @@ def apply_hint(
     if registered:
         kept = [p for p in result.proposals if p.get("predicate") == hint]
         if kept:
+            # A read-filed submission (ADR-035) carries its session as
+            # provenance on every proposal, whichever engine produced it.
+            from contract import clippable_predicate, read_session_provenance
+
+            read_prov, clip_hint = read_session_provenance(
+                submission, None, clippable=clippable_predicate(registry, hint)
+            )
+            if read_prov:
+                for p in kept:
+                    p.setdefault("provenance", []).extend(dict(e) for e in read_prov)
+                    if clip_hint:
+                        p["classification_hint"] = clip_hint
             return EngineResult(proposals=kept, warnings=list(result.warnings))
         hint_warnings: List[str] = []
         built = _claim_from_frontmatter(submission, hint, registry, hint_warnings)
@@ -535,6 +552,12 @@ def apply_hint(
                         warnings=list(result.warnings) + hint_warnings + set_warnings,
                     )
             url = built.get("url") if isinstance(built.get("url"), str) else None
+            from contract import clippable_predicate, read_session_provenance
+
+            read_prov, clip_hint = read_session_provenance(
+                submission, url, clippable=clippable_predicate(registry, hint)
+            )
+            extra = ([source_article_provenance(submission, url)] if url else []) + read_prov
             proposal = make_proposal(
                 hint,
                 built,
@@ -544,7 +567,8 @@ def apply_hint(
                 engine_name,
                 model,
                 local_ref="hint",
-                extra_provenance=[source_article_provenance(submission, url)] if url else None,
+                extra_provenance=extra or None,
+                classification_hint=clip_hint,
             )
             if hint_warnings:
                 proposal["rationale"] += "; " + "; ".join(hint_warnings)

@@ -155,6 +155,8 @@ impl AtomStore for SqliteAtomStore {
                 crate::atom::SourceKind::Retraction => "retraction",
                 crate::atom::SourceKind::Accept => "accept",
                 crate::atom::SourceKind::Correction => "correction",
+                crate::atom::SourceKind::MorningRead => "morning_read",
+                crate::atom::SourceKind::Session => "session",
             };
             tx.execute(
                 "INSERT INTO provenance(atom_hash, source_kind, source_uri, source_hash)

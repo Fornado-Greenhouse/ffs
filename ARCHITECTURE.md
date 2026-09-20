@@ -265,7 +265,7 @@ Pre-1.0, breaking changes are possible everywhere with notice. Post-1.0, this su
 - The `ffs://` URL scheme.
 - The atom envelope shape (the `v` field is the migration knob).
 - The JSON-RPC method set used by the CLI, Obsidian plugin, and MCP server.
-- The MCP tool signatures (six MVP tools per ADR-013, plus `ffs_search` and `ffs_list_path` per ADR-027).
+- The MCP tool signatures (six MVP tools per ADR-013, `ffs_search` and `ffs_list_path` per ADR-027, and `ffs_accept_proposal` per ADR-035).
 - The TOML predicate-spec format, including the `[path]` table that declares a predicate's projection family (ADR-028). The `[ontology]` table is informative and may grow without notice.
 
 **Internal (free to change):**

@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(r1["id"], 1);
         assert_eq!(r1["result"]["protocolVersion"], crate::PROTOCOL_VERSION);
         assert_eq!(r2["id"], 2);
-        assert_eq!(r2["result"]["tools"].as_array().unwrap().len(), 8);
+        assert_eq!(r2["result"]["tools"].as_array().unwrap().len(), 9);
 
         handle.await.unwrap();
     }

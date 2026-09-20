@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Morning read: the owner-present reading session skill (ADR-035)"
 type: docs
 complexity: medium
@@ -42,14 +42,26 @@ The read doubles as the review. ADR-032's inbox file (accepted 2026-09-20; or `i
 - SHOULD add a "Read the paper with me" section to `docs/onboarding/first-use-guide.md` describing a morning: the courier ran, the inbox file is the agenda, you open the assistant, and what you say to start.
 </requirements>
 
+## Result (2026-09-20)
+
+Two decisions were settled and recorded rather than deferred. The in-session accept path is one new MCP tool, `ffs_accept_proposal { submission_id, owner_present (must be literally true), choices?, resolved_entity? }`, translating to `ingest.accept`; the catalog is now nine tools. An agent host conducting the read may have no shell for the CLI, and the owner's live decision is what the flag records. Provenance stays inside the frozen envelope: a read-filed atom carries two entries, `morning_read` with the article url and `session` with an `ffs-session://` uri carrying the assistant identity, the session id, and `owner_present=true`, backed by two new `SourceKind` variants. The contract's frontmatter gained `owner_present`, `session`, and `actor`, which the scribe turns into those entries and never into claim fields.
+
+The `clip` tier is the one evaluator change: a target classified `clip` matches a capability only when the scope names the tier. The owner's own any-scope grant still reads their clips, since the library is theirs; a peer's any-scope grant does not, so a federation pull never serves a clipped article unless a capability names `clip`. Both cases are tested at the evaluator and at the pull-serving seam.
+
+The skill states the five refusal rules verbatim before any workflow, and a docs test asserts both that every `ffs_*` name it mentions exists in the catalog and that the five sentences are present, so a later edit cannot quietly drop them. The session log renders opens, proposal outcomes, refusals, and clips through a helper the hosts share.
+
+Subtask 48.7 stays open. A real morning read needs the owner present and the courier's real agenda, and the mailbox app password is not yet in the keychain, so no live session has run. To start one: store the app password under `ffs.courier.imap.gmail.com`, run `ffs courier run --dry-run` and then without the flag, then open the assistant and say "let's do the morning read".
+
+Verification: cargo nextest 651 passed; fmt clean; clippy 0 warnings; pytest 265 passed; vitest 86 passed.
+
 ## Subtasks
-- [ ] 48.1 Decide the in-session accept path (existing `ingest.accept` vs a single pass-through tool); record it; add the pass-through only if unavoidable, with tests.
-- [ ] 48.2 Provenance fields for read-filed atoms (`kind: morning_read`, `owner_present`, session id) through the ingest contract, scribe, and quarantine; unit tests that they survive to the atom.
-- [ ] 48.3 Write `docs/agent-memory/skill/ffs-morning-read/SKILL.md`: refusal rules first, workflow, provenance, accept path, merges and different-from, digest and recap, worked example.
-- [ ] 48.4 Session log note shape and its filing at session end; test that a log with one refusal and one clip renders as expected.
-- [ ] 48.4b "Clip this": `clip` tier in the tier vocabulary and the capability evaluator (served only when a capability names it), the clip atom's shape and provenance, in-session accept, attestation; unit test that a federation pull under a capability scoped to `existence` does not serve a `clip` atom and one naming `clip` does.
-- [ ] 48.5 Docs tests: every named tool exists in the catalog; the five refusal rules are present verbatim.
-- [ ] 48.6 `docs/agent-memory/README.md`, `CONVENTION.md` § Human override, first-use-guide section.
+- [x] 48.1 Decide the in-session accept path (existing `ingest.accept` vs a single pass-through tool); record it; add the pass-through only if unavoidable, with tests.
+- [x] 48.2 Provenance fields for read-filed atoms (`kind: morning_read`, `owner_present`, session id) through the ingest contract, scribe, and quarantine; unit tests that they survive to the atom.
+- [x] 48.3 Write `docs/agent-memory/skill/ffs-morning-read/SKILL.md`: refusal rules first, workflow, provenance, accept path, merges and different-from, digest and recap, worked example.
+- [x] 48.4 Session log note shape and its filing at session end; test that a log with one refusal and one clip renders as expected.
+- [x] 48.4b "Clip this": `clip` tier in the tier vocabulary and the capability evaluator (served only when a capability names it), the clip atom's shape and provenance, in-session accept, attestation; unit test that a federation pull under a capability scoped to `existence` does not serve a `clip` atom and one naming `clip` does.
+- [x] 48.5 Docs tests: every named tool exists in the catalog; the five refusal rules are present verbatim.
+- [x] 48.6 `docs/agent-memory/README.md`, `CONVENTION.md` § Human override, first-use-guide section.
 - [ ] 48.7 Live validation: one real morning read on the project lead's Mac with the courier's agenda from that day; record the outcome in this task's Result section.
 
 ## Implementation Details
@@ -85,16 +97,16 @@ The behavioral line is enforced three ways: the skill's refusal rules, the sessi
 
 ## Tests
 - Unit tests:
-  - [ ] `morning_read_provenance_survives_to_atom`: an ingest file with the read's provenance markers yields an accepted atom whose provenance entry has `kind: morning_read`, the article url, and `owner_present: true`.
-  - [ ] `in_session_accept_emits_attestation`: accepting a read-filed proposal emits one attestation with the expected basis (depends on task_46).
-  - [ ] `session_log_note_renders_opens_outcomes_refusals_and_clips`.
-  - [ ] `clip_this_stores_body_under_clip_tier_with_morning_read_provenance_and_attestation`.
-  - [ ] `federation_pull_does_not_serve_clip_tier_without_capability_naming_it` / `federation_pull_serves_clip_tier_when_capability_names_it`.
-  - [ ] `skill_names_only_catalog_tools`: every backticked `ffs_*` name in the skill is in `tool_catalog()`.
-  - [ ] `skill_contains_refusal_rules_verbatim`: the five rules from ADR-035 § (2) are present.
-  - [ ] If added: `ffs_accept_proposal_translates_to_ingest_accept_with_owner_present`.
+  - [x] `morning_read_provenance_survives_to_atom`: an ingest file with the read's provenance markers yields an accepted atom whose provenance entry has `kind: morning_read`, the article url, and `owner_present: true`.
+  - [x] `in_session_accept_emits_attestation`: accepting a read-filed proposal emits one attestation with the expected basis (depends on task_46).
+  - [x] `session_log_note_renders_opens_outcomes_refusals_and_clips`.
+  - [x] `clip_this_stores_body_under_clip_tier_with_morning_read_provenance_and_attestation`.
+  - [x] `federation_pull_does_not_serve_clip_tier_without_capability_naming_it` / `federation_pull_serves_clip_tier_when_capability_names_it`.
+  - [x] `skill_names_only_catalog_tools`: every backticked `ffs_*` name in the skill is in `tool_catalog()`.
+  - [x] `skill_contains_refusal_rules_verbatim`: the five rules from ADR-035 § (2) are present.
+  - [x] If added: `ffs_accept_proposal_translates_to_ingest_accept_with_owner_present`.
 - Integration tests:
-  - [ ] `read_filed_note_lands_in_vault_with_wikilinks`: `ingest_pipeline_e2e`: a read-filed note with two mentions, accepted, materializes with links and an attestation.
+  - [x] `read_filed_note_lands_in_vault_with_wikilinks`: `ingest_pipeline_e2e`: a read-filed note with two mentions, accepted, materializes with links and an attestation.
 - All tests must pass
 
 ## Success Criteria

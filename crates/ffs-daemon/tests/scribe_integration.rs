@@ -224,6 +224,7 @@ impl From<ScribeProposalWire> for Proposal {
             valid_to: None,
             ends_role: false,
             entity: None,
+            classification_hint: None,
             resolution: None,
             candidates: vec![],
         }

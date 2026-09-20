@@ -79,7 +79,7 @@ Sarah's full contact is the head of supersession chains for several atoms like t
 | Filesystem watcher + fast-path classifier | ⏳ planned | Sub-200ms editor edits become atoms |
 | Skills host (scribe, librarian, auditor) | ⏳ planned | Python agents under daemon supervision |
 | Federation transport (mTLS pull-based) | ⏳ planned | Bilateral peer-to-peer, fingerprint-pinned |
-| MCP server (eight tools) | ⏳ planned | AARM-conformant boundary for AI agents |
+| MCP server (nine tools) | ⏳ planned | AARM-conformant boundary for AI agents |
 | Obsidian plugin | ⏳ planned | The end-user surface |
 
 The full 23-task plan in dependency order: [`.compozy/tasks/ffs-mvp/_tasks.md`](.compozy/tasks/ffs-mvp/_tasks.md).
@@ -106,7 +106,7 @@ Full design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Decision-by-decision history:
 
 ## MCP agents
 
-FFS ships `ffs-mcp`, a Model Context Protocol server that any MCP-aware agent (Claude Code, ChatGPT desktop, framework-agnostic agents) can spawn as a subprocess. It exposes eight tools (six MVP tools per ADR-013, plus `ffs_search` and `ffs_list_path` per ADR-027's agent memory convention), each translating to a daemon JSON-RPC call with capability checks at the daemon boundary:
+FFS ships `ffs-mcp`, a Model Context Protocol server that any MCP-aware agent (Claude Code, ChatGPT desktop, framework-agnostic agents) can spawn as a subprocess. It exposes nine tools (six MVP tools per ADR-013, `ffs_search` and `ffs_list_path` per ADR-027's agent memory convention, and `ffs_accept_proposal` per ADR-035's morning read), each translating to a daemon JSON-RPC call with capability checks at the daemon boundary:
 
 | Tool | Purpose |
 |---|---|

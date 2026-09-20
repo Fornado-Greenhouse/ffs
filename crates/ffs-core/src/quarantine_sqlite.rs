@@ -194,7 +194,8 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
     let mut stmt = conn
         .prepare(
             "SELECT predicate, claim, provenance, rationale, engine, model,
-                    local_ref, refs_json, valid_from, valid_to, ends_role, entity, resolution, candidates_json
+                    local_ref, refs_json, valid_from, valid_to, ends_role, entity, resolution, candidates_json,
+                    classification_hint
              FROM quarantine_proposals
              WHERE submission_id = ?1
              ORDER BY seq ASC",
@@ -216,6 +217,7 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
             let entity: Option<String> = row.get(11)?;
             let resolution: Option<String> = row.get(12)?;
             let candidates_json: Option<String> = row.get(13)?;
+            let classification_hint: Option<String> = row.get(14)?;
             let claim: serde_json::Value =
                 serde_json::from_str(&claim_json).unwrap_or(serde_json::Value::Null);
             let provenance: Vec<Provenance> =
@@ -235,6 +237,7 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
                 valid_to: valid_to.and_then(|t| Iso8601::new(&t).ok()),
                 ends_role: ends_role.unwrap_or(0) != 0,
                 entity: entity.map(EntityId::new),
+                classification_hint,
                 resolution: resolution
                     .and_then(|r| serde_json::from_value(serde_json::Value::String(r)).ok()),
                 candidates: candidates_json
@@ -425,8 +428,9 @@ impl IngestQuarantine for SqliteQuarantine {
             tx.execute(
                 "INSERT INTO quarantine_proposals
                     (submission_id, seq, predicate, claim, provenance, rationale, engine, model,
-                     local_ref, refs_json, valid_from, valid_to, ends_role, entity, resolution, candidates_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                     local_ref, refs_json, valid_from, valid_to, ends_role, entity, resolution, candidates_json,
+                     classification_hint)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 params![
                     id,
                     seq as i64,
@@ -456,6 +460,7 @@ impl IngestQuarantine for SqliteQuarantine {
                     } else {
                         serde_json::to_string(&p.candidates).ok()
                     },
+                    p.classification_hint.clone(),
                 ],
             )
             .map_err(map_io)?;

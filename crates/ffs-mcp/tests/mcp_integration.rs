@@ -4,7 +4,7 @@
 //! required-by-spec integration scenarios plus the ADR-027 search
 //! tool:
 //!
-//! - `tools/list` returns the eight tools (six MVP + `ffs_search` +
+//! - `tools/list` returns the nine tools (six MVP + `ffs_search` +
 //!   `ffs_list_path`).
 //! - `ffs_search` returns a capability-filtered hit for an inserted
 //!   contact.
@@ -240,7 +240,7 @@ async fn round_trip(server: McpServer, requests: Vec<Value>) -> Vec<Value> {
 }
 
 #[tokio::test]
-async fn tools_list_returns_eight_tools_end_to_end() {
+async fn tools_list_returns_nine_tools_end_to_end() {
     let (dispatcher, _) = make_dispatcher(true);
     let server = McpServer::new(Arc::new(InProcessDaemonClient { dispatcher }), "test-agent");
     let responses = round_trip(
@@ -254,8 +254,9 @@ async fn tools_list_returns_eight_tools_end_to_end() {
     .await;
     assert_eq!(responses.len(), 1);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 8);
+    assert_eq!(tools.len(), 9);
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"ffs_accept_proposal"));
     assert!(names.contains(&"ffs_query"));
     assert!(names.contains(&"ffs_search"));
     assert!(names.contains(&"ffs_list_path"));

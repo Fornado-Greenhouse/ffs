@@ -203,3 +203,10 @@ pub const V6_DDL: &str = r#"
 ALTER TABLE quarantine_submissions ADD COLUMN auto_accepted_atom_hashes TEXT NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS provenance_kind_hash ON provenance(source_kind, source_hash);
 "#;
+
+/// V7 (task_48, ADR-035): the scribe's classification hint on a
+/// quarantined proposal (`clip` for a morning-read article body).
+/// Rows written before v7 read back with no hint.
+pub const V7_DDL: &str = r#"
+ALTER TABLE quarantine_proposals ADD COLUMN classification_hint TEXT;
+"#;

@@ -1,5 +1,5 @@
-//! The eight MCP tools: the six MVP tools per ADR-013 plus
-//! `ffs_search` and `ffs_list_path` per ADR-027 (the FFS Agent Memory
+//! The nine MCP tools: the six MVP tools per ADR-013, `ffs_search` and
+//! `ffs_list_path` per ADR-027, and `ffs_accept_proposal` per ADR-035 (the FFS Agent Memory
 //! Convention — search-before-write and progressive disclosure need
 //! a lightweight search + listing surface). Each tool exposes:
 //!
@@ -31,7 +31,7 @@ pub const SEARCH_DEFAULT_LIMIT: u64 = 10;
 /// Hard ceiling for `ffs_search` `limit` — larger requests are clamped.
 pub const SEARCH_MAX_LIMIT: u64 = 50;
 
-/// Build the eight-tool catalog the MCP server advertises on
+/// Build the nine-tool catalog the MCP server advertises on
 /// `tools/list`. The JSON Schemas are intentionally tolerant — most
 /// fields are optional so an agent can call a tool with the
 /// minimum required arguments and iterate.
@@ -144,6 +144,29 @@ pub fn tool_catalog() -> Vec<Tool> {
             }),
         },
         Tool {
+            name: "ffs_accept_proposal".into(),
+            description: "Accept a quarantined proposal on the owner's live decision during an \
+                          owner-present session (the morning read, ADR-035). Valid ONLY when \
+                          the owner is present and said to file it: `owner_present` must be \
+                          literally true, and the accept is the owner's, not the agent's. \
+                          Translates to the daemon's ingest.accept; the atom is signed by the \
+                          owner key and an attestation is emitted (ADR-034). Pass `choices` \
+                          (local_ref to entity id or \"new\") or `resolved_entity` for an \
+                          ambiguous proposal; without them an ambiguous set is refused. \
+                          Report the result as \"filed\" only for the hashes returned."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "required": ["submission_id", "owner_present"],
+                "properties": {
+                    "submission_id": {"type": "string", "description": "The proposal set to accept."},
+                    "owner_present": {"type": "boolean", "const": true, "description": "Must be literally true: the owner is present and made the decision."},
+                    "choices": {"type": "object", "description": "Optional map of local_ref to an entity id or \"new\" for ambiguous proposals."},
+                    "resolved_entity": {"type": "string", "description": "Optional entity id or \"new\" when exactly one proposal is ambiguous."}
+                }
+            }),
+        },
+        Tool {
             name: "ffs_inspect_predicate".into(),
             description: "Return the loaded predicate spec (claim schema, rendering convention, \
                           reverse-map rules) for a given predicate name."
@@ -193,6 +216,7 @@ pub async fn dispatch_tool_call(
         "ffs_render_projection" => translate_render_projection(arguments, daemon).await,
         "ffs_resolve_url" => translate_resolve_url(arguments, daemon).await,
         "ffs_author_atom" => translate_author_atom(arguments, daemon, agent_uri).await,
+        "ffs_accept_proposal" => translate_accept_proposal(arguments, daemon).await,
         "ffs_inspect_predicate" => translate_inspect_predicate(arguments, daemon).await,
         "ffs_audit_query" => translate_audit_query(arguments, daemon).await,
         other => ToolCallResult::tool_error(
@@ -316,6 +340,31 @@ async fn translate_author_atom(
         "content": content,
     });
     forward(daemon, "ingest.submit", params).await
+}
+
+/// ADR-035 (task_48): the in-session accept. Refuses anything but a
+/// literal `owner_present: true` before touching the daemon, so an
+/// unattended caller cannot accept by omission or by passing a string.
+async fn translate_accept_proposal(args: Value, daemon: &dyn DaemonClient) -> ToolCallResult {
+    let submission_id = match args.get("submission_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => return ToolCallResult::tool_error("missing required argument: submission_id", None),
+    };
+    if args.get("owner_present").and_then(|v| v.as_bool()) != Some(true) {
+        return ToolCallResult::tool_error(
+            "ffs_accept_proposal requires owner_present: true; it is valid only in an \
+             owner-present session where the owner made the decision",
+            Some(serde_json::json!({"kind": "owner_not_present"})),
+        );
+    }
+    let mut params = serde_json::json!({"submission_id": submission_id});
+    if let Some(c) = args.get("choices").filter(|v| v.is_object()) {
+        params["choices"] = c.clone();
+    }
+    if let Some(r) = args.get("resolved_entity").and_then(|v| v.as_str()) {
+        params["resolved_entity"] = serde_json::json!(r);
+    }
+    forward(daemon, "ingest.accept", params).await
 }
 
 async fn translate_inspect_predicate(args: Value, daemon: &dyn DaemonClient) -> ToolCallResult {
@@ -464,7 +513,7 @@ mod tests {
     // -- catalog --
 
     #[test]
-    fn catalog_contains_the_eight_tools() {
+    fn catalog_contains_the_nine_tools() {
         let names: Vec<_> = tool_catalog().into_iter().map(|t| t.name).collect();
         assert_eq!(
             names,
@@ -475,6 +524,7 @@ mod tests {
                 "ffs_render_projection",
                 "ffs_resolve_url",
                 "ffs_author_atom",
+                "ffs_accept_proposal",
                 "ffs_inspect_predicate",
                 "ffs_audit_query",
             ]
@@ -854,5 +904,56 @@ mod tests {
         for key in ["predicate", "family", "context_entity"] {
             assert!(props.get(key).is_some(), "missing {key}");
         }
+    }
+
+    // -- accept_proposal (ADR-035, task_48) --
+
+    #[tokio::test]
+    async fn accept_proposal_requires_literal_owner_present_true() {
+        for bad in [
+            serde_json::json!({"submission_id": "sub-1"}),
+            serde_json::json!({"submission_id": "sub-1", "owner_present": false}),
+            serde_json::json!({"submission_id": "sub-1", "owner_present": "true"}),
+        ] {
+            let c = RecorderClient::new();
+            let r = dispatch_tool_call("ffs_accept_proposal", bad, &c, "agent").await;
+            assert!(r.is_error);
+            assert!(extract_text(&r).contains("owner_present"));
+            assert!(
+                c.seen.lock().unwrap().is_empty(),
+                "daemon must not be called"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn accept_proposal_translates_to_ingest_accept_with_owner_present() {
+        let c = RecorderClient::new();
+        c.set_ok(
+            "ingest.accept",
+            serde_json::json!({"accepted_atom_hashes": ["zabc"]}),
+        );
+        let r = dispatch_tool_call(
+            "ffs_accept_proposal",
+            serde_json::json!({
+                "submission_id": "sub-9",
+                "owner_present": true,
+                "choices": {"person-1": "new"},
+                "resolved_entity": "zEnt"
+            }),
+            &c,
+            "agent",
+        )
+        .await;
+        assert!(!r.is_error, "{}", extract_text(&r));
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen[0].0, "ingest.accept");
+        assert_eq!(seen[0].1["submission_id"], "sub-9");
+        assert_eq!(seen[0].1["choices"]["person-1"], "new");
+        assert_eq!(seen[0].1["resolved_entity"], "zEnt");
+        assert!(
+            seen[0].1.get("owner_present").is_none(),
+            "the flag is a tool-level gate, not a daemon param"
+        );
     }
 }

@@ -472,6 +472,10 @@ ffs attest ffs://local/atom/<hash> --basis independent_source --source https://e
 
 When you undo an auto-filed atom, you may say why: `world_changed` keeps the old atom as history, `never_true` marks it deprecated. The inbox's undo line accepts `reason:never_true` in its comment.
 
+## Read the paper with me
+
+A morning, once the courier is set up: the courier ran before you woke and today's `inbox/<date>.md` is the agenda, one section per article or feed item with its extractions and any identities it could not resolve. Open your assistant (Claude Code with the `ffs-mcp` server and a browser tool in your own session, or any host with the same) and say "morning read" or "read the paper with me". The assistant reads the inbox, tells you what is on it, and waits. Say "open it" for the article you want; the assistant opens exactly that one in your browser, summarizes it, and proposes the people, organizations, and roles worth remembering, saying which are stated and which it inferred. Say "file it" to accept, "skip" to move on, "clip this" to keep the article body in your private library (it lands under the `clip` tier and never federates unless you grant it), and "these are different people" when two names should stay apart. The assistant will refuse "open all of today's links": the read is one article at a time on your cue, whatever the publisher. At the end it files a session log and tells you, in two lines, exactly what was filed, what is still proposed, and what was attested.
+
 ## What to do when something looks wrong
 
 - **A proposal looks weird.** Reject it. The scribe is

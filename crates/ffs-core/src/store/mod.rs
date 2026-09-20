@@ -56,7 +56,7 @@ use crate::multihash::Multihash;
 ///   `nil_sightings`.
 /// - v6 (task_39, ADR-029): `auto_accepted_atom_hashes` on submissions
 ///   and a provenance (kind, hash) index for `max_per_day` counting.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 #[derive(Debug, Error)]
 pub enum StoreError {

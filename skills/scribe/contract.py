@@ -23,6 +23,7 @@ Stdlib only.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -352,6 +353,12 @@ def build_article_set(
         extra_prov.append(
             {"kind": "reported_by", "uri": f"outlet:{reported_by}", "hash_hex": submission.content_hash_hex}
         )
+    read_prov, clip_hint = read_session_provenance(
+        submission,
+        article_claim.get("url") if isinstance(article_claim.get("url"), str) else None,
+        clippable=clippable_predicate(registry, predicate),
+    )
+    extra_prov.extend(read_prov)
 
     # Mentions.
     mention_lines = _section(submission, "Mentions")
@@ -366,6 +373,7 @@ def build_article_set(
         make_proposal(
             predicate, article_claim, submission, rationale, engine_name, model,
             local_ref="article", extra_provenance=extra_prov or None,
+            classification_hint=clip_hint,
         )
     ]
 
@@ -433,3 +441,97 @@ def build_article_set(
     bind_refs(proposals)
     attach_source_article(submission, proposals)
     return proposals, warnings
+
+# ---------------------------------------------------------------------
+# Morning read (ADR-035, task_48)
+# ---------------------------------------------------------------------
+
+READ_SESSION_KEYS = ("intake", "owner_present", "session", "actor")
+
+
+def read_session_provenance(
+    submission: Submission, article_url: Optional[str], clippable: bool = True
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Provenance for a submission filed during an owner-present morning
+    read. Returns (extra provenance entries, classification hint).
+
+    The atom envelope's provenance entry is frozen at {kind, uri, hash},
+    so the read is encoded as two entries: ``morning_read`` (uri = the
+    article url the owner had open, hash = the submitted content's hash)
+    and ``session`` (uri = ``ffs-session://<actor>/<session>?owner_present=true``,
+    hash = the session id's digest). None of the four frontmatter keys
+    ever becomes claim data. The hint is ``"clip"`` only when the owner
+    clipped a body (intake morning_read, owner present, and a non-empty
+    prose body); pointers never get it.
+    """
+    fm = submission.frontmatter or {}
+    intake = str(fm.get("intake") or "").strip().lower()
+    if intake != "morning_read":
+        return [], None
+    owner_present = str(fm.get("owner_present") or "").strip().lower() in ("true", "yes", "1")
+    session = str(fm.get("session") or "").strip() or "unknown"
+    actor = str(fm.get("actor") or "").strip() or "assistant"
+    entries: List[Dict[str, Any]] = [
+        {
+            "kind": "morning_read",
+            "uri": article_url or submission.source_uri,
+            "hash_hex": submission.content_hash_hex,
+        },
+        {
+            "kind": "session",
+            "uri": f"ffs-session://{actor}/{session}?owner_present={'true' if owner_present else 'false'}",
+            "hash_hex": hashlib.sha256(session.encode("utf-8")).hexdigest(),
+        },
+    ]
+    body = submission.body_text().strip() if hasattr(submission, "body_text") else ""
+    # Only an information-bearing record (an article, something with a
+    # url) can be a clip; a person or org note filed from the read is a
+    # note, whatever its body says.
+    hint = "clip" if (clippable and owner_present and body) else None
+    return entries, hint
+
+
+def clippable_predicate(registry: Any, predicate: str) -> bool:
+    """A predicate whose schema declares a ``url`` property is an
+    information-bearing record and may be clipped (ADR-035)."""
+    try:
+        schema = registry.schema(predicate) or {}
+    except Exception:  # noqa: BLE001
+        return False
+    props = schema.get("properties") or {}
+    return isinstance(props, dict) and "url" in props
+
+
+def render_session_log(
+    date: str,
+    opened: List[Tuple[str, str]],
+    proposals: List[Tuple[str, str, str]],
+    refusals: List[Tuple[str, str]],
+    clips: List[Tuple[str, str]],
+) -> str:
+    """The morning read's audit trail (ADR-035): one ``note`` per read,
+    filed at session end through the same accept path. ``opened`` is
+    (time, url); ``proposals`` is (predicate, display, outcome) with
+    outcome one of filed | proposed | skipped; ``refusals`` is (time,
+    request); ``clips`` is (basename, title). Sections with no items are
+    omitted so the log never claims an action that did not happen.
+    """
+    lines = [
+        "---",
+        "predicate: note",
+        f"title: Morning read {date}",
+        "tags: [morning-read, session-log]",
+        "intake: morning_read",
+        "---",
+        "",
+        f"Session log for the morning read of {date}.",
+    ]
+    if opened:
+        lines += ["", "## Opened"] + [f"- {t} {u}" for t, u in opened]
+    if proposals:
+        lines += ["", "## Proposals"] + [f"- {p}: {d} ({o})" for p, d, o in proposals]
+    if refusals:
+        lines += ["", "## Refusals"] + [f"- {t} {r}: refused as bulk behavior" for t, r in refusals]
+    if clips:
+        lines += ["", "## Clips"] + [f"- [[{b}|{t}]]" for b, t in clips]
+    return "\n".join(lines) + "\n"

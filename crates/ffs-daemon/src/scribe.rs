@@ -174,6 +174,9 @@ struct ScribeProposalWire {
     valid_to: Option<String>,
     #[serde(default)]
     ends_role: bool,
+    /// task_48 (ADR-035): `"clip"` for a morning-read article body.
+    #[serde(default)]
+    classification_hint: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -223,6 +226,7 @@ impl From<ScribeProposalWire> for Proposal {
         );
         p.engine = w.engine.filter(|s| !s.is_empty());
         p.model = w.model.filter(|s| !s.is_empty());
+        p.classification_hint = w.classification_hint.filter(|s| !s.is_empty());
         p.local_ref = w.local_ref.filter(|s| !s.is_empty());
         p.refs = w
             .refs
@@ -250,6 +254,8 @@ fn scribe_kind_to_source_kind(kind: &str) -> SourceKind {
         "ingest" | "ingest_file" | "source_article" => SourceKind::IngestFile,
         "federation_pull" => SourceKind::FederationPull,
         "fast_path" => SourceKind::FastPath,
+        "morning_read" => SourceKind::MorningRead,
+        "session" => SourceKind::Session,
         _ => SourceKind::IngestFile,
     }
 }

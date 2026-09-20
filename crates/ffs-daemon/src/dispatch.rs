@@ -488,7 +488,15 @@ impl AtomSigner {
                 valid_from,
                 valid_to: proposal.valid_to.clone(),
                 tx_time: now.clone(),
-                classification: Tier::new("existence"),
+                // ADR-035 (task_48): a morning-read clip lands under the
+                // `clip` tier, which no "any classification" capability
+                // covers. Everything else stays `existence`.
+                classification: match proposal.classification_hint.as_deref() {
+                    Some(ffs_core::capability::CLIP_TIER) => {
+                        Tier::new(ffs_core::capability::CLIP_TIER)
+                    }
+                    _ => Tier::new("existence"),
+                },
                 supersedes,
                 provenance: with_extra(&proposal.provenance, extra_provenance),
             };
@@ -521,8 +529,16 @@ impl AtomSigner {
             return Ok(());
         }
         let owner = PublicKey::from_bytes(key.verifying_key().to_bytes());
+        // ADR-035 (task_48): a read-filed atom was accepted with the
+        // owner present and reading; that is owner knowledge, not a
+        // re-read of a source the owner did not see.
+        let read_live = proposal
+            .provenance
+            .iter()
+            .any(|p| p.kind == SourceKind::MorningRead);
         let (basis, source) = match proposal.provenance.iter().find(|p| {
-            !p.uri.is_empty()
+            !read_live
+                && !p.uri.is_empty()
                 && matches!(
                     p.kind,
                     SourceKind::IngestFile | SourceKind::McpAgent | SourceKind::FederationPull

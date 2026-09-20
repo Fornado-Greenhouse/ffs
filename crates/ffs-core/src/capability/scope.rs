@@ -16,6 +16,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::atom::{EntityId, PredicateName, Tier};
 
+/// Classification tier of an article body the owner clipped during a
+/// morning read (ADR-035). Never served by a federation pull unless the
+/// capability's `classifications` names it.
+pub const CLIP_TIER: &str = "clip";
+
 use super::Target;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -43,6 +48,14 @@ impl CapabilityScope {
     /// target's dimension is `None` but the scope restricts it, that's a
     /// mismatch (caller didn't specify enough to be authorized).
     pub fn covers(&self, target: &Target) -> bool {
+        self.covers_as(target, false)
+    }
+
+    /// `covers`, with the one exemption the `clip` tier needs: the
+    /// substrate owner's own self-grant (author == grantee) keeps its
+    /// "any classification" meaning for the owner's own library copies.
+    /// Every other grant must name `clip` explicitly (ADR-035).
+    pub fn covers_as(&self, target: &Target, self_grant: bool) -> bool {
         let pred_ok = match &self.predicates {
             None => true,
             Some(list) => list.iter().any(|p| p == &target.predicate),
@@ -52,6 +65,10 @@ impl CapabilityScope {
             Some(list) => list.iter().any(|e| e == &target.entity),
         };
         let class_ok = match (&self.classifications, &target.classification) {
+            // ADR-035 (task_48): the `clip` tier is the owner's private
+            // library copy of an article. An "any classification" scope
+            // never covers it; a capability must name `clip` explicitly.
+            (None, Some(t)) if t.as_str() == CLIP_TIER => self_grant,
             (None, _) => true,
             (Some(_), None) => false,
             (Some(allowed), Some(t)) => allowed.iter().any(|c| c == t),
@@ -254,5 +271,47 @@ mod tests {
         };
         assert!(same_tier.narrows_or_equals(&parent));
         assert!(!other_tier.narrows_or_equals(&parent));
+    }
+}
+
+#[cfg(test)]
+mod clip_tier_tests {
+    use super::*;
+
+    fn target(class: Option<&str>) -> Target {
+        Target {
+            predicate: PredicateName::new("source.article"),
+            entity: EntityId::new("zArticle"),
+            classification: class.map(Tier::new),
+            tier: None,
+        }
+    }
+
+    #[test]
+    fn any_classification_scope_never_covers_clip() {
+        let any = CapabilityScope::default();
+        assert!(any.covers(&target(Some("existence"))));
+        assert!(any.covers(&target(None)));
+        assert!(
+            !any.covers(&target(Some(CLIP_TIER))),
+            "clip needs an explicit grant"
+        );
+        // The owner's own self-grant is the one exemption.
+        assert!(any.covers_as(&target(Some(CLIP_TIER)), true));
+        assert!(!any.covers_as(&target(Some(CLIP_TIER)), false));
+    }
+
+    #[test]
+    fn scope_naming_clip_covers_it_and_existence_only_does_not() {
+        let named = CapabilityScope {
+            classifications: Some(vec![Tier::new("existence"), Tier::new(CLIP_TIER)]),
+            ..Default::default()
+        };
+        assert!(named.covers(&target(Some(CLIP_TIER))));
+        let existence_only = CapabilityScope {
+            classifications: Some(vec![Tier::new("existence")]),
+            ..Default::default()
+        };
+        assert!(!existence_only.covers(&target(Some(CLIP_TIER))));
     }
 }

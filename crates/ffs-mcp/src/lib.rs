@@ -1,5 +1,5 @@
 //! `ffs-mcp` library: MCP protocol types, daemon-client abstraction,
-//! and the eight tool translators (six MVP per ADR-013 + `ffs_search`
+//! and the nine tool translators (six MVP per ADR-013 + `ffs_search`
 //! and `ffs_list_path` per ADR-027).
 //!
 //! The MCP server is structured as a library so unit + integration
@@ -16,7 +16,7 @@
 //!   implementation lives in the daemon binary's onboarding scripts
 //!   (task_22); tests inject the in-process variant in
 //!   `tests/mcp_integration.rs`.
-//! - `tools.rs` — the eight tools with JSON schemas and translators
+//! - `tools.rs` — the nine tools with JSON schemas and translators
 //!   that map MCP arguments → daemon JSON-RPC params and the
 //!   responses back.
 //! - `transport.rs` — line-delimited JSON-RPC over an async reader
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_the_eight_tools() {
+    async fn tools_list_returns_the_nine_tools() {
         let resp = server()
             .handle(McpRequest {
                 jsonrpc: "2.0".into(),
@@ -211,7 +211,8 @@ mod tests {
                 assert!(names.contains(&"ffs_search"));
                 assert!(names.contains(&"ffs_list_path"));
                 assert!(names.contains(&"ffs_author_atom"));
-                assert_eq!(names.len(), 8);
+                assert!(names.contains(&"ffs_accept_proposal"));
+                assert_eq!(names.len(), 9);
             }
             other => panic!("expected Success; got {other:?}"),
         }

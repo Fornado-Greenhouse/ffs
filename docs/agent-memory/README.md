@@ -7,6 +7,7 @@ This directory holds the behavioral contract for AI agents that use an FFS subst
 | [`CONVENTION.md`](CONVENTION.md) | The FFS Agent Memory Convention v0.1: when and how an agent should read from and propose to the substrate. Adopted by ADR-027. |
 | [`skill/ffs-memory/SKILL.md`](skill/ffs-memory/SKILL.md) | An agent skill (SKILL.md shape) that condenses the convention into a tool reference, a workflow, and an end-of-task review checklist. |
 | [`skill/ffs-courier/SKILL.md`](skill/ffs-courier/SKILL.md) | The agent-hosted courier: an agent host may run the same intake loop as the daemon-hosted bundle, reading the same configuration and writing byte-identical ingest files. Instructional only. |
+| [`skill/ffs-morning-read/SKILL.md`](skill/ffs-morning-read/SKILL.md) | The morning read: an owner-present session that walks the day's inbox, opens one article at a time on the owner's cue, files only what the owner chooses, and clips on request under the `clip` tier (ADR-035). Never unattended. |
 
 The convention adapts the [OKF Agent Memory Convention](https://github.com/okf-memory/okf-agent-memory) onto FFS. The OKF file format is not adopted; FFS atoms already carry provenance, signatures, classification, and bitemporal history. The behavioral rules are: search before write, progressive disclosure, honest provenance, and never claiming a proposal was saved.
 
@@ -17,6 +18,8 @@ Intake has two halves. The **courier** is deterministic and scheduled: it reads 
 The **morning read** (task_48, the `ffs-morning-read` skill) is the other half: an owner-present session in which an assistant opens the day's articles one at a time in the owner's own browser on cue, summarizes them in conversation, and clips what the owner asks to keep. Publishers whose terms restrict automated access are read this way, not by the courier (ADR-035).
 
 Which is which is the owner's policy in `$FFS_DATA_DIR/config/sources.toml`: one `[[publisher]]` entry per outlet with `intake = "pointer" | "clip"` and `fetch = "off" | "session" | "scheduled"`. The starter file sets the terms-restricted publishers to pointer and session and records where their terms were noted (`docs/research/spikes/task-43-intake-reality.md`); the setting is the owner's to change, and neither courier carries a domain list of its own.
+
+The **morning read** ([`skill/ffs-morning-read/SKILL.md`](skill/ffs-morning-read/SKILL.md)) is how terms-restricted publishers get read: the owner is present, the assistant opens one article at a time on the owner's cue, and only the owner's chosen notes and clips are filed. The host needs an MCP client with the ffs tools and a capability to open one URL in the owner's own browser session and read its page text. Without a browser capability the read degrades gracefully: the owner opens the article and pastes what matters, and the assistant proceeds from the pasted text. Nothing in the read runs unattended or on a schedule.
 
 ## Installing the skill
 
@@ -42,7 +45,7 @@ A symlink works as well as a copy if your host follows symlinks.
 
 ## Wiring the MCP server
 
-The skill assumes the eight `ffs-mcp` tools are available. Register the server with your agent. For Claude Code, the `mcpServers` block is:
+The skill assumes the nine `ffs-mcp` tools are available. Register the server with your agent. For Claude Code, the `mcpServers` block is:
 
 ```jsonc
 {
@@ -63,7 +66,7 @@ The skill assumes the eight `ffs-mcp` tools are available. Register the server w
 
 Without the MCP server, the skill falls back to the `ffs` CLI (`ffs ls`, `ffs cat`, `ffs get`, `ffs predicate inspect`) and to dropping Markdown into `~/.ffs/ingest/`. Search and audit queries have no CLI equivalent in the MVP.
 
-## The eight tools
+## The nine tools
 
 | Tool | Purpose |
 |---|---|
@@ -74,6 +77,7 @@ Without the MCP server, the skill falls back to the `ffs` CLI (`ffs ls`, `ffs ca
 | `ffs_resolve_url` | Resolve an `ffs://` URL to an atom, entity, or projection. |
 | `ffs_inspect_predicate` | Return a predicate spec: claim schema, rendering, reverse-map rules. |
 | `ffs_author_atom` | Submit Markdown to the ingest quarantine. Returns a `submission_id` for a proposal. |
+| `ffs_accept_proposal` | Accept a proposal on the owner's live decision. Valid only in an owner-present session (the morning read, ADR-035); requires `owner_present: true`. |
 | `ffs_audit_query` | Return recent auditor daily-summary atoms. |
 
 Capability checks run at the daemon on every call (ADR-013). A denial is returned as a tool-level error, not a transport failure, and the convention says the agent stops there.

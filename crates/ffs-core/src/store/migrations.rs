@@ -4,7 +4,7 @@
 
 use rusqlite::{Connection, params};
 
-use super::schema::{V1_DDL, V2_DDL, V3_DDL, V4_DDL, V5_DDL, V6_DDL};
+use super::schema::{V1_DDL, V2_DDL, V3_DDL, V4_DDL, V5_DDL, V6_DDL, V7_DDL};
 use super::{SCHEMA_VERSION, StoreError};
 
 /// Apply schema migrations idempotently.
@@ -50,6 +50,7 @@ pub fn apply(conn: &Connection) -> Result<(), StoreError> {
             4 => V4_DDL,
             5 => V5_DDL,
             6 => V6_DDL,
+            7 => V7_DDL,
             other => {
                 return Err(StoreError::UnsupportedSchemaVersion {
                     found: other,

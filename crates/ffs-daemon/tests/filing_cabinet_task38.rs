@@ -272,6 +272,7 @@ async fn ingest_accept_mints_opaque_ids_and_the_file_is_named_from_the_display_n
                 valid_to: None,
                 ends_role: false,
                 entity: None,
+                classification_hint: None,
                 resolution: None,
                 candidates: vec![],
             }],

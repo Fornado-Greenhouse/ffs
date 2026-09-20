@@ -27,7 +27,7 @@ pub mod decision;
 pub mod scope;
 
 pub use decision::{CapabilityError, Decision, DenyReason, EvalError};
-pub use scope::CapabilityScope;
+pub use scope::{CLIP_TIER, CapabilityScope};
 
 /// Predicate name reserved for capability-grant atoms.
 pub const CAPABILITY_PREDICATE: &str = "capability.grant";
@@ -227,12 +227,16 @@ pub fn evaluate(
         if claim.grantee != *agent {
             continue;
         }
+        // ADR-035: the owner's self-grant (author == grantee) covers the
+        // `clip` tier under an "any classification" scope; a grant to
+        // anyone else must name `clip` explicitly.
+        let self_grant = cap_env.author == claim.grantee;
         if !claim.actions.contains(&action) {
             continue;
         }
         if as_of.as_str() < cap_env.valid_from.as_str() {
             // Capability is in scope/action but not yet effective.
-            if claim.scope.covers(target) {
+            if claim.scope.covers_as(target, self_grant) {
                 fallback.get_or_insert(DenyReason::NotYetValid);
             }
             continue;
@@ -240,12 +244,12 @@ pub fn evaluate(
         if let Some(vt) = &cap_env.valid_to
             && as_of.as_str() > vt.as_str()
         {
-            if claim.scope.covers(target) {
+            if claim.scope.covers_as(target, self_grant) {
                 fallback.get_or_insert(DenyReason::Expired);
             }
             continue;
         }
-        if !claim.scope.covers(target) {
+        if !claim.scope.covers_as(target, self_grant) {
             fallback.get_or_insert(DenyReason::NotInScope);
             continue;
         }

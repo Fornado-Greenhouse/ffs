@@ -333,6 +333,8 @@ The same priority applies to publisher policy. What may be fetched or clipped fr
 
 ---
 
+An owner present in a session is the human gate: filing on the owner's live decision (the morning read, ADR-035) is the owner's accept. Presence relaxes nothing about persistence claims or inference marking; the agent still reports only what the tools returned and still marks what it inferred.
+
 ## 17. Capability Boundary
 
 Every call passes the capability evaluator at the daemon. A denial comes back as a tool-level error with `kind: capability_denied` and a reason.

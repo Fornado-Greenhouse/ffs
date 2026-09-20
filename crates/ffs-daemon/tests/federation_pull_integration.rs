@@ -691,3 +691,98 @@ async fn pulling_one_hundred_atoms_completes_well_under_five_seconds() {
 
 #[allow(dead_code)]
 fn _docs(_: &Side) {}
+
+// ---------------------------------------------------------------------
+// ADR-035 (task_48): the `clip` tier is never served by a pull unless
+// the capability names it. Tested at the serving seam: Alice holds a
+// clipped article, Bob pulls under two different grants.
+// ---------------------------------------------------------------------
+
+fn insert_article(store: &dyn AtomStore, key: &SigningKey, classification: &str, tx_time: &str) {
+    let env = AtomTemplate {
+        v: 1,
+        entity: EntityId::new("zClipArticle"),
+        // The harness registry only knows the starter contact predicate;
+        // the tier rule under test does not depend on the predicate, so
+        // the clip is a contact.person atom classified `clip`.
+        predicate: PredicateName::new("contact.person"),
+        claim: serde_json::json!({
+            "display_name": "Widget maker breaks ground (clip)",
+            "notes": ["the owner's clipped copy"]
+        }),
+        valid_from: ts("2026-01-01T00:00:00Z"),
+        valid_to: None,
+        tx_time: ts(tx_time),
+        classification: Tier::new(classification),
+        supersedes: None,
+        provenance: vec![],
+    }
+    .sign(key)
+    .unwrap();
+    store.insert(&env).unwrap();
+}
+
+async fn pull_with_grant(classifications: Vec<&str>, seed: (u8, u8)) -> serde_json::Value {
+    let alice = make_side("alice", seed.0);
+    let mut bob = make_side("bob", seed.1);
+    insert_article(&*alice.store, &alice.key, "clip", "2026-05-27T08:00:00Z");
+    insert_contact(
+        &*alice.store,
+        &alice.key,
+        "Sara_Chen",
+        "Sara",
+        "existence",
+        "2026-05-27T08:01:00Z",
+    );
+    let cap_hash = grant_peer_classifications(
+        &*alice.store,
+        &alice.key,
+        pk_of(&bob.key),
+        classifications,
+        "2026-05-27T07:00:00Z",
+        None,
+    );
+    wire_client(&mut bob, ALICE_ENDPOINT, alice.fed_context.clone()).await;
+    pin_peer_with_capability(
+        &bob,
+        "alice",
+        pk_of(&alice.key),
+        ALICE_ENDPOINT,
+        alice.cert.fingerprint.clone(),
+        Some(cap_hash),
+    )
+    .await;
+    pin_peer_with_capability(
+        &alice,
+        "bob",
+        pk_of(&bob.key),
+        BOB_ENDPOINT,
+        bob.cert.fingerprint.clone(),
+        None,
+    )
+    .await;
+    let result = pull(&bob, "alice").await;
+    let pulled_clip = bob
+        .store
+        .list_by_entity(&EntityId::new("zClipArticle"), None, None)
+        .unwrap()
+        .len();
+    serde_json::json!({"atoms_pulled": result["atoms_pulled"], "clip_atoms": pulled_clip})
+}
+
+#[tokio::test]
+async fn federation_pull_does_not_serve_clip_tier_without_capability_naming_it() {
+    let r = pull_with_grant(vec!["existence"], (91, 92)).await;
+    assert_eq!(r["clip_atoms"], 0, "got: {r}");
+    assert_eq!(
+        r["atoms_pulled"], 1,
+        "only the existence contact crosses: {r}"
+    );
+}
+
+#[tokio::test]
+async fn federation_pull_serves_clip_tier_when_capability_names_it() {
+    let r = pull_with_grant(vec!["existence", "clip"], (93, 94)).await;
+    assert_eq!(r["clip_atoms"], 1, "got: {r}");
+    assert_eq!(r["atoms_pulled"], 2, "got: {r}");
+}
