@@ -6,8 +6,17 @@ This directory holds the behavioral contract for AI agents that use an FFS subst
 |---|---|
 | [`CONVENTION.md`](CONVENTION.md) | The FFS Agent Memory Convention v0.1: when and how an agent should read from and propose to the substrate. Adopted by ADR-027. |
 | [`skill/ffs-memory/SKILL.md`](skill/ffs-memory/SKILL.md) | An agent skill (SKILL.md shape) that condenses the convention into a tool reference, a workflow, and an end-of-task review checklist. |
+| [`skill/ffs-courier/SKILL.md`](skill/ffs-courier/SKILL.md) | The agent-hosted courier: an agent host may run the same intake loop as the daemon-hosted bundle, reading the same configuration and writing byte-identical ingest files. Instructional only. |
 
 The convention adapts the [OKF Agent Memory Convention](https://github.com/okf-memory/okf-agent-memory) onto FFS. The OKF file format is not adopted; FFS atoms already carry provenance, signatures, classification, and bitemporal history. The behavioral rules are: search before write, progressive disclosure, honest provenance, and never claiming a proposal was saved.
+
+## The two couriers and the morning read
+
+Intake has two halves. The **courier** is deterministic and scheduled: it reads the owner's mailbox and the configured public-record feeds and writes one ingest file per item under the article intake contract (Convention, Section 13). It ships as the daemon-hosted bundle `skills/courier/`, installed under `$FFS_DATA_DIR/skills/courier/` and run on the daemon's schedule (or by hand with `ffs courier run`). An agent host may run the same loop instead using [`skill/ffs-courier/SKILL.md`](skill/ffs-courier/SKILL.md); both read the same configuration and produce the same files.
+
+The **morning read** (task_48, the `ffs-morning-read` skill) is the other half: an owner-present session in which an assistant opens the day's articles one at a time in the owner's own browser on cue, summarizes them in conversation, and clips what the owner asks to keep. Publishers whose terms restrict automated access are read this way, not by the courier (ADR-035).
+
+Which is which is the owner's policy in `$FFS_DATA_DIR/config/sources.toml`: one `[[publisher]]` entry per outlet with `intake = "pointer" | "clip"` and `fetch = "off" | "session" | "scheduled"`. The starter file sets the terms-restricted publishers to pointer and session and records where their terms were noted (`docs/research/spikes/task-43-intake-reality.md`); the setting is the owner's to change, and neither courier carries a domain list of its own.
 
 ## Installing the skill
 
@@ -26,6 +35,8 @@ cp -R docs/agent-memory/skill/ffs-memory ~/.claude/skills/ffs-memory
 mkdir -p .agents/skills
 cp -R docs/agent-memory/skill/ffs-memory .agents/skills/ffs-memory
 ```
+
+The same applies to `ffs-courier`: copy `docs/agent-memory/skill/ffs-courier` beside it when an agent host, not the daemon bundle, will run the intake loop.
 
 A symlink works as well as a copy if your host follows symlinks.
 
@@ -71,4 +82,4 @@ Capability checks run at the daemon on every call (ADR-013). A denial is returne
 
 - [`ARCHITECTURE.md`](../../ARCHITECTURE.md) for the substrate's invariants and security model.
 - [`docs/onboarding/technical-friend-checklist.md`](../onboarding/technical-friend-checklist.md) for installing the daemon and MCP server.
-- ADR-013 (MCP server in MVP), ADR-026 (scribe engines and provenance), ADR-027 (this convention).
+- ADR-013 (MCP server in MVP), ADR-026 (scribe engines and provenance), ADR-027 (this convention), ADR-034 (`reported_by` and source independence), ADR-035 (the morning read; publisher policy in `sources.toml`).

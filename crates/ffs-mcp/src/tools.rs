@@ -54,18 +54,27 @@ pub fn tool_catalog() -> Vec<Tool> {
         },
         Tool {
             name: "ffs_search".into(),
-            description: "Search-before-write: find existing entities by name/title before \
-                          proposing new content. Returns lightweight hits (entity, \
-                          predicate, display_name) — inspect with ffs_query or \
-                          ffs_render_projection only for the hits you actually need. \
-                          Results are capability-filtered."
+            description: "Search-before-write, in the reconciliation shape: a query goes in, \
+                          ranked candidates come out, each with `score` and `matched_on` \
+                          (display_name | alias | other | fts), plus `path` and `basename` \
+                          when the entity has a projection file. Matches every string \
+                          field the predicate's claim schema declares (names, aliases, \
+                          tags, urls, publications) and a full-text tier over claim \
+                          bodies; follows entity.same_as merges to the winner; excludes \
+                          entities a `context_entity` is different_from. Inspect with \
+                          ffs_query or ffs_render_projection only for the hits you need. \
+                          Results are capability-filtered. A W3C Reconciliation Service \
+                          API facade over this tool is a later option."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "required": ["query"],
                 "properties": {
-                    "query": {"type": "string", "description": "Case-insensitive substring matched against entity display names / note titles."},
-                    "limit": {"type": "integer", "description": "Maximum hits to return (default 10, max 50).", "minimum": 1, "maximum": SEARCH_MAX_LIMIT, "default": SEARCH_DEFAULT_LIMIT}
+                    "query": {"type": "string", "description": "Case-insensitive text matched against schema-declared string fields and claim bodies."},
+                    "limit": {"type": "integer", "description": "Maximum hits to return (default 10, max 50).", "minimum": 1, "maximum": SEARCH_MAX_LIMIT, "default": SEARCH_DEFAULT_LIMIT},
+                    "predicate": {"type": "string", "description": "Optional exact predicate filter (e.g. org.company)."},
+                    "family": {"type": "string", "description": "Optional projection-family filter (e.g. orgs, people, articles)."},
+                    "context_entity": {"type": "string", "description": "Optional entity id whose entity.different_from assertions exclude candidates."}
                 }
             }),
         },
@@ -216,12 +225,13 @@ async fn translate_ffs_search(args: Value, daemon: &dyn DaemonClient) -> ToolCal
         .and_then(|v| v.as_u64())
         .unwrap_or(SEARCH_DEFAULT_LIMIT)
         .clamp(1, SEARCH_MAX_LIMIT);
-    forward(
-        daemon,
-        "entity.search",
-        serde_json::json!({"query": query, "limit": limit}),
-    )
-    .await
+    let mut params = serde_json::json!({"query": query, "limit": limit});
+    for key in ["predicate", "family", "context_entity"] {
+        if let Some(v) = args.get(key).and_then(|v| v.as_str()) {
+            params[key] = serde_json::json!(v);
+        }
+    }
+    forward(daemon, "entity.search", params).await
 }
 
 async fn translate_list_path(args: Value, daemon: &dyn DaemonClient) -> ToolCallResult {
@@ -761,5 +771,77 @@ mod tests {
         .await;
         let seen = c.seen.lock().unwrap();
         assert_eq!(seen[0].1["since"], "2026-05-27T00:00:00Z");
+    }
+
+    #[tokio::test]
+    async fn ffs_search_passes_predicate_family_and_context_entity_filters() {
+        let c = RecorderClient::new();
+        c.set_ok("entity.search", serde_json::json!({"results": []}));
+        dispatch_tool_call(
+            "ffs_search",
+            serde_json::json!({
+                "query": "acme",
+                "predicate": "org.company",
+                "family": "orgs",
+                "context_entity": "zCtx"
+            }),
+            &c,
+            "agent",
+        )
+        .await;
+        let seen = c.seen.lock().unwrap();
+        assert_eq!(seen[0].0, "entity.search");
+        assert_eq!(seen[0].1["predicate"], "org.company");
+        assert_eq!(seen[0].1["family"], "orgs");
+        assert_eq!(seen[0].1["context_entity"], "zCtx");
+        assert_eq!(seen[0].1["limit"], 10);
+    }
+
+    #[tokio::test]
+    async fn ffs_search_omits_filters_when_absent_and_hit_shape_passes_through() {
+        let c = RecorderClient::new();
+        c.set_ok(
+            "entity.search",
+            serde_json::json!({"results": [{
+                "entity": "zAbc", "predicate": "org.company", "display_name": "Acme",
+                "basename": "Acme", "path": "orgs/by-name/A/Acme.md",
+                "matched_on": ["alias"], "score": 80.0
+            }]}),
+        );
+        let r = dispatch_tool_call(
+            "ffs_search",
+            serde_json::json!({"query": "acme corp"}),
+            &c,
+            "agent",
+        )
+        .await;
+        let seen = c.seen.lock().unwrap();
+        assert!(seen[0].1.get("predicate").is_none());
+        assert!(seen[0].1.get("family").is_none());
+        assert!(seen[0].1.get("context_entity").is_none());
+        let text = extract_text(&r);
+        assert!(
+            text.contains("\"path\":\"orgs/by-name/A/Acme.md\"")
+                || text.contains("orgs/by-name/A/Acme.md"),
+            "got: {text}"
+        );
+        assert!(
+            text.contains("alias") && text.contains("score"),
+            "got: {text}"
+        );
+    }
+
+    #[test]
+    fn ffs_search_description_states_the_reconciliation_shape() {
+        let tool = tool_catalog()
+            .into_iter()
+            .find(|t| t.name == "ffs_search")
+            .unwrap();
+        assert!(tool.description.contains("reconciliation"));
+        assert!(tool.description.contains("matched_on"));
+        let props = &tool.input_schema["properties"];
+        for key in ["predicate", "family", "context_entity"] {
+            assert!(props.get(key).is_some(), "missing {key}");
+        }
     }
 }

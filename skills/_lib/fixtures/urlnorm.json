@@ -1,0 +1,61 @@
+{
+  "_doc": "Shared (raw -> normalized) pairs for skills/_lib/urlnorm.py and the ffs-core Rust helper. Wrapper decoding uses the default link.bizjournals.com base64 path-segment wrapper (segment_index 2 among non-empty segments).",
+  "pairs": [
+    {
+      "raw": "HTTPS://WWW.Example.com/News/2026/09/14/story.html?utm_source=x&utm_medium=email",
+      "normalized": "https://www.example.com/News/2026/09/14/story.html"
+    },
+    {
+      "raw": "https://www.example.com/news/story/",
+      "normalized": "https://www.example.com/news/story"
+    },
+    {
+      "raw": "https://www.example.com/news/story#comments",
+      "normalized": "https://www.example.com/news/story"
+    },
+    {
+      "raw": "https://www.example.com/news/story?id=7&fbclid=abc&gclid=def",
+      "normalized": "https://www.example.com/news/story?id=7"
+    },
+    {
+      "raw": "https://www.example.com/news/story?b=2&a=1",
+      "normalized": "https://www.example.com/news/story?b=2&a=1"
+    },
+    {
+      "raw": "https://www.example.com:443/news/story",
+      "normalized": "https://www.example.com/news/story"
+    },
+    {
+      "raw": "http://www.example.com:8080/news/story",
+      "normalized": "http://www.example.com:8080/news/story"
+    },
+    {
+      "raw": "https://www.example.com/",
+      "normalized": "https://www.example.com/"
+    },
+    {
+      "raw": "https://www.example.com",
+      "normalized": "https://www.example.com/"
+    },
+    {
+      "raw": "  https://www.example.com/news/story?mc_cid=1&mc_eid=2&utm_campaign=z  ",
+      "normalized": "https://www.example.com/news/story"
+    },
+    {
+      "raw": "https://www.example.com/news/story?q=a%20b",
+      "normalized": "https://www.example.com/news/story?q=a+b"
+    },
+    {
+      "raw": "https://link.bizjournals.com/click/47477894.22781/aHR0cHM6Ly93d3cuYml6am91cm5hbHMuY29tL2NoYXJsb3R0ZS9uZXdzLzIwMjYvMDkvMTQvZXhhbXBsZS1zdG9yeS5odG1sP3V0bV9zb3VyY2U9c3QmdXRtX21lZGl1bT1lbg/4404f705",
+      "normalized": "https://www.bizjournals.com/charlotte/news/2026/09/14/example-story.html"
+    },
+    {
+      "raw": "https://link.bizjournals.com/click/1.2/not-base64!!/x",
+      "normalized": "https://link.bizjournals.com/click/1.2/not-base64!!/x"
+    },
+    {
+      "raw": "https://www.example.com/a/b/",
+      "normalized": "https://www.example.com/a/b"
+    }
+  ]
+}

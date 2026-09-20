@@ -102,6 +102,31 @@ fn insert_contact(store: &dyn AtomStore, entity: &str, name: &str, tx_time: &str
     store.insert(&env).unwrap()
 }
 
+const ORG_TOML: &str = r#"
+name = "org.company"
+version = 1
+
+[claim_schema]
+type = "object"
+required = ["display_name"]
+
+[claim_schema.properties]
+display_name = { type = "string" }
+aliases = { type = "array", items = { type = "string" } }
+
+[rendering]
+template = "org-company.md.tera"
+frontmatter_fields = ["display_name"]
+
+[pagination]
+strategy = "alphabetical_first_letter"
+group_field = "display_name"
+
+[path]
+family = "orgs"
+name_field = "display_name"
+"#;
+
 fn make_dispatcher(grant_owner_caps: bool) -> (Arc<Dispatcher>, Arc<dyn AtomStore>) {
     let dir = tempfile::tempdir().unwrap();
     let predicates_dir = dir.path().join("predicates");
@@ -109,6 +134,12 @@ fn make_dispatcher(grant_owner_caps: bool) -> (Arc<Dispatcher>, Arc<dyn AtomStor
     std::fs::create_dir_all(&predicates_dir).unwrap();
     std::fs::create_dir_all(&templates_dir).unwrap();
     std::fs::write(predicates_dir.join("contact.person.toml"), CONTACT_TOML).unwrap();
+    std::fs::write(predicates_dir.join("org.company.toml"), ORG_TOML).unwrap();
+    std::fs::write(
+        templates_dir.join("org-company.md.tera"),
+        "---\ndisplay_name: {{ claim.display_name }}\n---\n",
+    )
+    .unwrap();
     std::fs::write(
         templates_dir.join("contact-person.md.tera"),
         "---\ndisplay_name: {{ claim.display_name }}\n---\n",
@@ -143,6 +174,8 @@ fn make_dispatcher(grant_owner_caps: bool) -> (Arc<Dispatcher>, Arc<dyn AtomStor
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(InMemoryPeerMount::new()),
+        data_dir: None,
+        skill_invoker: None,
     });
 
     // Leak the tempdir so the test data files stay valid for the
@@ -357,4 +390,56 @@ async fn initialize_returns_protocol_version_through_stdio_loop() {
     )
     .await;
     assert_eq!(responses[0]["result"]["serverInfo"]["name"], "ffs-mcp");
+}
+
+#[tokio::test]
+async fn ffs_search_finds_org_by_alias_end_to_end() {
+    let (dispatcher, store) = make_dispatcher(true);
+    let acme = EntityId::mint();
+    let env = AtomTemplate {
+        v: 1,
+        entity: acme.clone(),
+        predicate: PredicateName::new("org.company"),
+        claim: serde_json::json!({"display_name": "Acme Widgets", "aliases": ["Acme Corp"]}),
+        valid_from: Iso8601::new("2026-01-01T00:00:00Z").unwrap(),
+        valid_to: None,
+        tx_time: Iso8601::new("2026-05-27T08:00:00Z").unwrap(),
+        classification: Tier::new("existence"),
+        supersedes: None,
+        provenance: vec![],
+    }
+    .sign(&owner_key())
+    .unwrap();
+    store.insert(&env).unwrap();
+    // Materialize the index row the way the daemon would, so the hit
+    // carries a path.
+    dispatcher
+        .renderer
+        .path_index()
+        .assign("orgs", &acme, "Acme Widgets", &[])
+        .unwrap();
+    let server = McpServer::new(Arc::new(InProcessDaemonClient { dispatcher }), "test-agent");
+    let responses = round_trip(
+        server,
+        vec![serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "ffs_search",
+                "arguments": {"query": "Acme Corp", "family": "orgs"}
+            }
+        })],
+    )
+    .await;
+    let result = &responses[0]["result"];
+    assert_eq!(result["isError"], false, "got: {result}");
+    let text = result["content"][0]["text"].as_str().unwrap();
+    let body: Value = serde_json::from_str(text).unwrap();
+    let hits = body["results"].as_array().expect("results array");
+    assert_eq!(hits.len(), 1, "got: {text}");
+    assert_eq!(hits[0]["entity"], acme.as_str());
+    assert_eq!(hits[0]["matched_on"][0], "alias");
+    assert_eq!(hits[0]["path"], "orgs/by-name/A/Acme_Widgets.md");
+    assert!(hits[0]["score"].as_f64().unwrap() >= 80.0);
 }

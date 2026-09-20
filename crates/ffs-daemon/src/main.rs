@@ -64,6 +64,11 @@
 //! - `FFS_SCRIBE_ANTHROPIC_KEY` — API key for the Anthropic adapter.
 //!   When unset on macOS the scribe looks for the keychain item
 //!   `ffs-scribe-anthropic` (task_27/33 machinery).
+//! - Courier (task_40): the `courier` skill bundle writes
+//!   `$FFS_DATA_DIR/ingest/.courier/last_run.json` after each tick;
+//!   `health.summary.courier` and the `courier.status` RPC read it
+//!   (`null` until the first run), and `courier.run { dry_run? }`
+//!   invokes one tick through the skills host (`ffs courier run`).
 //! - `FFS_SCRIBE_CORPUS_DIR` — external golden-corpus directory for
 //!   the scorer, so real press text can be scored locally without
 //!   ever entering git.
@@ -334,6 +339,10 @@ async fn run() -> Result<(), StartupError> {
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: Some(data_dir.clone()),
+        skill_invoker: Some(Arc::new(ffs_daemon::SkillsHostInvoker::new(
+            skills_host.clone(),
+        ))),
     };
     let dispatcher = Arc::new(dispatcher);
 

@@ -181,6 +181,8 @@ fn make_side(name: &'static str, seed: u8) -> Side {
         federation_client: None,
         our_cert_fingerprint: Some(cert.fingerprint.clone()),
         peer_mounts: mounts.clone() as Arc<dyn PeerMountStore>,
+        data_dir: None,
+        skill_invoker: None,
     };
     Side {
         _name: name,

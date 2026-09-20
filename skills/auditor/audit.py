@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -80,7 +81,63 @@ def aggregate_metrics(window_hours: int = 24) -> Dict[str, Any]:
         # a windowed count.
         metrics["atom_author_rate"] = int(summary.get("atom_count") or 0)
         metrics["ingest_queue_depth"] = metrics["proposals"]
+        # task_40: the courier's last-tick counters (or None when it
+        # has never run). The key's presence means the daemon knows
+        # about a courier; the auditor reports on it either way.
+        if "courier" in summary:
+            metrics["courier"] = summary.get("courier")
     return metrics
+
+
+COURIER_MISSED_HOURS = 36
+
+
+def _parse_iso(ts: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def courier_line(metrics: Dict[str, Any]) -> Optional[str]:
+    """One narrative line about the courier, or None when the daemon
+    reports no courier at all."""
+    if "courier" not in metrics:
+        return None
+    c = metrics.get("courier")
+    if not isinstance(c, dict) or not c.get("last_run"):
+        return "courier has not run"
+    return (
+        f"courier ran {c.get('last_run')}: {int(c.get('items_seen') or 0)} items, "
+        f"{int(c.get('files_written') or 0)} files"
+    )
+
+
+def courier_missed(metrics: Dict[str, Any], now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """A medium-priority flag when a configured courier has not run in
+    more than `COURIER_MISSED_HOURS` (or has never run)."""
+    if "courier" not in metrics:
+        return None
+    c = metrics.get("courier")
+    last = c.get("last_run") if isinstance(c, dict) else None
+    since = "never"
+    if last:
+        stamp = _parse_iso(last)
+        current = now or datetime.now(timezone.utc)
+        if stamp is not None:
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            if current - stamp <= timedelta(hours=COURIER_MISSED_HOURS):
+                return None
+            since = last
+        else:
+            since = str(last)
+    return {
+        "priority": 3,
+        "kind": "courier_missed",
+        "since": since,
+        "message": f"courier has not run since {since}",
+    }
 
 
 def evaluate_flags(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -152,6 +209,11 @@ def evaluate_flags(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
             }
         )
 
+    # Courier schedule missed (priority 3, task_40).
+    missed = courier_missed(metrics)
+    if missed is not None:
+        flags.append(missed)
+
     # Ingest backlog (priority 5).
     backlog = int(metrics.get("ingest_queue_depth") or 0)
     if backlog > INGEST_BACKLOG_THRESHOLD:
@@ -179,16 +241,19 @@ def top_n(flags: List[Dict[str, Any]], n: int = PANEL_MAX_ITEMS) -> List[Dict[st
 
 def narrative(metrics: Dict[str, Any], flags: List[Dict[str, Any]]) -> str:
     """Build a short human-readable narrative summarizing the day."""
+    courier = courier_line(metrics)
+    tail = f"\n{courier}." if courier else ""
     if not flags:
         return (
             f"All quiet. {metrics.get('atom_author_rate', 0)} atom(s) over the last "
             f"{metrics.get('window_hours', 24)}h; "
             f"{metrics.get('proposals', 0)} pending proposals; "
             f"{metrics.get('drift_flags', 0)} drifted projections. No threshold flags."
+            f"{tail}"
         )
     bullets = "\n".join(f"- {f['message']}" for f in flags)
     return (
-        f"{len(flags)} flag(s) over the last {metrics.get('window_hours', 24)}h:\n{bullets}"
+        f"{len(flags)} flag(s) over the last {metrics.get('window_hours', 24)}h:\n{bullets}{tail}"
     )
 
 

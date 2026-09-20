@@ -43,7 +43,7 @@
 | 37 | Agent memory convention: adopt okf-agent-memory practices (ADR-027) | completed | medium | task_16, task_23 |
 | 38 | Filing cabinet: registry-declared path families + business-graph predicates and wikilinked templates (ADR-028) | completed | high | task_20, task_21, task_25, task_36, task_37 |
 | 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_38, task_44, task_45 |
-| 40 | Courier: deterministic email-and-feeds intake + ffs_search v2 + URL dedup (pointers only for terms-restricted publishers) | pending | medium | task_37, task_38, task_43, task_45 |
+| 40 | Courier: deterministic email-and-feeds intake + ffs_search v2 + URL dedup (pointers only for terms-restricted publishers) | completed | medium | task_37, task_38, task_43, task_45 |
 | 41 | Morning briefing: movers-and-shakers summary from the auditor | pending | medium | task_13, task_38, task_39, task_40 |
 | 42 | Spike: extraction quality on real business-press articles (gates task_36) | completed | low | task_11 |
 | 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | completed | low | task_26 |

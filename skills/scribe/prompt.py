@@ -39,6 +39,7 @@ RULES: Tuple[str, ...] = (
     "Object-valued list items carry the printed display name plus their own descriptive fields (context, role) and nothing else.",
     "Dates are ISO YYYY-MM-DD. Put a claim's start date in valid_from when the text states one.",
     "A role ending (stepped down, departs, leaves, retires) is a proposal with ends_role true and valid_to set to the stated or published date; never describe an ending as a new role.",
+    "When the document carries `## Mentions` or `## Events` sections, treat their bullets as structured hints: use the display names, contexts, kinds, and roles they state verbatim rather than re-deriving them from prose.",
     "Output exactly one JSON object matching the envelope, with no prose and no markdown fences.",
 )
 

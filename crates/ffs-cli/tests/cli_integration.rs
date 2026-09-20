@@ -69,6 +69,13 @@ struct Server {
 }
 
 async fn spawn() -> Server {
+    spawn_with(None).await
+}
+
+/// A courier-shaped daemon: the given invoker answers `courier.run`,
+/// and the temp dir doubles as the data dir so `courier.status` can
+/// read `ingest/.courier/last_run.json` when a test writes it.
+async fn spawn_with(invoker: Option<Arc<dyn ffs_daemon::SkillInvoker>>) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let predicates_dir = dir.path().join("predicates");
     let templates_dir = dir.path().join("templates");
@@ -126,6 +133,8 @@ async fn spawn() -> Server {
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: Some(dir.path().to_path_buf()),
+        skill_invoker: invoker,
     });
 
     let socket = run_dir.join("ffs.sock");
@@ -308,6 +317,8 @@ async fn cli_capability_denied_exits_with_code_two() {
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: None,
+        skill_invoker: None,
     });
     let socket = run_dir.join("ffs.sock");
     let cancel = CancellationToken::new();
@@ -395,6 +406,106 @@ async fn cli_invalid_url_returns_usage_error() {
     let out = run(args).await;
     assert_eq!(out.code, ffs_cli::EXIT_USAGE);
 
+    server.cancel.cancel();
+    let _ = timeout(Duration::from_secs(2), server.handle).await;
+}
+
+struct CourierStub;
+
+#[async_trait::async_trait]
+impl ffs_daemon::SkillInvoker for CourierStub {
+    async fn invoke(
+        &self,
+        skill: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        assert_eq!(skill, "courier");
+        let dry = input["dry_run"].as_bool().unwrap_or(false);
+        Ok(serde_json::json!({
+            "would_submit": if dry { vec!["ingest/2026-09-21-ledger-a.md", "ingest/2026-09-21-ledger-b.md"] } else { vec![] },
+            "submitted": if dry { vec![] } else { vec!["ingest/2026-09-21-ledger-a.md"] },
+            "items_seen": 2,
+            "files_written": if dry { 0 } else { 1 },
+            "fetch_failures": 0,
+            "last_error": serde_json::Value::Null,
+        }))
+    }
+}
+
+#[tokio::test]
+async fn courier_run_dry_run_prints_would_write_list() {
+    let server = spawn_with(Some(Arc::new(CourierStub))).await;
+    let args = Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: Command::Courier {
+            command: ffs_cli::CourierCommand::Run { dry_run: true },
+        },
+    };
+    let out = run(args).await;
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
+    assert!(
+        out.stdout.starts_with("would submit: 2\n"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("  ingest/2026-09-21-ledger-a.md\n"));
+    assert!(out.stdout.contains("items_seen: 2\n"));
+    assert!(out.stdout.contains("files_written: 0\n"));
+    assert!(
+        !out.stdout.contains("filed"),
+        "dry run must say would submit, never filed"
+    );
+    server.cancel.cancel();
+    let _ = timeout(Duration::from_secs(2), server.handle).await;
+}
+
+#[tokio::test]
+async fn courier_status_reads_health_summary() {
+    let server = spawn_with(Some(Arc::new(CourierStub))).await;
+    // Before any tick: nothing to report.
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: Command::Courier {
+            command: ffs_cli::CourierCommand::Status,
+        },
+    })
+    .await;
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
+    assert_eq!(out.stdout, "courier has not run\n");
+    // The skill's last_run.json is what both status and health read.
+    let dir = server._dir.path().join("ingest").join(".courier");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("last_run.json"),
+        r#"{"last_run":"2026-09-21T06:10:00Z","items_seen":14,"files_written":9,"fetch_failures":1,"last_error":null}"#,
+    )
+    .unwrap();
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: Command::Courier {
+            command: ffs_cli::CourierCommand::Status,
+        },
+    })
+    .await;
+    assert_eq!(out.code, 0);
+    assert!(out.stdout.contains("last_run: 2026-09-21T06:10:00Z\n"));
+    assert!(out.stdout.contains("items_seen: 14\n"));
+    assert!(out.stdout.contains("fetch_failures: 1\n"));
+    let health = run(Args {
+        socket: Some(server.socket.clone()),
+        json: true,
+        command: Command::Health,
+    })
+    .await;
+    assert!(health.stdout.contains("\"courier\""), "{}", health.stdout);
+    assert!(
+        health.stdout.contains("\"files_written\": 9"),
+        "{}",
+        health.stdout
+    );
     server.cancel.cancel();
     let _ = timeout(Duration::from_secs(2), server.handle).await;
 }

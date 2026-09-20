@@ -67,8 +67,8 @@ Options:
 
 The installer writes to:
   $PREFIX/bin              # ffs, ffs-daemon, ffs-mcp
-  $HOME/.ffs/config/       # predicates + templates + resolution.toml (seeded if missing)
-  $HOME/.ffs/skills/       # auditor, librarian, scribe Python bundles
+  $HOME/.ffs/config/       # predicates + templates + resolution/courier/sources.toml (seeded if missing)
+  $HOME/.ffs/skills/       # auditor, librarian, scribe, courier Python bundles
   $HOME/.ffs/run/          # daemon socket (mode 700)
   $HOME/.ffs/log/          # daemon stderr captures
   $HOME/.ffs/.obsidian/    # Obsidian vault config + plugin (substrate-is-vault)
@@ -326,6 +326,14 @@ install_starter_library() {
     if [ -e "$starter_root/config/resolution.toml" ]; then
         install_seed_file "$starter_root/config/resolution.toml" "$DATA_DIR/config/resolution.toml"
     fi
+    # Courier configuration (task_40): mailbox and feeds in courier.toml,
+    # the owner's per-publisher intake/fetch policy in sources.toml
+    # (ADR-035). Seeded once, owner-edited after; never overwritten.
+    for cfg in courier.toml sources.toml; do
+        if [ -e "$starter_root/config/$cfg" ]; then
+            install_seed_file "$starter_root/config/$cfg" "$DATA_DIR/config/$cfg"
+        fi
+    done
 }
 
 # -------- skill bundles --------
@@ -339,7 +347,7 @@ install_skills() {
     if [ ! -d "$skills_root" ]; then
         skills_root="$SCRIPT_HOME/../skills"
     fi
-    for skill in auditor librarian scribe _lib; do
+    for skill in auditor librarian scribe courier _lib; do
         if [ -d "$skills_root/$skill" ]; then
             ensure_dir "$DATA_DIR/skills/$skill"
             # Copy the directory contents rather than the directory

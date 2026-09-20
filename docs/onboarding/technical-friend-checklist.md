@@ -347,6 +347,18 @@ repository (for example under `$FFS_DATA_DIR/spikes/`) and run the
 scribe's corpus scorer. No copyrighted press text may be committed
 to the repository; the in-repo corpus is paraphrased or synthetic.
 
+### Optional: set up the courier (3 min)
+
+The installer seeds `config/courier.toml` and `config/sources.toml`
+under `$FFS_DATA_DIR`; edit the mailbox host, folder, and sources in
+the first and the per-publisher `intake` / `fetch` policy in the
+second (the starter defaults and the reason for them are commented
+in the file; the setting is the owner's). Put the mailbox app
+password in the keychain, never in TOML:
+`security add-generic-password -s ffs.courier.<host> -a ffs -w`.
+Then run `ffs courier run --dry-run` and confirm the listed files
+under `$FFS_DATA_DIR/ingest/.courier/dry-run/` before a real run.
+
 ## Step 4 — Predicate inspection (2 min)
 
 The substrate ships three starter predicates. Make sure they

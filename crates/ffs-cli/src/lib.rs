@@ -54,6 +54,24 @@ pub enum Command {
         #[command(subcommand)]
         command: IdentityCommand,
     },
+    /// The courier: deterministic mailbox and feed intake (task_40).
+    Courier {
+        #[command(subcommand)]
+        command: CourierCommand,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum CourierCommand {
+    /// Run one courier tick now (the daemon scheduler is task_41).
+    Run {
+        /// Perform every step but write files only to the dry-run
+        /// scratch directory; nothing is submitted or marked seen.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print the courier's last-run counters.
+    Status,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -124,5 +142,11 @@ pub async fn run(args: Args) -> Outcome {
         Command::Identity {
             command: IdentityCommand::Show,
         } => commands::identity_show(json),
+        Command::Courier {
+            command: CourierCommand::Run { dry_run },
+        } => commands::courier_run(socket_ref, dry_run, json).await,
+        Command::Courier {
+            command: CourierCommand::Status,
+        } => commands::courier_status(socket_ref, json).await,
     }
 }

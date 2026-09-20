@@ -239,7 +239,55 @@ When content came from somewhere, the agent SHOULD say where: `source_uri` on th
 
 ---
 
-## 13. Inference
+## 13. Article Intake Contract
+
+The courier (the deterministic skill bundle in `skills/courier/`, or an agent host running the same loop) turns a newsletter item, a feed record, or a clipped article into one Markdown file under `$FFS_DATA_DIR/ingest/`. The scribe and the resolver read that file; the contract below is what they read. A courier MUST write exactly this shape, and MUST NOT supply entity ids: identity is the resolver's (ADR-030).
+
+### 13.1 One file per item
+
+Filename: `<publication-slug>-<YYYY-MM-DD>-<title-slug>.md`. The slug is a projection basename and a resolver blocking key, never the identity.
+
+Frontmatter keys, in this order:
+
+| Key | Value |
+|---|---|
+| `predicate` | `source.article` (required) |
+| `title` | the headline as printed (required) |
+| `url` | normalized (required): lowercase scheme and host; `utm_*`, `fbclid`, `gclid`, `mc_cid`, `mc_eid` stripped; fragment dropped; trailing slash collapsed |
+| `publication` | the outlet that sent the item |
+| `published_at` | `YYYY-MM-DD` |
+| `byline` | omit if unknown |
+| `tags` | list; omit if empty |
+| `intake` | `pointer` \| `clip` \| `feed` \| `morning_read` |
+| `reported_by` | omit unless the item attributes another outlet |
+| `content_hash` | omit unless a feed adapter had the record bytes; multibase base58btc of blake2b-256 |
+| `fetch` | `off` \| `session` \| `scheduled`, the publisher's policy at filing time |
+
+Body: empty for `pointer`; the blurb or article text for `clip`; the record's own summary for `feed`; the owner's note for `morning_read`. A clipped body lands under the `clip` classification tier and is never federated unless a capability names that tier (ADR-035). The scribe truncates any body over 4,000 characters and attaches a `parse-warning` rationale so the truncation is visible in review.
+
+`## Mentions` bullets: `- <Name> — <one-line role or org context>` (a spaced em dash separates them). Each bullet becomes one `mentions[]` item `{entity, display, context}` with `display` and `context` verbatim and `entity` filled by the resolver. Pointer items have no Mentions section; clip items leave it for the scribe to fill from the body; feed items MAY pre-fill it from structured fields, tagged `courier-structured`, which the scribe treats as a high-confidence hint.
+
+`## Events` bullets (optional): `- <kind>: <description> | <Name> (<role>), <Name> (<role>)`. Kinds: `funding`, `acquisition`, `hire`, `departure`, `expansion`, `opening`, `closing`, `award`, `partnership`, `other`. Roles: `acquirer`, `target`, `investor`, `investee`, `hire`, `employer`, `departing`, `landlord`, `tenant`, `developer`, `winner`, `partner`, `other`. Each named participant becomes a `participants[]` item `{entity, display, role}` resolved the same way.
+
+### 13.2 The digest note
+
+One per publication per day: `<publication-slug>-digest-<YYYY-MM-DD>.md` with frontmatter `predicate: note`, `title: <Publication> digest YYYY-MM-DD`, `tags: [digest, courier]`, the body `Filed by the courier.`, and a `## References` section listing every article filed that day as `- [[<article basename>|<title>]]`. The digest is how "did I read the paper end to end" is answered from the vault.
+
+### 13.3 No full text unless policy says so
+
+What a courier files for a publisher is the owner's policy in `$FFS_DATA_DIR/config/sources.toml` (`intake = pointer | clip`, `fetch = off | session | scheduled`). A courier MUST apply the owner's values as written and MUST NOT carry a domain denylist or allowlist of its own. The software records publishers' terms for the owner's judgment; it does not adjudicate them (ADR-035, amended 2026-09-15). Behavior, not domains, is what a courier refuses: it never crawls a listing, index, search, or section page, never follows a link found inside a fetched page, and never bypasses a login, a paywall, or a bot wall.
+
+### 13.4 `reported_by` and source independence
+
+When a newsletter item attributes another outlet ("(Charlotte Business Journal)", "(WBTV)"), the courier records that outlet as `reported_by`. For ADR-034's quorum the item then counts as a copy of that outlet's report, not as an independent confirmation. Two readers of one report are one source.
+
+### 13.5 Persistence vocabulary
+
+Both couriers use exactly these words, mirroring Section 18: **submitted** (the file was dropped; the watcher will pick it up), **proposed** (in the quarantine), **filed** (an accepted atom, visible in the vault), **auto-filed** (accepted by an ADR-029 policy). A courier says "submitted" or "would submit". It never says "filed".
+
+---
+
+## 14. Inference
 
 An agent may draw conclusions from what it reads. Inferred content MUST be distinguishable from sourced content.
 
@@ -253,7 +301,7 @@ When an inference is later confirmed by the owner or by a sourced document, the 
 
 ---
 
-## 14. Conflicts and Supersession
+## 15. Conflicts and Supersession
 
 When new information conflicts with an existing claim, the agent MUST NOT silently overwrite the old meaning, and in FFS it cannot: atoms are immutable and change is supersession.
 
@@ -267,7 +315,7 @@ An agent MUST NOT propose a supersession purely to make a chain look tidy.
 
 ---
 
-## 15. Human Override
+## 16. Human Override
 
 The owner's decisions have priority over anything the agent inferred.
 
@@ -277,9 +325,11 @@ The owner's decisions have priority over anything the agent inferred.
 
 The daily summary is where the owner exercises this override. Agents do not get a vote there.
 
+The same priority applies to publisher policy. What may be fetched or clipped from a publisher, and when, is the owner's configuration in `$FFS_DATA_DIR/config/sources.toml`. The software records the publishers' terms so the owner can decide and applies the owner's setting as written; it does not adjudicate the owner's license or fair-use position (ADR-035, amended 2026-09-15). An agent MUST NOT substitute its own reading of a publisher's terms for the owner's setting.
+
 ---
 
-## 16. Capability Boundary
+## 17. Capability Boundary
 
 Every call passes the capability evaluator at the daemon. A denial comes back as a tool-level error with `kind: capability_denied` and a reason.
 
@@ -293,7 +343,7 @@ Content the agent cannot see is content it does not know. It MUST NOT guess at i
 
 ---
 
-## 17. Failure Handling and Persistence Honesty
+## 18. Failure Handling and Persistence Honesty
 
 `ffs_author_atom` returns a `submission_id`. That id means the content entered the quarantine. It does not mean the content is in the substrate.
 
@@ -308,7 +358,7 @@ An agent MUST NOT batch-submit the same content under several `source_uri` value
 
 ---
 
-## 18. Minimal Agent Contract
+## 19. Minimal Agent Contract
 
 Any agent using FFS as memory MUST understand this contract:
 
@@ -326,13 +376,13 @@ Any agent using FFS as memory MUST understand this contract:
 
 ---
 
-## 19. Language
+## 20. Language
 
 This convention is written in English so it can be used as a language-independent agent instruction. Content in the substrate MAY be in any language the owner uses. An agent MUST preserve the language of existing content when extending it and SHOULD NOT translate existing claims.
 
 ---
 
-## 20. Open Questions for v0.2
+## 21. Open Questions for v0.2
 
 - **Full-text search over claim bodies.** `ffs_search` matches the canonical name field only. A body-text search (over `notes`, `history`, `body`) is needed for "what did I decide about the Acme deal" questions.
 - **MCP-side supersession.** An agent can only propose through the scribe. A direct "supersede atom X with this claim" tool, still quarantined, would let agents propose precise corrections.
@@ -342,10 +392,10 @@ This convention is written in English so it can be used as a language-independen
 
 ---
 
-## 21. Summary
+## 22. Summary
 
 > **FFS defines how knowledge is represented: signed, classified, bitemporal atoms.**
 > **This convention defines when and how an agent proposes to it.**
-> **The `ffs-memory` skill teaches the workflow.**
+> **The `ffs-memory` skill teaches the workflow; the courier files by the article intake contract.**
 > **The daemon guarantees validation and capability checks.**
 > **The owner decides what becomes true.**

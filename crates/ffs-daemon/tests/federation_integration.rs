@@ -112,6 +112,8 @@ fn make_side(name: &'static str, seed: u8) -> Side {
         federation_client: None, // set after wiring routes
         our_cert_fingerprint: Some(cert.fingerprint.clone()),
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: None,
+        skill_invoker: None,
     };
     Side {
         name,

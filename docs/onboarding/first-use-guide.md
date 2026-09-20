@@ -234,6 +234,83 @@ automatically, and accepting it means choosing a candidate or
 telling FFS the mention is someone new. Where the choice is clear
 the card says **existing** with the matched name, or **new**.
 
+## Read the paper for me
+
+The courier is the part of FFS that reads your mail and the public
+feeds you turn on, and files what it finds as pointers or clips for
+you to review. It never opens an article on its own. Reading the
+articles is the morning read, a session you do with your assistant
+present.
+
+**Two files tell it what to do.** Your technical friend seeds both
+into `~/.ffs/config/`.
+
+- `courier.toml`: the mailbox (host and folder), and one source per
+  newsletter you want filed, each with the sender address and the
+  name of a publisher in `sources.toml`. Feeds to turn on live here
+  too.
+- `sources.toml`: one entry per publisher with two settings.
+  `intake` is what gets filed from an email item: `pointer` (title,
+  link, date, nothing else) or `clip` (the item's text as well).
+  `fetch` is whether the article behind a pointer may be fetched:
+  `off` (never), `session` (only during the morning read, with you
+  there), or `scheduled` (the courier may fetch it later, one at a
+  time, at a human pace, under a daily cap).
+
+The starter file sets the Charlotte Business Journal, the Observer,
+and Axios to `pointer` and `session`, because their published terms
+restrict automated access; where those terms were recorded is noted
+in the file. The setting is yours. FFS records the terms so you can
+decide; it does not decide for you, and it carries no list of
+forbidden sites. CLTtoday is set to `clip`, since the newsletter
+itself carries the text. The county permit feed and the City Council
+feed are public records and are set to `clip` too.
+
+**Secrets never go in those files.** The mailbox app password goes
+in your keychain:
+
+```sh
+security add-generic-password -s ffs.courier.<mail host> -a ffs -w
+```
+
+If you set a publisher to `scheduled`, export that site's session
+cookies from your browser once and store them the same way, under
+`ffs.courier.cookies.<domain>`. The first-use guide for your browser
+covers the export; the courier only ever uses them for URLs from
+your own digest.
+
+**Which feeds to turn on first.** Mecklenburg County permits and the
+Charlotte City Council agenda. Both are public, both are
+machine-readable, and both tend to corroborate what the business
+press reports the same week, which is exactly the independent
+confirmation FFS counts.
+
+**Try it dry first.**
+
+```sh
+ffs courier run --dry-run
+```
+
+It does everything except write to your vault: the files it would
+have submitted land under `~/.ffs/ingest/.courier/dry-run/<time>/`,
+nothing is marked read in your mailbox, and the output lists each
+file and says "would submit". Run it twice; the second run should
+list nothing new.
+
+**Then run it for real.** `ffs courier run` submits the files.
+Within a minute they show up in your daily summary as proposals:
+one article per item under `articles/`, and one digest note per
+publication per day whose References section links every article
+filed. After you accept them, the people and organizations the
+scribe found appear under `people/` and `orgs/`, linked from the
+articles. `ffs courier status` shows when it last ran and what it
+did.
+
+**When a proposal says ambiguous**, the scribe found more than one
+person or organization the mention might be, and it is asking you
+rather than guessing. Pick the right one, or tell it this is someone
+new. An ambiguous proposal always waits for you.
+
 ## What to do when something looks wrong
 
 - **A proposal looks weird.** Reject it. The scribe is

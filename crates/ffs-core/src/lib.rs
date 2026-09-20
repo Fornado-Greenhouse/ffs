@@ -19,6 +19,7 @@ pub mod resolution;
 pub mod resolve;
 pub mod store;
 pub mod suppress;
+pub mod urlnorm;
 pub mod working_set;
 
 pub use atom::{
@@ -49,6 +50,7 @@ pub use store::{
     SqliteAtomStore, StoreError,
 };
 pub use suppress::SuppressionRegistry;
+pub use urlnorm::{article_basename, normalize_url, same_content_hash};
 pub use working_set::{
     InMemoryPathIndex, InMemoryWorkingSet, PathIndex, WorkingSetEntry, WorkingSetError,
     WorkingSetStore, slugify_display,

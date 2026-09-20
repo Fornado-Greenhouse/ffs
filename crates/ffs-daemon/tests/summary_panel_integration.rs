@@ -131,6 +131,8 @@ fn setup() -> Harness {
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(InMemoryPeerMount::new()),
+        data_dir: None,
+        skill_invoker: None,
     };
     Harness {
         _dir: dir,

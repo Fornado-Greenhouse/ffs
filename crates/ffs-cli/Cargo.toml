@@ -28,6 +28,7 @@ clap = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 tempfile = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 tokio-util = { workspace = true }

@@ -1,0 +1,78 @@
+# sources.toml — the owner's per-publisher policy (ADR-035, amended 2026-09-15).
+#
+# Installed to $FFS_DATA_DIR/config/sources.toml. Owner-edited,
+# git-versioned, hot-reloaded. The courier and the morning read apply
+# these values as written; the software does not adjudicate the
+# owner's license or fair-use position and carries no domain list of
+# its own.
+#
+#   intake = "pointer"    file title, url, and date from the mailbox; no body
+#   intake = "clip"       also file the body the item carries (a blurb, a feed record)
+#   fetch  = "off"        never fetch the article page
+#   fetch  = "session"    fetch only during an owner-present morning read, on the owner's cue (task_48)
+#   fetch  = "scheduled"  the courier may fetch the articles named in the owner's own digest,
+#                         one at a time at a human pace, at most daily_cap per day, never crawling
+#
+# The three publishers below start at pointer / session. Their terms
+# of use are recorded in docs/research/spikes/task-43-intake-reality.md
+# section 4; the setting is the owner's to change.
+
+[[publisher]]
+key = "bizjournals"
+name = "Charlotte Business Journal"
+domains = ["bizjournals.com"]
+intake = "pointer"
+fetch = "session"
+daily_cap = 20
+min_pause_seconds = 8
+
+[[publisher]]
+key = "charlotteobserver"
+name = "The Charlotte Observer"
+domains = ["charlotteobserver.com"]
+intake = "pointer"
+fetch = "session"
+
+[[publisher]]
+key = "axios"
+name = "Axios Charlotte"
+domains = ["axios.com"]
+intake = "pointer"
+fetch = "session"
+
+# 6AM City's license permits personal use; the newsletter blurb is the body.
+[[publisher]]
+key = "clttoday"
+name = "CLTtoday"
+domains = ["6amcity.com", "clttoday.com", "link.6amcity.com"]
+intake = "clip"
+fetch = "off"
+
+# Public records and a publisher's own press releases: the record is the body.
+[[publisher]]
+key = "meck_permits"
+name = "Mecklenburg County permits"
+domains = ["meckgis.mecklenburgcountync.gov"]
+intake = "clip"
+fetch = "scheduled"
+
+[[publisher]]
+key = "charlotte_legistar"
+name = "Charlotte City Council"
+domains = ["webapi.legistar.com", "charlottenc.legistar.com"]
+intake = "clip"
+fetch = "scheduled"
+
+[[publisher]]
+key = "sec_edgar"
+name = "SEC EDGAR"
+domains = ["sec.gov", "efts.sec.gov"]
+intake = "clip"
+fetch = "scheduled"
+
+[[publisher]]
+key = "duke_energy_news"
+name = "Duke Energy newsroom"
+domains = ["news.duke-energy.com"]
+intake = "clip"
+fetch = "scheduled"

@@ -126,6 +126,8 @@ fn setup() -> Harness {
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: None,
+        skill_invoker: None,
     });
     Harness {
         _dir: dir,
@@ -468,6 +470,8 @@ async fn spawn_server() -> (
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: None,
+        skill_invoker: None,
     });
 
     let socket = run_dir.join("ffs.sock");

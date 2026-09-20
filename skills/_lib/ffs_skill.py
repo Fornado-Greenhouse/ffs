@@ -106,6 +106,40 @@ def query(method: str, params: Any) -> Any:
 _shutdown_event = threading.Event()
 
 
+def keychain_secret(service: str, account: Optional[str] = None) -> Optional[str]:
+    """Best-effort secret lookup for skills (task_27 keychain, task_40).
+
+    Order: the environment override ``FFS_KEYCHAIN_<SERVICE>`` (service
+    upper-cased, non-alphanumerics to ``_``; tests and CI use this),
+    then the macOS keychain via ``security find-generic-password -s
+    <service> [-a <account>] -w``. Other platforms have no keychain
+    path yet and return ``None``. Never raises; never logs the value.
+    """
+    import os
+    import re
+    import subprocess
+    import sys as _sys
+
+    env_key = "FFS_KEYCHAIN_" + re.sub(r"[^A-Za-z0-9]+", "_", service).upper()
+    override = os.environ.get(env_key)
+    if override is not None:
+        return override or None
+    if _sys.platform != "darwin":
+        return None
+    cmd = ["security", "find-generic-password", "-s", service]
+    if account:
+        cmd += ["-a", account]
+    cmd.append("-w")
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    value = out.stdout.rstrip("\n")
+    return value or None
+
+
 def _reader_loop(handler: Callable[[Any], Any]) -> None:
     """Run on a dedicated thread: read frames from stdin and dispatch.
 

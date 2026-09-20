@@ -20,8 +20,9 @@ pub mod transport;
 
 pub use api::{ApiError, ApiPayload, ApiRequest, ApiResponse, ERR_CAPABILITY_DENIED};
 pub use dispatch::Dispatcher;
+pub use dispatch::SkillInvoker;
 pub use ingest_watcher::{IngestWatcher, IngestWatcherConfig};
 pub use materializer::{MaterializeError, Materialized, WorkingSetMaterializer};
 pub use notify::{Event, EventPublisher};
 pub use resolver::{CandidateLookup, ResolveReport, StoreLookup, SubmissionContext, resolve_set};
-pub use scribe::{ResolvingExtractor, SkillsHostScribeExtractor};
+pub use scribe::{ResolvingExtractor, SkillsHostInvoker, SkillsHostScribeExtractor};

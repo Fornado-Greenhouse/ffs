@@ -227,3 +227,58 @@ def test_publish_failure_returns_reason(monkeypatch):
     result = audit.publish({"hello": "world"})
     assert result["atom_hash"] is None
     assert "capability denied" in result["reason"]
+
+
+# ---------------------------------------------------------------------
+# task_40: courier line and missed-schedule flag
+# ---------------------------------------------------------------------
+
+
+def test_courier_ran_line_present(monkeypatch):
+    rec = _Recorder(
+        {
+            "health.summary": {
+                "proposals": 0,
+                "questions": 0,
+                "drift_flags": 0,
+                "atom_count": 3,
+                "courier": {
+                    "last_run": "2026-09-21T12:00:00Z",
+                    "items_seen": 14,
+                    "files_written": 9,
+                    "fetch_failures": 0,
+                    "last_error": None,
+                },
+            }
+        }
+    )
+    _install(monkeypatch, rec)
+    metrics = audit.aggregate_metrics(window_hours=24)
+    assert metrics["courier"]["items_seen"] == 14
+    text = audit.narrative(metrics, [])
+    assert "courier ran 2026-09-21T12:00:00Z: 14 items, 9 files" in text
+    # A fresh run is not a missed schedule.
+    from datetime import datetime, timezone
+
+    assert audit.courier_missed(metrics, now=datetime(2026, 9, 22, 0, 0, tzinfo=timezone.utc)) is None
+
+
+def test_courier_missed_schedule_is_a_flag():
+    from datetime import datetime, timezone
+
+    stale = {"courier": {"last_run": "2026-09-19T06:00:00Z", "items_seen": 1, "files_written": 1}}
+    flag = audit.courier_missed(stale, now=datetime(2026, 9, 21, 6, 0, tzinfo=timezone.utc))
+    assert flag is not None
+    assert flag["kind"] == "courier_missed"
+    assert flag["priority"] == 3
+    assert "has not run since 2026-09-19T06:00:00Z" in flag["message"]
+    never = {"courier": None}
+    flag2 = audit.courier_missed(never)
+    assert flag2 is not None and "since never" in flag2["message"]
+    assert audit.courier_line(never) == "courier has not run"
+    # No courier key at all: nothing to say, nothing to flag.
+    assert audit.courier_missed({}) is None
+    assert audit.courier_line({}) is None
+    long_ago = {"courier": {"last_run": "2020-01-01T00:00:00Z", "items_seen": 1, "files_written": 1}}
+    flags = audit.evaluate_flags(long_ago)
+    assert any(f["kind"] == "courier_missed" for f in flags)

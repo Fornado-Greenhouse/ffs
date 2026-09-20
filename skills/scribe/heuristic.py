@@ -26,6 +26,7 @@ class HeuristicEngine:
         sections = submission.sections
         content_text = submission.content_text
         proposals: List[Dict[str, Any]] = []
+        warnings: List[str] = []
 
         def mk(predicate: str, claim: Dict[str, Any], rationale: str) -> Dict[str, Any]:
             return make_proposal(predicate, claim, submission, rationale, self.name, self.model)
@@ -95,6 +96,20 @@ class HeuristicEngine:
             if not already_have_structured or (
                 body_text and not ex._body_only_in_notes_section(sections)
             ):
-                proposals.append(mk("note", note_claim, "fallback note from raw markdown body"))
+                from contract import parse_references, truncate_body
 
-        return EngineResult(proposals=proposals, warnings=[])
+                rationale = "fallback note from raw markdown body"
+                text, warning = truncate_body(body_text)
+                if warning:
+                    note_claim["body"] = text
+                    rationale += "; " + warning
+                    warnings.append(warning)
+                for sec_name, lines in sections:
+                    if sec_name.strip().lower() == "references":
+                        refs = parse_references(lines)
+                        if refs:
+                            note_claim["references"] = refs
+                        break
+                proposals.append(mk("note", note_claim, rationale))
+
+        return EngineResult(proposals=proposals, warnings=warnings)

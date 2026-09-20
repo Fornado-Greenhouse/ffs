@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "predicate": "agent.definition",
+  "claim": {
+    "name": "courier",
+    "kind": "courier",
+    "version": "0.1.0",
+    "capabilities": [
+      {
+        "action": "read",
+        "scope": {
+          "predicates": ["source.article", "note"]
+        }
+      }
+    ],
+    "entry_point": "courier.py",
+    "cadence_seconds_default": 43200,
+    "rationale_template": "courier submitted {basename} from {publication} ({intake})"
+  },
+  "_note": "Placeholder definition. The courier writes files into ingest/ and reads entity.search for dedup; it authors no atoms. Phase 2 signs this as a real atom."
+}

@@ -35,6 +35,7 @@ use std::collections::{HashMap, HashSet};
 use ffs_core::predicate::{FamilyEntry, SpecRegistry};
 use ffs_core::quarantine::{Candidate, Proposal, Resolution};
 use ffs_core::store::AtomStore;
+use ffs_core::urlnorm::{normalize_url, same_content_hash};
 use ffs_core::{
     BlockingKey, EntityId, Iso8601, PredicateName, ResolutionConfig, Sighting, normalized_name_key,
     surname_key,
@@ -122,6 +123,21 @@ pub trait CandidateLookup {
     /// Display name for an already-bound entity (for organization
     /// comparison by id), if resolvable.
     fn display_of(&self, entity: &EntityId) -> Option<String>;
+    /// Entities in `family` whose head claim carries a `url` equal to
+    /// `normalized_url` (task_40: articles dedup by URL first). Default
+    /// finds nothing so hand-built test tables keep working.
+    fn candidates_by_url(
+        &self,
+        _family: &FamilyEntry,
+        _normalized_url: &str,
+    ) -> Vec<CandidateInfo> {
+        Vec::new()
+    }
+    /// Entities in `family` whose head claim carries a `content_hash`
+    /// naming the same page bytes (ADR-031's information-bearer key).
+    fn candidates_by_content_hash(&self, _family: &FamilyEntry, _hash: &str) -> Vec<CandidateInfo> {
+        Vec::new()
+    }
 }
 
 /// Per-submission state the resolver threads through the set.
@@ -444,6 +460,36 @@ pub fn resolve_set(
             continue;
         };
 
+        // task_40: a record with a URL is the same record when the
+        // normalized URL matches (then when the content hash matches).
+        // No other evidence is needed; a changed title on re-read is
+        // the same article superseded, not a sibling.
+        if let Some(url) = claim_str(&p.claim, "url") {
+            let norm = normalize_url(url);
+            let mut by_key: Vec<CandidateInfo> = lookups.candidates_by_url(&family, &norm);
+            let mut matched_on = "url";
+            if by_key.is_empty()
+                && let Some(h) = claim_str(&p.claim, "content_hash")
+            {
+                by_key = lookups.candidates_by_content_hash(&family, h);
+                matched_on = "content_hash";
+            }
+            if let Some(hit) = by_key.into_iter().next() {
+                let winner = lookups.follow_same_as(&hit.entity);
+                let lref = local_ref_of(p, i);
+                p.entity = Some(winner.clone());
+                p.resolution = Some(Resolution::Existing);
+                p.candidates = vec![Candidate {
+                    entity: winner.clone(),
+                    score: cfg.thresholds.auto_link,
+                    matched_on: vec![matched_on.to_string()],
+                    display: hit.display,
+                }];
+                ctx.bound.insert(lref, winner);
+                continue;
+            }
+        }
+
         let key = match cfg.blocking.key {
             BlockingKey::FullName => normalized_name_key(&display),
             BlockingKey::Surname => surname_key(&display),
@@ -600,7 +646,36 @@ pub fn resolve_set(
             set.remove(i);
         }
     }
+    apply_bound_refs(set, ctx);
     report
+}
+
+/// Pre-fill `entity` on `mentions[]` / `participants[]` items (and any
+/// other cross-referenced field) whose target resolved to an existing
+/// entity in this set. `new` and `ambiguous` targets stay unfilled
+/// until accept mints or the owner chooses (ADR-030); the accept path
+/// rewrites every ref again, so this is a preview for the review UI
+/// and for the resolver's own consumers.
+fn apply_bound_refs(set: &mut [Proposal], ctx: &SubmissionContext) {
+    for p in set.iter_mut() {
+        let refs: Vec<(String, EntityId)> = p
+            .refs
+            .iter()
+            .filter_map(|r| {
+                ctx.bound
+                    .get(&r.local_ref)
+                    .map(|e| (r.field.clone(), e.clone()))
+            })
+            .collect();
+        for (field, entity) in refs {
+            let path = ffs_core::quarantine::CrossRef::from_wire_field(&field);
+            ffs_core::quarantine::CrossRef::apply(
+                &mut p.claim,
+                &path,
+                serde_json::Value::String(entity.as_str().to_string()),
+            );
+        }
+    }
 }
 
 /// Production lookups over the atom store and the spec registry.
@@ -670,6 +745,28 @@ impl StoreLookup<'_> {
 impl CandidateLookup for StoreLookup<'_> {
     fn family_for_predicate(&self, predicate: &PredicateName) -> Option<FamilyEntry> {
         self.registry.family_for_predicate(predicate.as_str())
+    }
+
+    fn candidates_by_url(&self, family: &FamilyEntry, normalized_url: &str) -> Vec<CandidateInfo> {
+        let predicate = PredicateName::new(&family.predicate);
+        self.heads_for(&predicate)
+            .iter()
+            .filter(|atom| {
+                claim_str(&atom.claim, "url").is_some_and(|u| normalize_url(u) == normalized_url)
+            })
+            .filter_map(|atom| self.info_from_atom(atom, &family.name_field, "url"))
+            .collect()
+    }
+
+    fn candidates_by_content_hash(&self, family: &FamilyEntry, hash: &str) -> Vec<CandidateInfo> {
+        let predicate = PredicateName::new(&family.predicate);
+        self.heads_for(&predicate)
+            .iter()
+            .filter(|atom| {
+                claim_str(&atom.claim, "content_hash").is_some_and(|h| same_content_hash(h, hash))
+            })
+            .filter_map(|atom| self.info_from_atom(atom, &family.name_field, "content_hash"))
+            .collect()
     }
 
     fn candidates(
@@ -844,6 +941,8 @@ mod tests {
     struct Table {
         people: Vec<CandidateInfo>,
         orgs: Vec<CandidateInfo>,
+        /// (candidate, normalized url, content_hash) for stored articles.
+        articles: Vec<(CandidateInfo, String, Option<String>)>,
         different: Vec<(EntityId, EntityId)>,
         same_as: HashMap<String, EntityId>,
         priors: HashMap<(String, String), u32>,
@@ -939,6 +1038,20 @@ mod tests {
                 .chain(self.orgs.iter())
                 .find(|c| &c.entity == entity)
                 .map(|c| c.display.clone())
+        }
+        fn candidates_by_url(&self, _family: &FamilyEntry, url: &str) -> Vec<CandidateInfo> {
+            self.articles
+                .iter()
+                .filter(|(_, u, _)| u == url)
+                .map(|(c, _, _)| c.clone())
+                .collect()
+        }
+        fn candidates_by_content_hash(&self, _family: &FamilyEntry, h: &str) -> Vec<CandidateInfo> {
+            self.articles
+                .iter()
+                .filter(|(_, _, ch)| ch.as_deref().is_some_and(|c| same_content_hash(c, h)))
+                .map(|(c, _, _)| c.clone())
+                .collect()
         }
     }
 
@@ -1329,5 +1442,207 @@ mod tests {
         );
         assert!(set[0].candidates[0].score > 4.8 && set[0].candidates[0].score < 5.0);
         assert_eq!(set[0].resolution, Some(Resolution::Ambiguous));
+    }
+
+    fn stored_article(
+        display: &str,
+        url: &str,
+        content_hash: Option<&str>,
+    ) -> (CandidateInfo, String, Option<String>) {
+        let mut c = person(display, None, None);
+        c.matched_on = vec!["url".into()];
+        (c, normalize_url(url), content_hash.map(str::to_string))
+    }
+
+    fn blake3_hash(fill: u8) -> String {
+        let mut b = vec![0x1e, 0x20];
+        b.extend([fill; 32]);
+        ffs_core::multibase::encode_base58btc(&b)
+    }
+
+    #[test]
+    fn same_normalized_url_with_a_different_title_resolves_existing_on_url_alone() {
+        let table = Table {
+            articles: vec![stored_article(
+                "Mill to reopen",
+                "https://Example.com/news/mill/?utm_source=mail",
+                None,
+            )],
+            ..Default::default()
+        };
+        let mut set = vec![proposal(
+            "source.article",
+            serde_json::json!({"title": "Mill to reopen as maker space", "url": "https://example.com/news/mill#top"}),
+            "article",
+        )];
+        resolve_set(&mut set, &table, &cfg(), &mut ctx());
+        assert_eq!(set[0].resolution, Some(Resolution::Existing));
+        assert_eq!(set[0].entity.as_ref().unwrap().as_str(), "zMilltoreopen");
+        assert_eq!(set[0].candidates[0].matched_on, vec!["url".to_string()]);
+    }
+
+    #[test]
+    fn same_content_hash_with_a_different_url_resolves_existing() {
+        let h = blake3_hash(3);
+        let table = Table {
+            articles: vec![stored_article(
+                "Syndicated story",
+                "https://origin.example.com/story",
+                Some(&h),
+            )],
+            ..Default::default()
+        };
+        let mut set = vec![proposal(
+            "source.article",
+            serde_json::json!({"title": "Syndicated story", "url": "https://mirror.example.net/copy", "content_hash": h}),
+            "article",
+        )];
+        resolve_set(&mut set, &table, &cfg(), &mut ctx());
+        assert_eq!(set[0].resolution, Some(Resolution::Existing));
+        assert_eq!(
+            set[0].candidates[0].matched_on,
+            vec!["content_hash".to_string()]
+        );
+        // A different hash and url is a new article.
+        let other = blake3_hash(4);
+        let mut set2 = vec![proposal(
+            "source.article",
+            serde_json::json!({"title": "Other", "url": "https://elsewhere.example.org/x", "content_hash": other}),
+            "article",
+        )];
+        resolve_set(&mut set2, &table, &cfg(), &mut ctx());
+        assert_eq!(set2[0].resolution, Some(Resolution::New));
+    }
+
+    #[test]
+    fn resolver_fills_entity_on_mentions_and_participants() {
+        let known = person("Sara Chen", Some("Acme"), Some("CEO"));
+        let known_id = known.entity.clone();
+        let table = Table {
+            people: vec![known],
+            ..Default::default()
+        };
+        let mut sara = proposal(
+            "person.generic",
+            serde_json::json!({"display_name": "Sara Chen", "organization": "Acme", "role": "CEO"}),
+            "person-1",
+        );
+        sara.refs = vec![];
+        let mut newcomer = proposal(
+            "person.generic",
+            serde_json::json!({"display_name": "Quinn Novak", "organization": "Acme"}),
+            "person-2",
+        );
+        newcomer.refs = vec![];
+        let mut article = proposal(
+            "source.article",
+            serde_json::json!({
+                "title": "Acme names leaders",
+                "url": "https://example.com/acme-leaders",
+                "mentions": [
+                    {"display": "Sara Chen", "context": "chief executive"},
+                    {"display": "Quinn Novak", "context": "new hire"}
+                ]
+            }),
+            "article",
+        );
+        article.refs = vec![
+            CrossRef {
+                field: "mentions[0].entity".into(),
+                local_ref: "person-1".into(),
+            },
+            CrossRef {
+                field: "mentions[1].entity".into(),
+                local_ref: "person-2".into(),
+            },
+        ];
+        let mut event = proposal(
+            "event.business",
+            serde_json::json!({"title": "Acme hires", "kind": "hire", "participants": [{"display": "Sara Chen", "role": "employer"}]}),
+            "event-1",
+        );
+        event.refs = vec![CrossRef {
+            field: "participants[0].entity".into(),
+            local_ref: "person-1".into(),
+        }];
+        let mut set = vec![article, sara, newcomer, event];
+        resolve_set(&mut set, &table, &cfg(), &mut ctx());
+        let article = set
+            .iter()
+            .find(|p| p.local_ref.as_deref() == Some("article"))
+            .unwrap();
+        assert_eq!(article.claim["mentions"][0]["entity"], known_id.as_str());
+        assert!(
+            article.claim["mentions"][1].get("entity").is_none(),
+            "new person stays unfilled until accept"
+        );
+        let event = set
+            .iter()
+            .find(|p| p.local_ref.as_deref() == Some("event-1"))
+            .unwrap();
+        assert_eq!(event.claim["participants"][0]["entity"], known_id.as_str());
+        let sara = set
+            .iter()
+            .find(|p| p.local_ref.as_deref() == Some("person-1"))
+            .unwrap();
+        assert_eq!(sara.resolution, Some(Resolution::Existing));
+    }
+
+    #[test]
+    fn digest_notes_for_the_same_publication_and_day_resolve_to_one_entity() {
+        let mut existing = person("Example Ledger digest 2026-09-20", None, None);
+        existing.matched_on = vec!["display_name".into()];
+        let table = Table {
+            // Notes have no people/orgs pools; reuse `orgs` for the
+            // exact-title lookup the table performs on any non-people family.
+            orgs: vec![existing.clone()],
+            ..Default::default()
+        };
+        struct NoteTable(Table);
+        impl CandidateLookup for NoteTable {
+            fn family_for_predicate(&self, predicate: &PredicateName) -> Option<FamilyEntry> {
+                if predicate.as_str() == "note" {
+                    Some(FamilyEntry {
+                        family: "notes".into(),
+                        predicate: "note".into(),
+                        name_field: "title".into(),
+                    })
+                } else {
+                    self.0.family_for_predicate(predicate)
+                }
+            }
+            fn candidates(
+                &self,
+                f: &FamilyEntry,
+                d: &str,
+                k: &str,
+                kind: BlockingKey,
+            ) -> Vec<CandidateInfo> {
+                self.0.candidates(f, d, k, kind)
+            }
+            fn different_from(&self, e: &EntityId) -> Vec<EntityId> {
+                self.0.different_from(e)
+            }
+            fn follow_same_as(&self, e: &EntityId) -> EntityId {
+                self.0.follow_same_as(e)
+            }
+            fn prior_count(&self, f: &str, e: &EntityId) -> u32 {
+                self.0.prior_count(f, e)
+            }
+            fn record_sighting(&self, k: &str, s: &str, d: &str) -> Option<Sighting> {
+                self.0.record_sighting(k, s, d)
+            }
+            fn display_of(&self, e: &EntityId) -> Option<String> {
+                self.0.display_of(e)
+            }
+        }
+        let mut set = vec![proposal(
+            "note",
+            serde_json::json!({"title": "Example Ledger digest 2026-09-20", "references": ["a"]}),
+            "digest",
+        )];
+        resolve_set(&mut set, &NoteTable(table), &cfg(), &mut ctx());
+        assert_eq!(set[0].resolution, Some(Resolution::Existing));
+        assert_eq!(set[0].entity.as_ref().unwrap(), &existing.entity);
     }
 }

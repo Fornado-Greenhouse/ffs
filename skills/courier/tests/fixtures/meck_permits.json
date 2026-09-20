@@ -1,0 +1,37 @@
+{
+ "features": [
+  {
+   "attributes": {
+    "objectid": 1,
+    "permit_number": "BLDG-2026-018812",
+    "permit_type": "Commercial Alteration",
+    "issue_date": 1757894400000,
+    "building_construction_cost_customer": "11,600,000",
+    "owner_name": "Target Corporation",
+    "project_name": "Interior alteration, store 1284",
+    "owner_address": "9905 Sample Rd, Charlotte, NC"
+   }
+  },
+  {
+   "attributes": {
+    "objectid": 2,
+    "permit_number": "BLDG-2026-018900",
+    "permit_type": "Commercial New Construction",
+    "issue_date": 1757980800000,
+    "building_construction_cost_customer": "41,100,000",
+    "owner_name": "Digital Moores Chapel LLC",
+    "project_name": "Data center upfit",
+    "owner_address": "1 Chapel Loop, Charlotte, NC"
+   }
+  },
+  {
+   "attributes": {
+    "objectid": 3,
+    "permit_number": "",
+    "permit_type": "Sign",
+    "issue_date": null,
+    "building_construction_cost_customer": "500"
+   }
+  }
+ ]
+}

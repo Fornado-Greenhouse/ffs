@@ -80,6 +80,21 @@ pub struct Dispatcher {
     /// attribute atoms back to their source, and by revocation to
     /// drop a peer's mount when their capability is rescinded.
     pub peer_mounts: Arc<dyn PeerMountStore>,
+    /// The substrate's data directory, when known. Read by
+    /// `health.summary` and `courier.status` for the courier's
+    /// last-run file (task_40). `None` in tests that never touch it.
+    pub data_dir: Option<std::path::PathBuf>,
+    /// Hook for invoking daemon-hosted skills by name (`courier.run`).
+    /// Production wires the skills host; tests inject a stub.
+    pub skill_invoker: Option<Arc<dyn SkillInvoker>>,
+}
+
+/// Invoke a daemon-hosted skill by bundle name with a JSON input and
+/// return its result verbatim. The daemon binary implements this over
+/// `ffs-skills-host`; tests use an in-process stub.
+#[async_trait::async_trait]
+pub trait SkillInvoker: Send + Sync {
+    async fn invoke(&self, skill: &str, input: Value) -> Result<Value, String>;
 }
 
 /// Abstraction over the scribe extractor. The daemon binary wires
@@ -99,6 +114,39 @@ pub trait ScribeExtractor: Send + Sync {
 pub enum ScribeExtractError {
     #[error("scribe failed: {0}")]
     Failed(String),
+}
+
+/// One `entity.search` result row while ranking: the best tier seen
+/// for an entity and the hit it produced.
+struct SearchRow {
+    hit: EntitySearchHit,
+    tier: u8,
+}
+
+/// The string and string-array property names a claim schema declares
+/// (`entity.search` v2 matches across exactly these; no field names
+/// live in code).
+fn schema_string_fields(schema: &Value) -> (Vec<String>, Vec<String>) {
+    let mut strings = Vec::new();
+    let mut arrays = Vec::new();
+    if let Some(props) = schema.get("properties").and_then(|v| v.as_object()) {
+        for (name, spec) in props {
+            match spec.get("type").and_then(|t| t.as_str()) {
+                Some("string") => strings.push(name.clone()),
+                Some("array")
+                    if spec
+                        .get("items")
+                        .and_then(|i| i.get("type"))
+                        .and_then(|t| t.as_str())
+                        == Some("string") =>
+                {
+                    arrays.push(name.clone())
+                }
+                _ => {}
+            }
+        }
+    }
+    (strings, arrays)
 }
 
 impl Dispatcher {
@@ -146,6 +194,8 @@ impl Dispatcher {
             "ingest.accept" => self.ingest_accept(req.params).await,
             "ingest.reject" => self.ingest_reject(req.params).await,
             "entity.search" => self.entity_search(req.params).await,
+            "courier.run" => self.courier_run(req.params).await,
+            "courier.status" => self.courier_status().await,
             other => Err(ApiError {
                 code: ERR_METHOD_NOT_FOUND,
                 message: format!("unknown method: {other}"),
@@ -600,7 +650,20 @@ impl Dispatcher {
                                     })
                                 })
                             });
-                        claim = merge_additive(&head.claim, &claim, &name_field);
+                        // A record keyed by its URL or content hash is the
+                        // same record re-read: its scalars refresh (a changed
+                        // title supersedes), arrays still merge. Everything
+                        // else merges additively and keeps the head's scalars.
+                        let keyed = proposal.candidates.first().is_some_and(|c| {
+                            c.matched_on
+                                .iter()
+                                .any(|m| m == "url" || m == "content_hash")
+                        });
+                        claim = if keyed {
+                            merge_refresh(&head.claim, &claim)
+                        } else {
+                            merge_additive(&head.claim, &claim, &name_field)
+                        };
                         if let Some(m) = mention {
                             if is_rename {
                                 claim[name_field.as_str()] = Value::String(m.clone());
@@ -723,10 +786,16 @@ impl Dispatcher {
         to_value(&serde_json::json!({"rejected": p.submission_id}))
     }
 
-    /// Search entities by name across loaded predicates. Returns
-    /// matches (case-insensitive substring on the canonical name
-    /// field) capped at `limit` (default 50). Mirrors the entity-
-    /// name search hook in the Obsidian quick-switcher.
+    /// `entity.search` v2 (task_40, ADR-030): the resolver's candidate
+    /// generator exposed as an RPC. Matches the query against every
+    /// string and string-array property the predicate's claim schema
+    /// declares (no field names in code), plus a full-text tier over
+    /// claim payloads via the store's FTS index. Hits are ranked by
+    /// tier (exact canonical name, alias, other field, full text), an
+    /// exact-match bonus, and the commonness prior, then newest first.
+    /// `entity.same_as` chains are followed so a losing entity's name
+    /// returns the winner; a `context_entity`'s `different_from`
+    /// assertions exclude candidates; every hit is capability-filtered.
     async fn entity_search(&self, params: Value) -> Result<Value, ApiError> {
         let params = if params.is_null() {
             serde_json::json!({})
@@ -734,85 +803,303 @@ impl Dispatcher {
             params
         };
         let p: EntitySearchParams = parse_params(params)?;
-        let needle = p.query.trim().to_lowercase();
+        let needle_raw = p.query.trim().to_string();
+        let needle = needle_raw.to_lowercase();
         if needle.is_empty() {
             return to_value(&serde_json::json!({"results": Vec::<Value>::new()}));
         }
         let limit = p.limit.unwrap_or(50).min(1000);
-
-        // Iterate the registry's family table (ADR-028): every spec
-        // that declares `[path]` names the claim field that carries
-        // the display name, so no predicate is special-cased here.
-        // Predicates without a family have no searchable name.
-        let mut results: Vec<EntitySearchHit> = Vec::new();
         let now = current_iso8601();
         let index = self.renderer.path_index();
-        for family in self.registry.families() {
+        let excluded: Vec<EntityId> = match p.context_entity.as_deref() {
+            Some(ctx) => self
+                .store
+                .different_from(&EntityId::new(ctx), None)
+                .map_err(store_err)?,
+            None => Vec::new(),
+        };
+        let prior_form = ffs_core::resolve::normalized_name_key(&needle_raw);
+        let priors: std::collections::HashMap<String, u32> = self
+            .store
+            .prior_counts(&prior_form)
+            .map_err(store_err)?
+            .into_iter()
+            .map(|(e, c)| (e.as_str().to_string(), c))
+            .collect();
+
+        // One candidate row per (winner) entity; the best tier wins.
+        let mut rows: std::collections::HashMap<String, SearchRow> =
+            std::collections::HashMap::new();
+
+        let families: Vec<ffs_core::predicate::FamilyEntry> = self
+            .registry
+            .families()
+            .into_iter()
+            .filter(|f| p.predicate.as_deref().is_none_or(|q| q == f.predicate))
+            .filter(|f| p.family.as_deref().is_none_or(|q| q == f.family))
+            .collect();
+
+        for family in &families {
             let pred = PredicateName::new(&family.predicate);
+            let Some(spec) = self.registry.get(&family.predicate) else {
+                continue;
+            };
+            let (string_fields, array_fields) = schema_string_fields(&spec.claim_schema);
+            let path_family = ffs_core::projection::PathFamily::from_entry(family);
+            // Newest atom per entity is the head at "now".
+            let mut seen_entities: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
             let atoms = self
                 .store
-                .list_by_predicate(&pred, None, limit)
+                .list_by_predicate(&pred, None, 10_000)
                 .map_err(store_err)?;
             for env in atoms {
-                if results.len() >= limit {
-                    break;
+                if !seen_entities.insert(env.entity.as_str().to_string()) {
+                    continue;
                 }
-                let name_field = family.name_field.as_str();
-                let Some(display) = env.claim.get(name_field).and_then(|v| v.as_str()) else {
+                let Some(display) = env
+                    .claim
+                    .get(family.name_field.as_str())
+                    .and_then(|v| v.as_str())
+                else {
                     continue;
                 };
-                // task_45: an alias hit counts too (ADR-030 alias table).
-                let matched_on = if display.to_lowercase().contains(&needle) {
-                    "display_name"
-                } else if env
-                    .claim
-                    .get("aliases")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|a| {
-                        a.iter().any(|v| {
-                            v.as_str()
+                // Tier 0: canonical name. Tier 1: aliases. Tier 2: any
+                // other schema-declared string or string-array field.
+                let mut tier: Option<(u8, &str, bool)> = None;
+                let dl = display.to_lowercase();
+                if dl.contains(&needle) {
+                    tier = Some((0, "display_name", dl == needle));
+                } else if let Some(aliases) = env.claim.get("aliases").and_then(|v| v.as_array())
+                    && array_fields.iter().any(|f| f == "aliases")
+                {
+                    let mut exact = false;
+                    let hit = aliases.iter().any(|v| {
+                        v.as_str().is_some_and(|s| {
+                            let sl = s.to_lowercase();
+                            if sl == needle {
+                                exact = true;
+                            }
+                            sl.contains(&needle)
+                        })
+                    });
+                    if hit {
+                        tier = Some((1, "alias", exact));
+                    }
+                }
+                if tier.is_none() {
+                    let other_hit = string_fields
+                        .iter()
+                        .filter(|f| f.as_str() != family.name_field)
+                        .any(|f| {
+                            env.claim
+                                .get(f.as_str())
+                                .and_then(|v| v.as_str())
                                 .is_some_and(|s| s.to_lowercase().contains(&needle))
                         })
-                    })
-                {
-                    "alias"
-                } else {
+                        || array_fields
+                            .iter()
+                            .filter(|f| f.as_str() != "aliases")
+                            .any(|f| {
+                                env.claim
+                                    .get(f.as_str())
+                                    .and_then(|v| v.as_array())
+                                    .is_some_and(|a| {
+                                        a.iter().any(|v| {
+                                            v.as_str()
+                                                .is_some_and(|s| s.to_lowercase().contains(&needle))
+                                        })
+                                    })
+                            });
+                    if other_hit {
+                        tier = Some((2, "other", false));
+                    }
+                }
+                let Some((tier_no, matched, exact)) = tier else {
                     continue;
                 };
-                // Capability-filter so unauthorized hits don't leak.
-                let target = Target {
-                    predicate: env.predicate.clone(),
-                    entity: env.entity.clone(),
-                    classification: Some(env.classification.clone()),
-                    tier: None,
-                };
-                let decision = capability::evaluate(
-                    &*self.store,
-                    &self.owner,
-                    capability::Action::Read,
-                    &target,
+                self.push_search_row(
+                    &mut rows,
+                    &env,
+                    family,
+                    &path_family,
+                    &*index,
+                    tier_no,
+                    matched,
+                    exact,
+                    &priors,
+                    &excluded,
                     &now,
-                )
-                .map_err(eval_err)?;
-                if !matches!(decision, Decision::Allow { .. }) {
+                )?;
+            }
+
+            // Tier 3: full text over claim payloads (FTS5 in SQLite;
+            // substring scan in the in-memory store). Plain words go
+            // through as-is (FTS5 ANDs the tokens); anything with MATCH
+            // syntax characters is quoted as a phrase.
+            let fts_query = if needle_raw
+                .chars()
+                .all(|c| c.is_alphanumeric() || c.is_whitespace())
+            {
+                needle_raw.clone()
+            } else {
+                format!("\"{}\"", needle_raw.replace('"', " "))
+            };
+            for hash in self
+                .store
+                .search_fts(&fts_query, limit.saturating_mul(4).max(20))
+                .map_err(store_err)?
+            {
+                let Some(atom) = self.store.get(&hash).map_err(store_err)? else {
+                    continue;
+                };
+                if atom.predicate != pred {
                     continue;
                 }
-                let basename = index
-                    .basename_for(&family.family, &env.entity)
-                    .unwrap_or(None);
-                results.push(EntitySearchHit {
-                    entity: env.entity.clone(),
-                    predicate: env.predicate.clone(),
-                    display_name: display.to_string(),
-                    basename,
-                    matched_on: vec![matched_on.to_string()],
-                });
-            }
-            if results.len() >= limit {
-                break;
+                let Some(head) = self
+                    .store
+                    .head_of_chain(&atom.entity, &pred, None)
+                    .map_err(store_err)?
+                else {
+                    continue;
+                };
+                self.push_search_row(
+                    &mut rows,
+                    &head,
+                    family,
+                    &path_family,
+                    &*index,
+                    3,
+                    "fts",
+                    false,
+                    &priors,
+                    &excluded,
+                    &now,
+                )?;
             }
         }
+
+        let mut results: Vec<(u8, EntitySearchHit)> =
+            rows.into_values().map(|r| (r.tier, r.hit)).collect();
+        results.sort_by(|(ta, a), (tb, b)| {
+            ta.cmp(tb)
+                .then_with(|| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    b.tx_time
+                        .as_ref()
+                        .map(|t| t.as_str().to_string())
+                        .cmp(&a.tx_time.as_ref().map(|t| t.as_str().to_string()))
+                })
+                .then_with(|| a.entity.as_str().cmp(b.entity.as_str()))
+        });
+        let results: Vec<EntitySearchHit> =
+            results.into_iter().map(|(_, h)| h).take(limit).collect();
         to_value(&serde_json::json!({"results": results}))
+    }
+
+    /// Fold one matching head atom into the search rows: follow
+    /// `same_as` to the winner, drop excluded entities, capability-
+    /// check the winner's head, compute score and path, and keep the
+    /// best tier per entity.
+    #[allow(clippy::too_many_arguments)]
+    fn push_search_row(
+        &self,
+        rows: &mut std::collections::HashMap<String, SearchRow>,
+        env: &ffs_core::AtomEnvelope,
+        family: &ffs_core::predicate::FamilyEntry,
+        path_family: &ffs_core::projection::PathFamily,
+        index: &dyn ffs_core::PathIndex,
+        tier: u8,
+        matched: &str,
+        exact: bool,
+        priors: &std::collections::HashMap<String, u32>,
+        excluded: &[EntityId],
+        now: &Iso8601,
+    ) -> Result<(), ApiError> {
+        let pred = PredicateName::new(&family.predicate);
+        let winner = self
+            .store
+            .follow_same_as(&env.entity, None)
+            .map_err(store_err)?;
+        if excluded.contains(&winner) {
+            return Ok(());
+        }
+        // The winner's own head carries the display and classification
+        // that the capability check and the hit must reflect.
+        let head = if winner == env.entity {
+            env.clone()
+        } else {
+            match self
+                .store
+                .head_of_chain(&winner, &pred, None)
+                .map_err(store_err)?
+            {
+                Some(h) => h,
+                None => env.clone(),
+            }
+        };
+        let target = Target {
+            predicate: head.predicate.clone(),
+            entity: winner.clone(),
+            classification: Some(head.classification.clone()),
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Read,
+            &target,
+            now,
+        )
+        .map_err(eval_err)?;
+        if !matches!(decision, Decision::Allow { .. }) {
+            return Ok(());
+        }
+        let key = winner.as_str().to_string();
+        if let Some(existing) = rows.get(&key)
+            && existing.tier <= tier
+        {
+            return Ok(());
+        }
+        let display = head
+            .claim
+            .get(family.name_field.as_str())
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let basename = index.basename_for(&family.family, &winner).unwrap_or(None);
+        let path = basename
+            .as_deref()
+            .and_then(|b| ffs_core::projection::path_for_basename(path_family, b));
+        let base = match tier {
+            0 => 100.0,
+            1 => 80.0,
+            2 => 40.0,
+            _ => 20.0,
+        };
+        let prior = priors.get(&key).copied().unwrap_or(0);
+        let score = base + if exact { 5.0 } else { 0.0 } + (1.0 + f64::from(prior)).ln();
+        rows.insert(
+            key,
+            SearchRow {
+                tier,
+                hit: EntitySearchHit {
+                    entity: winner,
+                    predicate: head.predicate.clone(),
+                    display_name: display,
+                    basename,
+                    path,
+                    matched_on: vec![matched.to_string()],
+                    score,
+                    tx_time: Some(head.tx_time.clone()),
+                },
+            },
+        );
+        Ok(())
     }
 
     async fn capability_evaluate(&self, params: Value) -> Result<Value, ApiError> {
@@ -883,8 +1170,64 @@ impl Dispatcher {
             questions: 0,
             drift_flags,
             atom_count: self.atom_count_estimate(),
+            courier: self.read_courier_status(),
         };
         to_value(&summary)
+    }
+
+    /// The courier's last-tick counters from
+    /// `$FFS_DATA_DIR/ingest/.courier/last_run.json`, or `None` when
+    /// the file is absent, unreadable, or the data dir is unknown.
+    fn read_courier_status(&self) -> Option<CourierStatus> {
+        let path = self
+            .data_dir
+            .as_ref()?
+            .join("ingest")
+            .join(".courier")
+            .join("last_run.json");
+        let text = std::fs::read_to_string(&path).ok()?;
+        match serde_json::from_str::<CourierStatus>(&text) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "courier last_run.json did not parse");
+                None
+            }
+        }
+    }
+
+    /// `courier.status`: the same object `health.summary.courier`
+    /// carries, or `null`.
+    async fn courier_status(&self) -> Result<Value, ApiError> {
+        to_value(&self.read_courier_status())
+    }
+
+    /// `courier.run { dry_run? }`: invoke one courier tick through the
+    /// skills host and return the skill's result verbatim. Until the
+    /// daemon scheduler (task_41) drives the courier, this is how
+    /// `ffs courier run` triggers a tick by hand.
+    async fn courier_run(&self, params: Value) -> Result<Value, ApiError> {
+        let params = if params.is_null() {
+            serde_json::json!({})
+        } else {
+            params
+        };
+        let p: CourierRunParams = parse_params(params)?;
+        let Some(invoker) = self.skill_invoker.as_ref() else {
+            return Err(ApiError {
+                code: ERR_NOT_IMPLEMENTED,
+                message: "courier.run: no skills host is wired into this daemon".into(),
+                data: None,
+            });
+        };
+        let input = serde_json::json!({"op": "tick", "dry_run": p.dry_run});
+        invoker
+            .invoke("courier", input)
+            .await
+            .map_err(|reason| ApiError {
+                code: ERR_NOT_IMPLEMENTED,
+                message: format!("courier.run: {reason}"),
+                data: None,
+            })
     }
 
     fn atom_count_estimate(&self) -> u64 {
@@ -1430,6 +1773,21 @@ pub fn merge_additive(head: &Value, proposal: &Value, name_field: &str) -> Value
                     }
                 }
             },
+        }
+    }
+    out
+}
+
+/// Merge for a re-read of the same record (task_40): the proposal's
+/// scalars win, arrays merge as in `merge_additive`, and keys only the
+/// head knows are kept.
+pub fn merge_refresh(head: &Value, proposal: &Value) -> Value {
+    let mut out = merge_additive(head, proposal, "");
+    if let (Some(out_obj), Some(prop_obj)) = (out.as_object_mut(), proposal.as_object()) {
+        for (k, v) in prop_obj {
+            if !v.is_array() && !v.is_null() {
+                out_obj.insert(k.clone(), v.clone());
+            }
         }
     }
     out

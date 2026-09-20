@@ -412,7 +412,9 @@ def _article_note_claim(submission: Submission, hint: str) -> Dict[str, Any]:
 
 
 
-def _claim_from_frontmatter(submission: Submission, predicate: str, registry: Any) -> Optional[Dict[str, Any]]:
+def _claim_from_frontmatter(
+    submission: Submission, predicate: str, registry: Any, warnings: Optional[List[str]] = None
+) -> Optional[Dict[str, Any]]:
     """Schema-driven claim from frontmatter for a hinted, registered
     predicate. Copies only keys the claim_schema declares as properties,
     requires every schema-required key to be present, and drops the body
@@ -450,18 +452,47 @@ def _claim_from_frontmatter(submission: Submission, predicate: str, registry: An
     for required in schema.get("required", []):
         if required not in claim:
             return None
-    body = submission.body_text().strip() if hasattr(submission, "body_text") else ""
+    body = _prose_body(submission)
     if body:
         for candidate in ("description", "body", "summary"):
             spec = props.get(candidate)
             if isinstance(spec, dict) and spec.get("type") == "string" and candidate not in claim:
-                claim[candidate] = body
+                from contract import truncate_body
+
+                text, warning = truncate_body(body)
+                claim[candidate] = text
+                if warning and warnings is not None:
+                    warnings.append(warning)
+                break
+    refs_spec = props.get("references")
+    if isinstance(refs_spec, dict) and refs_spec.get("type") == "array" and "references" not in claim:
+        from contract import parse_references
+
+        for sec_name, lines in submission.sections:
+            if sec_name.strip().lower() == "references":
+                refs = parse_references(lines)
+                if refs:
+                    claim["references"] = refs
                 break
     from validate import validate_claim  # local import keeps module load order simple
 
     if validate_claim(claim, schema) is not None:
         return None
     return claim
+
+
+_CONTRACT_SECTIONS = ("mentions", "events", "references")
+
+
+def _prose_body(submission: Submission) -> str:
+    """The body text minus the contract's structured sections, so
+    `## Mentions` bullets never end up inside a summary field."""
+    return "\n".join(
+        line
+        for name, lines in submission.sections
+        if name.strip().lower() not in _CONTRACT_SECTIONS
+        for line in lines
+    ).strip()
 
 def apply_hint(
     submission: Submission,
@@ -483,8 +514,26 @@ def apply_hint(
         kept = [p for p in result.proposals if p.get("predicate") == hint]
         if kept:
             return EngineResult(proposals=kept, warnings=list(result.warnings))
-        built = _claim_from_frontmatter(submission, hint, registry)
+        hint_warnings: List[str] = []
+        built = _claim_from_frontmatter(submission, hint, registry, hint_warnings)
         if built is not None:
+            from contract import article_supports_mentions, build_article_set
+
+            if article_supports_mentions(registry, hint):
+                try:
+                    proposals, set_warnings = build_article_set(
+                        submission, built, hint, registry, engine_name, model
+                    )
+                except Exception as e:  # noqa: BLE001 - never sink a submission on a parse edge
+                    log("warn", f"article set build degraded: {e}")
+                    proposals, set_warnings = [], [f"article set build degraded: {e}"]
+                if proposals:
+                    if hint_warnings:
+                        proposals[0]["rationale"] += "; " + "; ".join(hint_warnings)
+                    return EngineResult(
+                        proposals=proposals,
+                        warnings=list(result.warnings) + hint_warnings + set_warnings,
+                    )
             url = built.get("url") if isinstance(built.get("url"), str) else None
             proposal = make_proposal(
                 hint,
@@ -497,7 +546,9 @@ def apply_hint(
                 local_ref="hint",
                 extra_provenance=[source_article_provenance(submission, url)] if url else None,
             )
-            return EngineResult(proposals=[proposal], warnings=list(result.warnings))
+            if hint_warnings:
+                proposal["rationale"] += "; " + "; ".join(hint_warnings)
+            return EngineResult(proposals=[proposal], warnings=list(result.warnings) + hint_warnings)
         return EngineResult(
             proposals=list(result.proposals),
             warnings=list(result.warnings)

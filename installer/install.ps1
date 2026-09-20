@@ -149,6 +149,14 @@ $ResolutionSeed = Join-Path $StarterRoot 'config\resolution.toml'
 if (Test-Path $ResolutionSeed) {
     Install-Seed $ResolutionSeed (Join-Path $DataDir 'config\resolution.toml')
 }
+# Courier configuration (task_40): mailbox/feeds and the owner's
+# per-publisher policy (ADR-035). Seeded once, never overwritten.
+foreach ($cfg in @('courier.toml', 'sources.toml')) {
+    $seed = Join-Path $StarterRoot "config\$cfg"
+    if (Test-Path $seed) {
+        Install-Seed $seed (Join-Path $DataDir "config\$cfg")
+    }
+}
 
 # -------- skill bundles --------
 
@@ -156,7 +164,7 @@ $SkillsRoot = Join-Path $ScriptHome 'skills'
 if (-not (Test-Path $SkillsRoot)) {
     $SkillsRoot = Join-Path $ScriptHome '..\skills'
 }
-foreach ($skill in @('auditor', 'librarian', 'scribe', '_lib')) {
+foreach ($skill in @('auditor', 'librarian', 'scribe', 'courier', '_lib')) {
     $srcSkill = Join-Path $SkillsRoot $skill
     if (Test-Path $srcSkill) {
         $dstSkill = Join-Path $DataDir "skills\$skill"

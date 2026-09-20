@@ -1,0 +1,85 @@
+# courier.toml — what the courier reads and where it writes (task_40).
+#
+# Installed to $FFS_DATA_DIR/config/courier.toml. Owner-edited. No
+# secrets here: the mailbox password is the OS keychain item
+# `ffs.courier.<host>` (or FFS_COURIER_MAIL_PASSWORD for tests), and
+# a key named password, token, secret, or cookie makes the loader
+# refuse the file. Per-publisher policy (intake and fetch) lives in
+# sources.toml, not here.
+
+[mailbox]
+host = "imap.gmail.com"        # Google Workspace: use an app password (2-step verification required)
+port = 993
+folder = "INBOX"
+auth = "app_password"          # "oauth" is accepted but not implemented in this release
+user = ""                      # the mailbox address, e.g. you@yourdomain.example
+mark_seen = true               # mark a digest seen only after every item's file was written
+
+# Each source pairs a sender with a publisher key from sources.toml.
+[[mailbox.source]]
+sender = "reply@news.bizjournals.com"
+subject_filter = ""
+publisher = "bizjournals"
+
+[[mailbox.source]]
+sender = "hello@clttoday.com"
+publisher = "clttoday"
+
+# Public-record and permitted feeds (probe: docs/research/spikes/task-43-intake-reality.md § 8).
+# Turn a feed on by uncommenting it; `since` is the initial watermark.
+
+# [[feed]]
+# name = "meck_permits"
+# adapter = "meck_permits"
+# publication = "Mecklenburg County permits"
+# endpoint = "https://meckgis.mecklenburgcountync.gov/server/rest/services/AccelaAllPermits/FeatureServer/0/query"
+# since = "2026-09-01"
+# [feed.filters]
+# min_cost = 1000000
+# max_records = 200
+
+# [[feed]]
+# name = "charlotte_legistar"
+# adapter = "charlotte_legistar"
+# publication = "Charlotte City Council"
+# endpoint = "https://webapi.legistar.com/v1/charlottenc"
+# since = "2026-09-01"
+
+# [[feed]]
+# name = "sec_edgar"
+# adapter = "sec_edgar"
+# publication = "SEC EDGAR"
+# since = "2026-09-01"
+# [feed.filters]
+# q = "Charlotte, North Carolina"
+# forms = ["8-K"]
+
+# [[feed]]
+# name = "duke_energy_news"
+# adapter = "rss"
+# publication = "Duke Energy newsroom"
+# url = "https://news.duke-energy.com/rss.xml"
+
+[edgar]
+user_agent = ""                # REQUIRED when a sec_edgar feed is on: "Your Name you@example.com" (SEC fair-access policy)
+max_rps = 8                    # ceiling 10
+
+[output]
+digest_title_prefix = ""
+
+# Tracking wrappers: links whose real URL rides in a base64url path
+# segment. segment_index counts non-empty path segments from zero.
+[[tracking.wrapper]]
+host_pattern = "link.bizjournals.com"
+kind = "base64_path_segment"
+segment_index = 2
+
+[scribe]
+body_limit = 4000              # the scribe truncates longer bodies with a parse-warning
+
+# [[feed]]
+# name = "truist_news"
+# adapter = "rss"
+# publication = "Truist newsroom"
+# url = "https://media.truist.com/news-releases?pagetemplate=rss"
+# since = "2026-09-01"

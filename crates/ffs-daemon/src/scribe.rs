@@ -35,7 +35,7 @@ use ffs_core::{
 };
 use ffs_skills_host::{SkillError, SkillsHost};
 
-use crate::dispatch::{ScribeExtractError, ScribeExtractor};
+use crate::dispatch::{ScribeExtractError, ScribeExtractor, SkillInvoker};
 use crate::resolver::{StoreLookup, SubmissionContext, resolve_set};
 
 /// Production `ScribeExtractor` that forwards extraction calls to
@@ -457,6 +457,32 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
         out.push(((hi << 4) | lo) as u8);
     }
     Some(out)
+}
+
+/// `SkillInvoker` over the skills host: `courier.run` (task_40) and any
+/// future by-name skill trigger go through here. Errors are flattened
+/// to strings; the dispatcher maps them to an RPC error.
+pub struct SkillsHostInvoker {
+    host: Arc<SkillsHost>,
+}
+
+impl SkillsHostInvoker {
+    pub fn new(host: Arc<SkillsHost>) -> Self {
+        Self { host }
+    }
+}
+
+#[async_trait]
+impl SkillInvoker for SkillsHostInvoker {
+    async fn invoke(&self, skill: &str, input: Value) -> Result<Value, String> {
+        let process = self.host.get(skill).ok_or_else(|| {
+            format!("skill `{skill}` is not installed under $FFS_DATA_DIR/skills/")
+        })?;
+        process
+            .invoke(input)
+            .await
+            .map_err(|e| format!("skill `{skill}` failed: {}", translate_skill_error(e)))
+    }
 }
 
 #[cfg(test)]

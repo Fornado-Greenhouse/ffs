@@ -207,6 +207,16 @@ pub struct EntitySearchParams {
     pub query: String,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Exact predicate filter (task_40, `entity.search` v2).
+    #[serde(default)]
+    pub predicate: Option<String>,
+    /// Path-family filter (`contacts`, `orgs`, ...; ADR-028).
+    #[serde(default)]
+    pub family: Option<String>,
+    /// An entity id whose `entity.different_from` assertions exclude
+    /// candidates (ADR-030 hard block).
+    #[serde(default)]
+    pub context_entity: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -219,9 +229,44 @@ pub struct EntitySearchHit {
     /// `Sara_Chen_(Acme).md` rather than guessing from the display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub basename: Option<String>,
-    /// How the query matched: `display_name` or `alias` (task_45).
+    /// Projection path (`<family>/by-name/<L>/<basename>.md`) when the
+    /// entity has a family and a basename (task_40).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The tier that produced the hit, first: `display_name`, `alias`,
+    /// `fts`, or `other` (any other schema-declared string field).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub matched_on: Vec<String>,
+    /// Ranking score: tier base plus exact-match bonus plus the
+    /// commonness prior `ln(1 + accepted resolutions)` (ADR-030).
+    #[serde(default)]
+    pub score: f64,
+    /// Head atom's `tx_time`, the final tie-breaker (newest first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_time: Option<Iso8601>,
+}
+
+/// What the courier skill wrote after its last tick
+/// (`$FFS_DATA_DIR/ingest/.courier/last_run.json`, task_40). Surfaced
+/// unchanged by `health.summary.courier` and `courier.status`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct CourierStatus {
+    #[serde(default)]
+    pub last_run: Option<String>,
+    #[serde(default)]
+    pub items_seen: u64,
+    #[serde(default)]
+    pub files_written: u64,
+    #[serde(default)]
+    pub fetch_failures: u64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CourierRunParams {
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -288,4 +333,9 @@ pub struct HealthSummary {
     pub questions: u32,
     pub drift_flags: u32,
     pub atom_count: u64,
+    /// Courier's last-tick counters, or `null` when it has never run
+    /// (task_40). Serialized as null rather than omitted so the
+    /// auditor and the plugin can tell "no courier" from "old daemon".
+    #[serde(default)]
+    pub courier: Option<CourierStatus>,
 }

@@ -208,6 +208,94 @@ pub async fn health(socket: &Path, json: bool) -> Outcome {
     }
 }
 
+/// `ffs courier run [--dry-run]` — one courier tick through the daemon.
+/// Prints the files a dry run would submit (or wrote), the counters,
+/// and exits non-zero when the tick reported `last_error`.
+pub async fn courier_run(socket: &Path, dry_run: bool, json: bool) -> Outcome {
+    let params = serde_json::json!({"dry_run": dry_run});
+    match client::call(socket, "courier.run", params).await {
+        Ok(resp) => {
+            let failed = resp
+                .get("last_error")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let text = if json {
+                serde_json::to_string_pretty(&resp).unwrap_or_default() + "\n"
+            } else {
+                format_courier_run(&resp, dry_run)
+            };
+            match failed {
+                Some(err) => Outcome::err(EXIT_GENERAL, format!("{text}courier error: {err}\n")),
+                None => Outcome::ok(text),
+            }
+        }
+        Err(e) => map_client_err(e),
+    }
+}
+
+fn format_courier_run(v: &serde_json::Value, dry_run: bool) -> String {
+    let mut out = String::new();
+    let verb = if dry_run { "would submit" } else { "submitted" };
+    let list_key = if dry_run { "would_submit" } else { "submitted" };
+    let files: Vec<String> = v
+        .get(list_key)
+        .or_else(|| v.get("files"))
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|f| {
+                    f.as_str()
+                        .map(str::to_string)
+                        .or_else(|| f.get("path").and_then(|p| p.as_str()).map(str::to_string))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.push_str(&format!("{verb}: {}\n", files.len()));
+    for f in &files {
+        out.push_str(&format!("  {f}\n"));
+    }
+    for key in ["items_seen", "files_written", "fetch_failures"] {
+        if let Some(n) = v.get(key).and_then(|x| x.as_u64()) {
+            out.push_str(&format!("{key}: {n}\n"));
+        }
+    }
+    out
+}
+
+/// `ffs courier status` — the courier's last-run counters.
+pub async fn courier_status(socket: &Path, json: bool) -> Outcome {
+    match client::call(socket, "courier.status", serde_json::Value::Null).await {
+        Ok(resp) => {
+            if resp.is_null() {
+                return Outcome::ok(if json {
+                    "null\n".into()
+                } else {
+                    "courier has not run\n".into()
+                });
+            }
+            Outcome::ok(format_result(&resp, json, |v| {
+                Some(format!(
+                    "last_run: {}\nitems_seen: {}\nfiles_written: {}\nfetch_failures: {}\nlast_error: {}\n",
+                    v.get("last_run")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("never"),
+                    v.get("items_seen").and_then(|x| x.as_u64()).unwrap_or(0),
+                    v.get("files_written").and_then(|x| x.as_u64()).unwrap_or(0),
+                    v.get("fetch_failures")
+                        .and_then(|x| x.as_u64())
+                        .unwrap_or(0),
+                    v.get("last_error")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("none"),
+                ))
+            }))
+        }
+        Err(e) => map_client_err(e),
+    }
+}
+
 /// `ffs predicate inspect <name>` — print a predicate spec.
 pub async fn predicate_inspect(socket: &Path, name: &str) -> Outcome {
     let params = serde_json::json!({"name": name});

@@ -1,0 +1,36 @@
+{
+ "hits": {
+  "hits": [
+   {
+    "_id": "0001234567-26-000012:ex99.htm",
+    "_source": {
+     "display_names": [
+      "Example Bancorp (EXB)"
+     ],
+     "ciks": [
+      "1234567"
+     ],
+     "form": "8-K",
+     "file_date": "2026-09-14",
+     "items": "5.02,9.01",
+     "description": "The board appointed Jordan Reyes as Chief Financial Officer effective October 1."
+    }
+   },
+   {
+    "_id": "0007654321-26-000090:8k.htm",
+    "_source": {
+     "display_names": [
+      "Sample Energy Corp"
+     ],
+     "ciks": [
+      "7654321"
+     ],
+     "form": "8-K",
+     "file_date": "2026-09-13",
+     "items": "7.01",
+     "description": "Regulation FD disclosure."
+    }
+   }
+  ]
+ }
+}
