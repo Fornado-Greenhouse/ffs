@@ -49,7 +49,7 @@ use crate::multihash::Multihash;
 ///   working_set, and a placeholder `ingest_quarantine` table.
 /// - v2 (task_29): real `quarantine_submissions` + `quarantine_proposals`
 ///   tables that match the runtime `IngestQuarantine` trait shape.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Error)]
 pub enum StoreError {

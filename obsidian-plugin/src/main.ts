@@ -39,6 +39,7 @@ import {
   type PanelState,
   type ProposalItem,
   type ProposalPreview,
+  engineLabel,
   type PanelItem,
 } from "./summary.js";
 
@@ -509,6 +510,13 @@ class SummaryView extends ItemView {
       detail.createEl("div", {
         text: proposal.rationale,
         cls: "ffs-proposal-rationale",
+      });
+    }
+    const engine = engineLabel(proposal);
+    if (engine) {
+      detail.createEl("div", {
+        text: engine,
+        cls: "ffs-proposal-engine",
       });
     }
   }

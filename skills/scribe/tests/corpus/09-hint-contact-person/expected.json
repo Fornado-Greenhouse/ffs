@@ -1,0 +1,15 @@
+{
+  "filename": "Nora Quist.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Nora Quist",
+        "phone": "704-555-0177"
+      }
+    }
+  ],
+  "notes": "An explicit predicate hint naming a registered predicate targets that predicate. REQUIRED.",
+  "required": true,
+  "awaits": "predicate hint 36.4"
+}

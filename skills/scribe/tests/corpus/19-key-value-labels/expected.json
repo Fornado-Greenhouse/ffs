@@ -1,0 +1,17 @@
+{
+  "filename": "Amara Osei.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Amara Osei",
+        "phone": "980-555-0101"
+      },
+      "soft": {
+        "role": "Chief of Staff"
+      }
+    }
+  ],
+  "notes": "Field labels (First, Last, Title, Phone) must never be name candidates; the values assemble the name.",
+  "awaits": "hygiene fixes 36.8 (label stop-words, card parsing)"
+}

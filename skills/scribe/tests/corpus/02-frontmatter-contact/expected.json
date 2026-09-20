@@ -1,0 +1,20 @@
+{
+  "filename": "Priya Raman.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Priya Raman",
+        "notes": [
+          "Met at the Greenway cleanup",
+          "Runs a bakery co-op"
+        ]
+      },
+      "soft": {
+        "email": "priya@example.org"
+      }
+    }
+  ],
+  "notes": "Structured frontmatter contact with a Notes section; the pre-refactor happy path. REQUIRED.",
+  "required": true
+}

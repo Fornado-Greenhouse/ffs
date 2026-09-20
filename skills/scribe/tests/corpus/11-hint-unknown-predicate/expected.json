@@ -1,0 +1,14 @@
+{
+  "filename": "widgets.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "Widget inventory"
+      }
+    }
+  ],
+  "notes": "An unknown predicate hint must never raise; it falls back to note. REQUIRED.",
+  "required": true,
+  "awaits": "predicate hint 36.4"
+}

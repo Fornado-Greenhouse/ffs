@@ -1,0 +1,14 @@
+{
+  "filename": "Omar Haddad.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Omar Haddad",
+        "phone": "704-555-0123"
+      }
+    }
+  ],
+  "notes": "No name in the body at all; the filename is the name source (hygiene fix 1).",
+  "awaits": "hygiene fixes 36.8 (filename source)"
+}

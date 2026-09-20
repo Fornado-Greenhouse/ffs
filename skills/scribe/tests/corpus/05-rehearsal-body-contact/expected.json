@@ -1,0 +1,13 @@
+{
+  "filename": "untitled.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Dana Whitfield",
+        "phone": "919-555-0142"
+      }
+    }
+  ],
+  "notes": "The task_32 rehearsal shape: body-only contact with a phone, a date, and a venue line. Venue must be masked so the name is the person, not the club."
+}

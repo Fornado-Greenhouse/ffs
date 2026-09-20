@@ -1,0 +1,17 @@
+{
+  "filename": "Lena Marsh.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Lena Marsh",
+        "phone": "704-555-0199"
+      },
+      "soft": {
+        "role": "Landscape architect"
+      }
+    }
+  ],
+  "notes": "Key-value card in the same shape as the Jon Jones card, with a parenthesized phone that must normalize to dashed form.",
+  "awaits": "hygiene fixes 36.8"
+}

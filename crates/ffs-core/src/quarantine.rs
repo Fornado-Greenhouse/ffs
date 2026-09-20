@@ -58,6 +58,15 @@ pub struct Proposal {
     /// Short human-readable explanation of what the scribe inferred
     /// and why. Surfaced in the daily-health-summary.
     pub rationale: String,
+    /// Which extraction engine produced this proposal (ADR-026):
+    /// `"heuristic"` or `"llm"`. `None` for proposals that predate
+    /// task_36 or come from non-scribe sources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
+    /// Model identifier when `engine == "llm"`; empty or `None`
+    /// for the heuristic engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// A unit of work submitted to the ingest pipeline. Each submission
@@ -273,6 +282,8 @@ mod tests {
             claim: serde_json::json!({"display_name": "Sara"}),
             provenance: vec![],
             rationale: "extracted from frontmatter".into(),
+            engine: Some("heuristic".into()),
+            model: None,
         };
         q.complete(&id, vec![p.clone()]).await.unwrap();
         let sub = q.get(&id).await.unwrap();

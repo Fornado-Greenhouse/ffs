@@ -1262,6 +1262,8 @@ mod slug_tests {
             claim,
             provenance: vec![],
             rationale: "test".into(),
+            engine: None,
+            model: None,
         }
     }
 

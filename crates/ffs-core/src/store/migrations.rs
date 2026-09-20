@@ -4,7 +4,7 @@
 
 use rusqlite::{Connection, params};
 
-use super::schema::{V1_DDL, V2_DDL};
+use super::schema::{V1_DDL, V2_DDL, V3_DDL};
 use super::{SCHEMA_VERSION, StoreError};
 
 /// Apply schema migrations idempotently.
@@ -46,6 +46,7 @@ pub fn apply(conn: &Connection) -> Result<(), StoreError> {
         let ddl = match next {
             1 => V1_DDL,
             2 => V2_DDL,
+            3 => V3_DDL,
             other => {
                 return Err(StoreError::UnsupportedSchemaVersion {
                     found: other,
@@ -137,12 +138,16 @@ mod tests {
         .unwrap();
         conn.execute_batch("COMMIT;").unwrap();
 
-        // Apply the migration runner — should step from v1 to v2.
-        apply(&conn).expect("step to v2");
+        // Apply the migration runner — should step from v1 through
+        // v2 and on to the current version.
+        apply(&conn).expect("step to current");
 
         // Marker: v2 tables now exist.
         conn.execute_batch("SELECT 1 FROM quarantine_submissions LIMIT 0")
             .expect("v2 table exists");
+        // Marker: v3 columns exist on the proposals table (task_36).
+        conn.execute_batch("SELECT engine, model FROM quarantine_proposals LIMIT 0")
+            .expect("v3 columns exist");
         // The v1 tables stayed: atoms is queryable.
         conn.execute_batch("SELECT 1 FROM atoms LIMIT 0")
             .expect("v1 table preserved");
@@ -152,7 +157,57 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    /// A v2 database (task_29 shape, proposals without engine/model)
+    /// must step to v3 without losing rows, and old rows read back
+    /// with NULL engine/model.
+    #[test]
+    fn applying_v3_on_top_of_existing_v2_db_adds_nullable_columns() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+        )
+        .unwrap();
+        conn.execute_batch("BEGIN;").unwrap();
+        conn.execute_batch(V1_DDL).unwrap();
+        conn.execute_batch(V2_DDL).unwrap();
+        conn.execute(
+            "INSERT INTO schema_version(version, applied_at) VALUES (?1, ?2)",
+            params![1, now_iso()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO schema_version(version, applied_at) VALUES (?1, ?2)",
+            params![2, now_iso()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO quarantine_submissions (id, source_uri, content_hash, content, tx_time, status)
+             VALUES ('sub-1', 'file:///a.md', x'00', x'00', '2026-01-01T00:00:00Z', 'extracted')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO quarantine_proposals (submission_id, seq, predicate, claim, provenance, rationale)
+             VALUES ('sub-1', 0, 'note', '{}', '[]', 'old row')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch("COMMIT;").unwrap();
+
+        apply(&conn).expect("step to v3");
+
+        let (engine, model): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT engine, model FROM quarantine_proposals WHERE submission_id = 'sub-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(engine.is_none());
+        assert!(model.is_none());
     }
 
     #[test]

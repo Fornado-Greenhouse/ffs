@@ -1,0 +1,15 @@
+{
+  "filename": "evan.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Evan Okafor"
+      },
+      "soft": {
+        "email": "evan.okafor@example.net"
+      }
+    }
+  ],
+  "notes": "Unstructured contact with two signals (capitalized name plus email); the leading verb is a stop-word."
+}

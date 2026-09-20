@@ -1,26 +1,30 @@
-"""Scribe: heuristic markdown → proposed atoms.
+"""Scribe: markdown → proposed atoms, behind an `ExtractionEngine` seam.
 
-The MVP scribe is regex- and frontmatter-driven; no LLM is required.
-Phase 2 will wire an LLM client for richer extraction, but the
-heuristics here are deterministic, testable, and fast.
+Entry point for the skills host. Since task_36 (ADR-026) the pipeline
+per invocation is:
 
-Pipeline per invocation:
-
-1. Parse YAML-style ``---`` frontmatter (tolerant: malformed YAML is
-   reported as a warning, not an exception).
-2. Segment the body into ``## Heading`` sections.
-3. Classify the document:
+1. Build a ``Submission`` (``engine.py``): tolerant frontmatter parse,
+   ``## Heading`` sections, content hash, filename, ``predicate:`` hint.
+2. Load the ``PredicateRegistry`` (``registry.py``) from
+   ``$FFS_DATA_DIR/config/predicates/*.toml``; fall back to the host's
+   ``predicate.inspect`` when no specs are on disk.
+3. Run the selected engine (``FFS_SCRIBE_ENGINE``: ``heuristic`` by
+   default, ``llm`` opt-in). The heuristic engine (``heuristic.py``)
+   is this file's regex and frontmatter extractors:
    - frontmatter `name` + (`email`/`phone`/`org` or a `Notes` section)
      → `contact.person`.
    - frontmatter `name` + (`role`/`team`) without contact hints
      → `person.generic`.
+   - unstructured body with a name plus a second contact signal
+     → `contact.person` (card shape, filename, phone, email, venue).
    - everything else → `note`.
-4. Validate each proposed claim against the predicate's schema via
-   the host's `predicate.inspect` proxy. Rejected claims are demoted
-   to `note` proposals with a `validation-failure` rationale so
-   nothing is lost.
-5. Attach provenance to every proposal pointing back to the
-   submission's source URI + content hash.
+4. Apply the ``predicate:`` hint (registered predicate targets it;
+   ``source.article`` or an unregistered predicate falls back to a
+   `note` that keeps title, url, and summary).
+5. Validate each claim against its predicate's ``claim_schema``
+   (``validate.py``). Rejected claims are dropped with a warning.
+6. Every proposal carries provenance (source URI + content hash) and
+   the ``engine`` / ``model`` that produced it.
 """
 
 from __future__ import annotations
@@ -36,10 +40,15 @@ from typing import Any, Dict, List, Optional, Tuple
 # the parent's _lib helper is at ../_lib.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LIB = os.path.abspath(os.path.join(_HERE, os.pardir, "_lib"))
-if _LIB not in sys.path:
-    sys.path.insert(0, _LIB)
+for _p in (_LIB, _HERE):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from ffs_skill import FfsSkillError, log, query, run  # noqa: E402
+
+from engine import Submission, apply_hint, select_engine  # noqa: E402
+from registry import PredicateRegistry  # noqa: E402
+from validate import validate_claim  # noqa: E402
 
 
 # --------------------------------------------------------------------
@@ -137,8 +146,14 @@ _PHONE_RE = re.compile(r"(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?){2}\d{4}")
 
 
 def _name_field(fm: Dict[str, Any]) -> Optional[str]:
-    """Pull a display name from frontmatter, in preference order."""
-    for key in ("display_name", "name", "title"):
+    """Pull a display name from frontmatter, in preference order.
+
+    A frontmatter ``title`` is a note title, never a person's name
+    (task_36 hygiene): "title: Grocery list" used to mint a
+    person.generic named "Grocery list". Only ``display_name`` and
+    ``name`` seed a person.
+    """
+    for key in ("display_name", "name"):
         if key in fm and fm[key]:
             return str(fm[key])
     return None
@@ -291,12 +306,27 @@ def _mask_spans(text: str, spans: List[Tuple[int, int]]) -> str:
     return "".join(chars)
 
 
+# Field-label words (task_36 hygiene fix 3). These are the labels of a
+# key-value contact card ("Nickname: Bones", "Occupation: UFC fighter")
+# and must never be taken for a person's name, which is exactly how
+# "Bones Occupation" was minted on 2026-06-21 (ADR-026).
+_FIELD_LABEL_WORDS = frozenset(
+    [
+        "nickname", "occupation", "phone", "email", "address", "first",
+        "last", "name", "title", "company", "organization", "employer",
+        "mobile", "cell", "website", "notes", "note", "birthday", "fax",
+        "job", "role", "telephone",
+    ]
+)
+
+
 def extract_capitalized_name(text: str) -> Optional[str]:
     """Find a two-word capitalized name in `text`. Skips a small
-    set of English grammar function words and common past-tense
-    interaction verbs (the only false positives that are
-    universally safe to reject). The caller is expected to
-    pre-mask venue spans, so we don't need a venue stop-list here.
+    set of English grammar function words, common past-tense
+    interaction verbs, and contact-card field labels (the false
+    positives that are universally safe to reject). The caller is
+    expected to pre-mask venue spans, so we don't need a venue
+    stop-list here.
 
     Uses a lookahead so finditer finds overlapping bigrams — this
     is necessary because input like "Met Sara Chen" has its first
@@ -308,21 +338,200 @@ def extract_capitalized_name(text: str) -> Optional[str]:
     pattern = re.compile(r"\b(?=([A-Z][a-z]+)\s+([A-Z][a-z]+)\b)")
     for m in pattern.finditer(text):
         first, last = m.group(1), m.group(2)
-        if first.lower() in _NAME_STOPWORDS or last.lower() in _NAME_STOPWORDS:
+        lf, ll = first.lower(), last.lower()
+        if lf in _NAME_STOPWORDS or ll in _NAME_STOPWORDS:
+            continue
+        if lf in _FIELD_LABEL_WORDS or ll in _FIELD_LABEL_WORDS:
             continue
         return f"{first} {last}"
     return None
 
 
-def extract_contact_person_unstructured(content_text: str) -> Optional[Tuple[Dict[str, Any], List[str]]]:
-    """Walk the body for unstructured contact signals: phone, email,
-    venue mention, capitalized name. Emit a `contact.person` claim
-    when ≥2 distinct signals fire AND a name is extractable from
-    text where venue spans have been masked out.
+# --------------------------------------------------------------------
+# task_36 hygiene: filename as a name candidate + card-shape parsing
+# --------------------------------------------------------------------
+
+_PERSON_WORD_RE = re.compile(r"^[A-Z][a-z]+$")
+
+
+def filename_as_person_name(filename: Optional[str]) -> Optional[str]:
+    """Return ``"First Last"`` when a file's stem looks like a person's
+    name: two or three capitalized words after ``_``/``-`` become
+    spaces, none of them a stop word or a field label. Otherwise
+    ``None`` (dates, slugs, lowercase names, "Phone List")."""
+    if not filename:
+        return None
+    words = [w for w in re.split(r"[\s_\-]+", filename.strip()) if w]
+    if not 2 <= len(words) <= 3:
+        return None
+    for w in words:
+        if not _PERSON_WORD_RE.match(w):
+            return None
+        lw = w.lower()
+        if lw in _NAME_STOPWORDS or lw in _FIELD_LABEL_WORDS:
+            return None
+    return " ".join(words)
+
+
+def _names_agree(a: str, b: str) -> bool:
+    """Two names agree when they are the same name, ignoring case and
+    spacing. Sharing a surname is not agreement: "Haddad Imports" is
+    not "Omar Haddad"."""
+    return " ".join(a.lower().split()) == " ".join(b.lower().split())
+
+
+# Card line: "Label: value" or "Label - value". The label is one
+# capitalized word followed by any number of lowercase words, which is
+# what "Phone numbe r- 9194284074" (typo included) looks like.
+_CARD_LINE_RE = re.compile(r"^([A-Z][a-z]*(?:\s[a-z]+)*)\s*[:\-]\s*(.*)$")
+
+# Canonical card keys. A label matches a key when their first four
+# letters agree (typo-tolerant: "Phone numbe r" -> "phone") or the key
+# starts with the whole label ("Nam" -> "name").
+_CARD_KEYS = {
+    "name": "display_name",
+    "fullname": "display_name",
+    "first": "first",
+    "last": "last",
+    "phone": "phone",
+    "telephone": "phone",
+    "mobile": "phone",
+    "cell": "phone",
+    "email": "email",
+    "nickname": "nickname",
+    "occupation": "role",
+    "title": "role",
+    "role": "role",
+    "job": "role",
+    "company": "organization",
+    "organization": "organization",
+    "employer": "organization",
+    "address": "note",
+    "website": "note",
+    "notes": "note",
+    "note": "note",
+    "birthday": "note",
+}
+
+_PERSONAL_EMAIL_DOMAINS = frozenset(
+    ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com"]
+)
+
+
+def _card_key(label: str) -> Optional[str]:
+    norm = re.sub(r"[^a-z]", "", label.lower())
+    if len(norm) < 3:
+        return None
+    for key, field in _CARD_KEYS.items():
+        if norm[:4] == key[:4] or key.startswith(norm):
+            return field
+    return None
+
+
+def _normalize_phone(value: str) -> str:
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+    return value.strip()
+
+
+def parse_card_lines(content_text: str) -> Optional[Dict[str, Any]]:
+    """Parse a key-value contact card into contact.person fields.
+
+    A card is at least two ``Label: value`` lines of which at least
+    one label is a known contact field. Returns ``None`` when the text
+    is not a card (prose, a single labelled line) so the caller can
+    fall through to the bigram scan.
+    """
+    matches: List[Tuple[str, str]] = []
+    for raw in content_text.splitlines():
+        line = raw.strip()
+        m = _CARD_LINE_RE.match(line)
+        if m and m.group(2).strip():
+            matches.append((m.group(1), m.group(2).strip()))
+    if len(matches) < 2:
+        return None
+    claim: Dict[str, Any] = {}
+    notes: List[str] = []
+    first = last = None
+    known = 0
+    for label, value in matches:
+        field = _card_key(label)
+        if field is None:
+            continue
+        known += 1
+        if field == "display_name":
+            claim.setdefault("display_name", value)
+        elif field == "first":
+            first = value
+        elif field == "last":
+            last = value
+        elif field == "phone":
+            claim.setdefault("phone", _normalize_phone(value))
+        elif field == "email":
+            em = _EMAIL_PATTERN.search(value)
+            if em:
+                addr = em.group(0)
+                domain = addr.rsplit("@", 1)[-1].lower()
+                key = "personal_email" if domain in _PERSONAL_EMAIL_DOMAINS else "work_email"
+                claim.setdefault(key, addr)
+        elif field == "nickname":
+            notes.append(f"Nickname: {value}")
+        elif field == "role":
+            claim.setdefault("role", value)
+        elif field == "organization":
+            claim.setdefault("organization", value)
+        elif field == "note":
+            notes.append(f"{label.strip().capitalize()}: {value}")
+    if known == 0:
+        return None
+    if "display_name" not in claim and first and last:
+        claim["display_name"] = f"{first} {last}"
+    if notes:
+        claim["notes"] = notes
+    return claim
+
+
+def extract_contact_person_unstructured(
+    content_text: str,
+    filename: Optional[str] = None,
+) -> Optional[Tuple[Dict[str, Any], List[str]]]:
+    """Walk the body for unstructured contact signals: a key-value
+    card, the filename, phone, email, venue mention, capitalized
+    name. Emit a `contact.person` claim when ≥2 distinct signals fire
+    AND a name is available (from the card, the filename, or text
+    where venue spans have been masked out).
 
     Returns `(claim, signals)` — `signals` is the list of signal
     names that fired (used for the proposal's `rationale` string).
     """
+    fname_name = filename_as_person_name(filename)
+
+    # Hygiene fix 2: a key-value card is parsed field by field and the
+    # bigram scan is skipped entirely (it is what stitched "Bones
+    # Occupation" together).
+    card = parse_card_lines(content_text)
+    if card is not None:
+        signals: List[str] = ["key-value card"]
+        claim: Dict[str, Any] = dict(card)
+        body_name = claim.get("display_name")
+        if fname_name and (not body_name or not _names_agree(body_name, fname_name)):
+            claim["display_name"] = fname_name
+            signals.append("filename")
+        if not claim.get("display_name"):
+            return None
+        if claim.get("phone"):
+            signals.append("phone number")
+        if claim.get("work_email") or claim.get("personal_email"):
+            signals.append("email address")
+        if claim.get("role") or claim.get("organization") or claim.get("notes"):
+            signals.append("card fields")
+        if len(signals) < 2:
+            return None
+        return claim, signals
+
     # Detect venues FIRST. Venues are masked from the text before
     # we run the name detector so e.g. "Met at Ballantyne Country
     # Club" doesn't get misclassified as a person named "Ballantyne
@@ -331,10 +540,15 @@ def extract_contact_person_unstructured(content_text: str) -> Optional[Tuple[Dic
     masked = _mask_spans(content_text, [(s, e) for _, s, e in venues])
 
     name = extract_capitalized_name(masked)
+    signals = ["capitalized name"]
+    # Hygiene fix 1: the filename is a name candidate that wins when
+    # the body yields nothing or a name that fails the cross-check.
+    if fname_name and (not name or not _names_agree(name, fname_name)):
+        name = fname_name
+        signals = ["filename"]
     if not name:
         return None
-    signals: List[str] = ["capitalized name"]
-    claim: Dict[str, Any] = {"display_name": name}
+    claim = {"display_name": name}
 
     phones = detect_phone_numbers(content_text)
     if phones:
@@ -443,39 +657,9 @@ def _title_from_body(body: str) -> Optional[str]:
 # --------------------------------------------------------------------
 
 
-def _validate_claim_against_schema(claim: Dict[str, Any], schema: Dict[str, Any]) -> Optional[str]:
-    """Minimal JSON-Schema subset validator.
-
-    Handles ``type: object``, ``required``, ``properties.<k>.type`` for
-    the limited shape the MVP predicate specs use. Returns ``None`` on
-    pass or an error message on failure. Avoids the external
-    ``jsonschema`` package so the scribe has zero pip dependencies.
-    """
-    if not isinstance(schema, dict):
-        return None
-    if schema.get("type") == "object" and not isinstance(claim, dict):
-        return "claim must be an object"
-    required = schema.get("required", [])
-    for k in required:
-        if k not in claim:
-            return f"missing required field: {k}"
-    props = schema.get("properties", {})
-    for k, v in claim.items():
-        spec = props.get(k)
-        if not isinstance(spec, dict):
-            continue
-        expected = spec.get("type")
-        if expected == "string" and not isinstance(v, str):
-            return f"field {k} must be a string"
-        if expected == "array" and not isinstance(v, list):
-            return f"field {k} must be an array"
-        if expected == "integer" and not isinstance(v, int):
-            return f"field {k} must be an integer"
-        if expected == "number" and not isinstance(v, (int, float)):
-            return f"field {k} must be a number"
-        if expected == "boolean" and not isinstance(v, bool):
-            return f"field {k} must be a boolean"
-    return None
+# The validator lives in ``validate.py`` since task_36; this alias keeps
+# the pre-task_36 import path working for anything that used it.
+_validate_claim_against_schema = validate_claim
 
 
 def _fetch_schema(predicate_name: str) -> Optional[Dict[str, Any]]:
@@ -511,27 +695,6 @@ def _content_hash_hex(content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
 
 
-def _make_proposal(
-    predicate: str,
-    claim: Dict[str, Any],
-    source_uri: str,
-    content_hash_hex: str,
-    rationale: str,
-) -> Dict[str, Any]:
-    return {
-        "predicate": predicate,
-        "claim": claim,
-        "provenance": [
-            {
-                "kind": "ingest",
-                "uri": source_uri,
-                "hash_hex": content_hash_hex,
-            }
-        ],
-        "rationale": rationale,
-    }
-
-
 def handle(inp: Any) -> Dict[str, Any]:
     """Top-level scribe entry point.
 
@@ -539,119 +702,46 @@ def handle(inp: Any) -> Dict[str, Any]:
 
         {"source_uri": "file:///...", "content": "...markdown..."}
 
-    Returns ``{"proposals": [...], "warnings": [...]}``.
+    Returns ``{"proposals": [...], "warnings": [...]}``. Every proposal
+    carries ``engine`` and ``model`` (ADR-026 provenance).
     """
     if not isinstance(inp, dict):
         return {"proposals": [], "warnings": ["input must be an object"]}
-    source_uri = str(inp.get("source_uri") or "unknown:")
-    content = inp.get("content") or ""
-    if isinstance(content, bytes):
-        content_bytes = content
-        content_text = content.decode("utf-8", errors="replace")
-    else:
-        content_text = str(content)
-        content_bytes = content_text.encode("utf-8")
-    content_hash = _content_hash_hex(content_bytes)
 
-    fm, sections, warnings = parse_markdown(content_text)
-    proposals: List[Dict[str, Any]] = []
+    submission = Submission.from_input(inp)
+    registry = PredicateRegistry.load(fallback=_fetch_schema)
+    for w in registry.warnings:
+        log("warn", w)
+    engine = select_engine()
 
-    # Conflict detection: if frontmatter name disagrees with body name,
-    # emit a note proposal flagging the conflict.
-    if conflicting := _conflicting_name(fm, content_text):
-        proposals.append(
-            _make_proposal(
-                "note",
-                {
-                    "title": f"name conflict for {_name_field(fm)}",
-                    "body": (
-                        f"frontmatter says name={_name_field(fm)!r}; "
-                        f"body says name={conflicting!r}. Reconcile manually."
-                    ),
-                    "tags": ["scribe-ambiguity"],
-                },
-                source_uri,
-                content_hash,
-                "structural-ambiguity: conflicting name claims",
-            )
-        )
+    try:
+        result = engine.extract(submission, registry)
+    except Exception as e:  # noqa: BLE001 - ingest must never hard-fail on an engine
+        from heuristic import HeuristicEngine
 
-    # Try contact.person first.
-    if (claim := extract_contact_person(fm, sections)) is not None:
-        proposals.append(
-            _make_proposal(
-                "contact.person",
-                claim,
-                source_uri,
-                content_hash,
-                "extracted display_name + contact fields from frontmatter and `Notes` section",
-            )
-        )
-    # Then person.generic (only if contact.person didn't fire).
-    elif (claim := extract_person_generic(fm, sections)) is not None:
-        proposals.append(
-            _make_proposal(
-                "person.generic",
-                claim,
-                source_uri,
-                content_hash,
-                "extracted display_name + role/team from frontmatter",
-            )
-        )
-    # Unstructured contact (no frontmatter, body looks like a
-    # contact). Only fires when at least 2 distinct signals fire AND
-    # a capitalized name is extractable from the body.
-    elif (
-        not _name_field(fm)
-        and (unstructured := extract_contact_person_unstructured(content_text)) is not None
-    ):
-        unstructured_claim, unstructured_signals = unstructured
-        proposals.append(
-            _make_proposal(
-                "contact.person",
-                unstructured_claim,
-                source_uri,
-                content_hash,
-                "matched "
-                + str(len(unstructured_signals))
-                + " unstructured-contact signals: "
-                + ", ".join(unstructured_signals),
-            )
-        )
+        log("warn", f"{engine.name} engine raised {type(e).__name__}: {e}; falling back to heuristic")
+        fallback = HeuristicEngine()
+        result = fallback.extract(submission, registry)
+        result.warnings.append(f"{engine.name} engine failed ({type(e).__name__}); heuristic result emitted")
+        engine = fallback
 
-    # Always emit a note for unexplained content. If we extracted a
-    # contact/person above, only emit a separate note when there's body
-    # text beyond what the structured extraction captured.
-    if not proposals or (proposals and content_text.strip()):
-        note_claim = extract_note(fm, sections, content_text)
-        # Avoid duplicating a tiny doc as both contact and note: only
-        # add the note proposal if there's body text beyond
-        # frontmatter.
-        body_text = note_claim.get("body", "")
-        already_have_structured = any(p["predicate"] != "note" for p in proposals)
-        if not already_have_structured or (body_text and not _body_only_in_notes_section(sections)):
-            proposals.append(
-                _make_proposal(
-                    "note",
-                    note_claim,
-                    source_uri,
-                    content_hash,
-                    "fallback note from raw markdown body",
-                )
-            )
+    result = apply_hint(submission, result, registry, engine.name, engine.model)
 
-    # Validate each proposal against its predicate's schema. Drop or
-    # demote failures.
+    # Validate each proposal against its predicate's schema. Drop
+    # failures with a warning so nothing is silently accepted.
+    warnings: List[str] = list(submission.parse_warnings) + list(result.warnings)
     validated: List[Dict[str, Any]] = []
-    for p in proposals:
-        schema = _fetch_schema(p["predicate"])
+    for p in result.proposals:
+        p.setdefault("engine", engine.name)
+        p.setdefault("model", engine.model)
+        schema = registry.schema(p["predicate"])
         if schema is None:
-            # Host couldn't supply a schema — keep the proposal but
+            # No schema on disk or from the host: keep the proposal but
             # surface a warning so the auditor flags it.
             warnings.append(f"no schema for {p['predicate']}; proposal kept un-validated")
             validated.append(p)
             continue
-        err = _validate_claim_against_schema(p["claim"], schema)
+        err = validate_claim(p["claim"], schema)
         if err is None:
             validated.append(p)
         else:

@@ -313,6 +313,40 @@ If `ffs health` errors out, check
 [`troubleshooting.md`](troubleshooting.md) under **Daemon
 doesn't start**.
 
+### Optional: choose the scribe's extraction engine
+
+The scribe runs the `heuristic` engine by default: pattern rules,
+fully offline, no new dependencies. To opt in to the `llm` engine,
+set these in the daemon's environment (the launchd plist, the
+systemd unit, or the scheduled task on Windows); the daemon
+forwards its environment to the scribe subprocess:
+
+```sh
+FFS_SCRIBE_ENGINE=llm                        # default: heuristic
+FFS_SCRIBE_LLM_URL=http://localhost:11434    # Ollama (local); or https://api.anthropic.com
+FFS_SCRIBE_LLM_MODEL=claude-sonnet-5         # or e.g. llama3.1:8b for Ollama
+FFS_SCRIBE_ANTHROPIC_KEY=sk-ant-...          # Anthropic only; or macOS keychain item ffs-scribe-anthropic
+```
+
+Privacy posture in one sentence: nothing leaves the machine unless
+`FFS_SCRIBE_ENGINE=llm` and the URL points off-host. If the
+backend is unreachable or returns schema-invalid output, the scribe
+falls back to `heuristic` for that note and says so in the
+proposal's rationale, so ingest never fails because a model did.
+
+Model guidance (spike 42, five newsletters, hand scored): Claude
+Sonnet reached 1.00 precision on people, organizations, and
+affiliations with recall at or near 1.00. `llama3.1:8b` failed
+everything but organization precision; local-only at that size is
+a digest tier. Prefer Sonnet through the Anthropic API, or a
+larger local model if you have the hardware.
+
+Scoring your own material: set `FFS_SCRIBE_CORPUS_DIR` to a
+directory of fixture notes and expected proposals outside the
+repository (for example under `$FFS_DATA_DIR/spikes/`) and run the
+scribe's corpus scorer. No copyrighted press text may be committed
+to the repository; the in-repo corpus is paraphrased or synthetic.
+
 ## Step 4 — Predicate inspection (2 min)
 
 The substrate ships three starter predicates. Make sure they

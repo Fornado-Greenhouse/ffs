@@ -1,0 +1,34 @@
+{
+  "filename": "riverside-mill.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "Riverside Mill to reopen as maker space",
+        "references": [
+          "https://example.com/news/riverside-mill-maker-space"
+        ],
+        "tags": [
+          "source-article"
+        ],
+        "body": {
+          "$contains": "convert the vacant Riverside Mill"
+        }
+      }
+    }
+  ],
+  "notes": "Courier-shaped article drop. source.article is not registered until task_38, so it must land as a readable note with the title, the url in references, and the summary in the body. REQUIRED.",
+  "required": true,
+  "awaits": "predicate hint 36.4 (source.article fallback)",
+  "expected_when_registered": [
+    {
+      "predicate": "source.article",
+      "claim": {
+        "title": "Riverside Mill to reopen as maker space",
+        "url": "https://example.com/news/riverside-mill-maker-space",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-10"
+      }
+    }
+  ]
+}

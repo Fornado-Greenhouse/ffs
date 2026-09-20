@@ -15,7 +15,7 @@
 //! quarantine_submissions (id, source_uri, content_hash, content,
 //!   tx_time, status, failure_reason, accepted_atom_hashes)
 //! quarantine_proposals   (submission_id, seq, predicate, claim,
-//!   provenance, rationale)
+//!   provenance, rationale, engine, model)   -- engine/model since v3
 //! ```
 //!
 //! The trait surface stays unchanged from `InMemoryQuarantine`. The
@@ -187,7 +187,7 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
     } = row;
     let mut stmt = conn
         .prepare(
-            "SELECT predicate, claim, provenance, rationale
+            "SELECT predicate, claim, provenance, rationale, engine, model
              FROM quarantine_proposals
              WHERE submission_id = ?1
              ORDER BY seq ASC",
@@ -199,6 +199,8 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
             let claim_json: String = row.get(1)?;
             let provenance_json: String = row.get(2)?;
             let rationale: String = row.get(3)?;
+            let engine: Option<String> = row.get(4)?;
+            let model: Option<String> = row.get(5)?;
             let claim: serde_json::Value =
                 serde_json::from_str(&claim_json).unwrap_or(serde_json::Value::Null);
             let provenance: Vec<Provenance> =
@@ -208,6 +210,8 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
                 claim,
                 provenance,
                 rationale,
+                engine,
+                model,
             })
         })
         .map_err(map_io)?
@@ -409,8 +413,8 @@ impl IngestQuarantine for SqliteQuarantine {
         for (seq, p) in proposals.iter().enumerate() {
             tx.execute(
                 "INSERT INTO quarantine_proposals
-                    (submission_id, seq, predicate, claim, provenance, rationale)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    (submission_id, seq, predicate, claim, provenance, rationale, engine, model)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     id,
                     seq as i64,
@@ -418,6 +422,8 @@ impl IngestQuarantine for SqliteQuarantine {
                     serde_json::to_string(&p.claim).unwrap_or_else(|_| "null".into()),
                     serde_json::to_string(&p.provenance).unwrap_or_else(|_| "[]".into()),
                     p.rationale,
+                    p.engine,
+                    p.model,
                 ],
             )
             .map_err(map_io)?;
@@ -521,7 +527,36 @@ mod tests {
             claim: serde_json::json!({"display_name": "Sara Chen"}),
             provenance: vec![],
             rationale: "test".into(),
+            engine: Some("llm".into()),
+            model: Some("claude-sonnet-5".into()),
         }
+    }
+
+    #[tokio::test]
+    async fn engine_and_model_round_trip_through_sqlite() {
+        let q = SqliteQuarantine::open_in_memory(&dek()).unwrap();
+        let id = q
+            .submit("file:///a.md".into(), b"x".to_vec())
+            .await
+            .unwrap();
+        q.complete(&id, vec![proposal("contact.person")])
+            .await
+            .unwrap();
+        let sub = q.get(&id).await.unwrap();
+        assert_eq!(sub.proposals[0].engine.as_deref(), Some("llm"));
+        assert_eq!(sub.proposals[0].model.as_deref(), Some("claude-sonnet-5"));
+        // A proposal without engine/model reads back as None.
+        let mut bare = proposal("note");
+        bare.engine = None;
+        bare.model = None;
+        let id2 = q
+            .submit("file:///b.md".into(), b"y".to_vec())
+            .await
+            .unwrap();
+        q.complete(&id2, vec![bare]).await.unwrap();
+        let sub2 = q.get(&id2).await.unwrap();
+        assert!(sub2.proposals[0].engine.is_none());
+        assert!(sub2.proposals[0].model.is_none());
     }
 
     #[tokio::test]

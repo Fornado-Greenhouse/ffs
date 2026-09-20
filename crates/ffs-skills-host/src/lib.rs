@@ -33,6 +33,11 @@ pub const CRATE_NAME: &str = "ffs-skills-host";
 pub struct SkillsHost {
     proxy: Arc<dyn SubstrateAccess>,
     skills: Vec<SkillProcess>,
+    /// Extra environment handed to every skill subprocess on top of
+    /// the inherited daemon environment. The daemon sets
+    /// `FFS_DATA_DIR` here so bundles can read
+    /// `$FFS_DATA_DIR/config/predicates/` (task_36).
+    child_env: Vec<(String, String)>,
 }
 
 impl SkillsHost {
@@ -40,7 +45,18 @@ impl SkillsHost {
         Self {
             proxy,
             skills: Vec::new(),
+            child_env: Vec::new(),
         }
+    }
+
+    /// Set extra environment variables for skills spawned after this
+    /// call. Call before `spawn_from_registry` / `discover_and_spawn`.
+    pub fn set_child_env(&mut self, env: Vec<(String, String)>) {
+        self.child_env = env;
+    }
+
+    pub fn child_env(&self) -> &[(String, String)] {
+        &self.child_env
     }
 
     /// Discover skills under `dir` and spawn each. Skills with a
@@ -58,7 +74,11 @@ impl SkillsHost {
     /// overrides like `FFS_SKILL_TIMEOUT_MS`) and spawn afterward.
     pub fn spawn_from_registry(&mut self, registry: &SkillRegistry) {
         for manifest in registry.skills() {
-            let proc = SkillProcess::spawn(manifest.clone(), self.proxy.clone());
+            let proc = SkillProcess::spawn_with_env(
+                manifest.clone(),
+                self.proxy.clone(),
+                self.child_env.clone(),
+            );
             self.skills.push(proc);
         }
     }

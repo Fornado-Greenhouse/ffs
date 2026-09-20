@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Scribe v2 — predicate-schema-driven extraction with pluggable engines
 type: backend
 complexity: high
@@ -43,17 +43,25 @@ Re-scoped 2026-09-14: this task is the tracer bullet. It runs against the three 
 - SHOULD verify Anthropic API request shape against current docs at implementation time rather than trusting this spec's memory of it.
 </requirements>
 
+## Result (2026-09-20)
+
+Implemented as the tracer bullet against the three starter predicates. Seam: `engine.py` (Submission, EngineResult, ExtractionEngine, select_engine, make_proposal, apply_hint), `registry.py` (PredicateRegistry from `$FFS_DATA_DIR/config/predicates/*.toml` with a host-query fallback), `validate.py`, `heuristic.py`, `prompt.py`, `llm.py` (Ollama and Anthropic adapters over urllib; Anthropic request shape verified against current docs on 2026-09-20; any failure falls back to heuristic). Proposals carry top-level `engine` and `model`, persisted by quarantine schema v3 and shown in the plugin's expanded card. Skill subprocesses receive `FFS_DATA_DIR` and inherit `FFS_SCRIBE_*`. Golden corpus of 20 synthetic fixtures with a field-level scorer; heuristic scoring gates CI; `FFS_SCRIBE_CORPUS_DIR` for real articles kept out of git; out-of-band llm scoring skips when no backend is reachable. Hygiene: filename as name source, key-value card parsing, field-label stop words, and one extra found by the corpus (a frontmatter `title` alone never yields a person). The unregistered-hint fallback is uniform: no predicate or source is special-cased in the engine.
+
+Verification: pytest 142 passed; cargo nextest 445 passed; fmt clean; clippy 0 warnings; vitest 65 passed. Live validation (36.10) ran on a scratch substrate built from this tree, never the production install: under `heuristic`, the verbatim Jon Jones card yields `contact.person` with `display_name: Jon Jones`, `phone: 919-428-4074`, `role: UFC fighter`, and a `predicate: source.article` drop lands as a `note` with title, url in references, and tags; under `llm` with Ollama `llama3.1:8b`, both submissions carry `engine: llm`, `model: llama3.1:8b` through `ingest.list_pending`, the article fallback is identical, and the card came back as `display_name: Bones` with an unformatted phone. That is the quality spike task_42 measured for an 8B local model (FAIL), not a pipeline defect; a Claude backend was not exercised live because no Messages API key is configured. Two operational findings landed with the task: the scribe manifest timeout is now 180000 ms (the 15 s default silently timed out the llm engine), and the ingest watcher now logs a warn line when an extraction fails instead of marking the submission failed silently.
+
+Follow-ups, not in this task: phone and name normalization of llm output (task_45's resolver and hygiene), engine and model onto the signed atom's provenance at accept time (needs an envelope decision, ADR), and the installed production skill copy is updated by the installer, not by this commit.
+
 ## Subtasks
-- [ ] 36.1 Refactor `extraction.py` behind an `ExtractionEngine` seam; `heuristic` engine preserves current behavior (all existing tests green before any other change).
-- [ ] 36.2 Predicate-spec loader: read `$FFS_DATA_DIR/config/predicates/*.toml` via `tomllib`; render name + `claim_schema` into a prompt-builder; unit-test that a newly added predicate spec appears in the generated prompt with no code change.
-- [ ] 36.3 `llm` engine: stdlib HTTP client, Ollama adapter + Anthropic adapter, JSON extraction + minimal schema validation, heuristic fallback on any failure. Unit-test with a stubbed HTTP layer (no network in CI).
-- [ ] 36.4 `predicate:` frontmatter hint: registered predicate targets extraction; `source.article` or an unregistered predicate falls back to `note` with title, url, and summary preserved; unit tests for both branches.
-- [ ] 36.5 Config plumbing: `FFS_SCRIBE_ENGINE` / `FFS_SCRIBE_LLM_URL` / `FFS_SCRIBE_LLM_MODEL` / key handling / `FFS_SCRIBE_CORPUS_DIR` threaded through daemon env docs and the skills-host subprocess env; document in main.rs env-var docblock.
-- [ ] 36.6 Provenance: engine + model on every proposal; through quarantine storage (task_29 tables) and `ingest.list_pending`; visible in the Obsidian panel's expanded proposal view.
-- [ ] 36.7 Golden corpus (paraphrased or synthetic only) + pytest scorer; wire heuristic scoring into the normal test run; out-of-band `llm` scoring entrypoint that skips without a reachable backend; external corpus path via env var.
-- [ ] 36.8 Heuristic hygiene: filename source, card-shape key-value parsing, field-label stop-words. Corpus must show the Jon Jones fixture extracting as `contact.person` with `display_name: Jon Jones`, `phone: 919-428-4074`, occupation captured.
-- [ ] 36.9 Docs: engine setup, privacy statement, model recommendations, corpus licensing rule; update first-use-guide + technical-friend checklist.
-- [ ] 36.10 Live validation: drop the original Jon Jones card into `ingest/` under (a) default heuristic and (b) an opted-in `llm` backend; both must produce a correctly named contact proposal in the quarantine. Drop one paraphrased article with `predicate: source.article` and confirm it lands as a readable `note` in the vault.
+- [x] 36.1 Refactor `extraction.py` behind an `ExtractionEngine` seam; `heuristic` engine preserves current behavior (all existing tests green before any other change).
+- [x] 36.2 Predicate-spec loader: read `$FFS_DATA_DIR/config/predicates/*.toml` via `tomllib`; render name + `claim_schema` into a prompt-builder; unit-test that a newly added predicate spec appears in the generated prompt with no code change.
+- [x] 36.3 `llm` engine: stdlib HTTP client, Ollama adapter + Anthropic adapter, JSON extraction + minimal schema validation, heuristic fallback on any failure. Unit-test with a stubbed HTTP layer (no network in CI).
+- [x] 36.4 `predicate:` frontmatter hint: registered predicate targets extraction; `source.article` or an unregistered predicate falls back to `note` with title, url, and summary preserved; unit tests for both branches.
+- [x] 36.5 Config plumbing: `FFS_SCRIBE_ENGINE` / `FFS_SCRIBE_LLM_URL` / `FFS_SCRIBE_LLM_MODEL` / key handling / `FFS_SCRIBE_CORPUS_DIR` threaded through daemon env docs and the skills-host subprocess env; document in main.rs env-var docblock.
+- [x] 36.6 Provenance: engine + model on every proposal; through quarantine storage (task_29 tables) and `ingest.list_pending`; visible in the Obsidian panel's expanded proposal view.
+- [x] 36.7 Golden corpus (paraphrased or synthetic only) + pytest scorer; wire heuristic scoring into the normal test run; out-of-band `llm` scoring entrypoint that skips without a reachable backend; external corpus path via env var.
+- [x] 36.8 Heuristic hygiene: filename source, card-shape key-value parsing, field-label stop-words. Corpus must show the Jon Jones fixture extracting as `contact.person` with `display_name: Jon Jones`, `phone: 919-428-4074`, occupation captured.
+- [x] 36.9 Docs: engine setup, privacy statement, model recommendations, corpus licensing rule; update first-use-guide + technical-friend checklist.
+- [x] 36.10 Live validation: drop the original Jon Jones card into `ingest/` under (a) default heuristic and (b) an opted-in `llm` backend; both must produce a correctly named contact proposal in the quarantine. Drop one paraphrased article with `predicate: source.article` and confirm it lands as a readable `note` in the vault.
 
 ## Implementation Details
 Current structure: `skills/scribe/extraction.py` (pure functions: `extract_contact_person_unstructured`, `detect_phone_numbers`, `extract_note`, venue masking, stop lists) invoked by the skill entry script via the skills-host stdio protocol; daemon side in `crates/ffs-daemon/src/scribe.rs` translates results into `Proposal`s. The engine seam lives entirely on the Python side; the Rust side only gains the provenance fields and env passthrough.
@@ -97,19 +105,19 @@ Why this task stays slim: task_38 (path families, business-graph predicates, opa
 
 ## Tests
 - Unit tests:
-  - [ ] Heuristic engine behind the seam reproduces all pre-refactor outputs (existing test suite green, unmodified assertions).
-  - [ ] Prompt builder includes every predicate in `config/predicates/`; adding a fixture TOML adds it to the prompt with no code change.
-  - [ ] Anthropic adapter and Ollama adapter each produce a correct request shape against a stubbed HTTP layer; responses parse into proposals.
-  - [ ] Schema validator rejects missing-required / wrong-typed output; rejection triggers heuristic fallback.
-  - [ ] `predicate: contact.person` hint targets that predicate; `predicate: source.article` (unregistered) falls back to `note` with title, url, and summary preserved in body and `references[]`; an unknown hint never raises.
-  - [ ] Jon Jones corpus fixture: heuristic engine yields `contact.person` with `display_name: "Jon Jones"`, `phone: "919-428-4074"` (filename + card-shape + stop-word fixes together).
-  - [ ] Field-label words never appear as `display_name` candidates.
-  - [ ] Scorer reads fixtures from `FFS_SCRIBE_CORPUS_DIR` when set and from the in-repo corpus otherwise.
+  - [x] Heuristic engine behind the seam reproduces all pre-refactor outputs (existing test suite green, unmodified assertions).
+  - [x] Prompt builder includes every predicate in `config/predicates/`; adding a fixture TOML adds it to the prompt with no code change.
+  - [x] Anthropic adapter and Ollama adapter each produce a correct request shape against a stubbed HTTP layer; responses parse into proposals.
+  - [x] Schema validator rejects missing-required / wrong-typed output; rejection triggers heuristic fallback.
+  - [x] `predicate: contact.person` hint targets that predicate; `predicate: source.article` (unregistered) falls back to `note` with title, url, and summary preserved in body and `references[]`; an unknown hint never raises.
+  - [x] Jon Jones corpus fixture: heuristic engine yields `contact.person` with `display_name: "Jon Jones"`, `phone: "919-428-4074"` (filename + card-shape + stop-word fixes together).
+  - [x] Field-label words never appear as `display_name` candidates.
+  - [x] Scorer reads fixtures from `FFS_SCRIBE_CORPUS_DIR` when set and from the in-repo corpus otherwise.
 - Integration tests:
-  - [ ] `ingest_pipeline_e2e` unchanged and green (heuristic default).
-  - [ ] Env-gated llm e2e: with `FFS_SCRIBE_ENGINE=llm` and a reachable backend, a dropped card produces a schema-valid proposal with `engine: llm` provenance; skips cleanly otherwise.
-  - [ ] Corpus scorer runs in CI for heuristic; documented invocation for out-of-band llm scoring.
-  - [ ] A paraphrased article dropped with `predicate: source.article` lands as a `note` proposal whose references include the url.
+  - [x] `ingest_pipeline_e2e` unchanged and green (heuristic default).
+  - [x] Env-gated llm e2e: with `FFS_SCRIBE_ENGINE=llm` and a reachable backend, a dropped card produces a schema-valid proposal with `engine: llm` provenance; skips cleanly otherwise.
+  - [x] Corpus scorer runs in CI for heuristic; documented invocation for out-of-band llm scoring.
+  - [x] A paraphrased article dropped with `predicate: source.article` lands as a `note` proposal whose references include the url.
 - Test coverage target: >=80%
 - All tests must pass
 

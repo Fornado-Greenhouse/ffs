@@ -1,0 +1,12 @@
+{
+  "filename": "greenway-thoughts.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "Thoughts on the greenway plan"
+      }
+    }
+  ],
+  "notes": "Plain narrative: a note titled from the first line."
+}

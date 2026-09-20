@@ -148,6 +148,14 @@ struct ScribeProposalWire {
     claim: Value,
     provenance: Vec<ScribeProvenanceWire>,
     rationale: String,
+    /// Extraction engine (task_36 / ADR-026): `"heuristic"` or
+    /// `"llm"`. Optional so pre-task_36 scribes still parse.
+    #[serde(default)]
+    engine: Option<String>,
+    /// Model id when the engine is `llm`; empty string or absent
+    /// for the heuristic engine (normalized to `None`).
+    #[serde(default)]
+    model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -173,6 +181,8 @@ impl From<ScribeProposalWire> for Proposal {
             claim: w.claim,
             provenance,
             rationale: w.rationale,
+            engine: w.engine.filter(|s| !s.is_empty()),
+            model: w.model.filter(|s| !s.is_empty()),
         }
     }
 }
@@ -255,6 +265,30 @@ mod tests {
             proposals[0].provenance[0].kind,
             SourceKind::IngestFile
         ));
+    }
+
+    #[test]
+    fn engine_and_model_absent_parse_as_none() {
+        let raw = serde_json::json!({"proposals": [scribe_wire_proposal()]});
+        let proposals = parse_scribe_response(&raw).expect("ok");
+        assert!(proposals[0].engine.is_none());
+        assert!(proposals[0].model.is_none());
+    }
+
+    #[test]
+    fn engine_and_model_present_are_carried_and_empty_model_normalizes_to_none() {
+        let mut llm = scribe_wire_proposal();
+        llm["engine"] = serde_json::json!("llm");
+        llm["model"] = serde_json::json!("claude-sonnet-5");
+        let mut heuristic = scribe_wire_proposal();
+        heuristic["engine"] = serde_json::json!("heuristic");
+        heuristic["model"] = serde_json::json!("");
+        let raw = serde_json::json!({"proposals": [llm, heuristic]});
+        let proposals = parse_scribe_response(&raw).expect("ok");
+        assert_eq!(proposals[0].engine.as_deref(), Some("llm"));
+        assert_eq!(proposals[0].model.as_deref(), Some("claude-sonnet-5"));
+        assert_eq!(proposals[1].engine.as_deref(), Some("heuristic"));
+        assert!(proposals[1].model.is_none());
     }
 
     #[test]

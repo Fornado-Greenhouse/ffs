@@ -169,6 +169,8 @@ async fn ingest_list_pending_returns_only_extracted_submissions() {
                 claim: serde_json::json!({"display_name": "Sara"}),
                 provenance: vec![],
                 rationale: "test".into(),
+                engine: None,
+                model: None,
             }],
         )
         .await
@@ -212,6 +214,8 @@ async fn ingest_accept_signs_proposals_into_atoms_and_flips_status() {
                 claim: serde_json::json!({"display_name": "Sara"}),
                 provenance: vec![],
                 rationale: "test".into(),
+                engine: None,
+                model: None,
             }],
         )
         .await
@@ -255,6 +259,8 @@ async fn ingest_reject_marks_submission_rejected_without_authoring_atoms() {
                 claim: serde_json::json!({"display_name": "Sara"}),
                 provenance: vec![],
                 rationale: "test".into(),
+                engine: None,
+                model: None,
             }],
         )
         .await

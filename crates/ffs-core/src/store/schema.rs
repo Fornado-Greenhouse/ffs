@@ -134,3 +134,13 @@ CREATE TABLE IF NOT EXISTS quarantine_proposals (
     PRIMARY KEY (submission_id, seq)
 );
 "#;
+
+/// V3 (task_36, ADR-026): the scribe records which extraction
+/// engine (`heuristic` | `llm`) and which model produced each
+/// proposal so the review UI can show what to trust. Additive:
+/// two nullable columns on `quarantine_proposals`; rows written
+/// before v3 read back as `NULL` (= unknown engine).
+pub const V3_DDL: &str = r#"
+ALTER TABLE quarantine_proposals ADD COLUMN engine TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN model  TEXT;
+"#;

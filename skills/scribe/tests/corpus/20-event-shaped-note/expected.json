@@ -1,0 +1,12 @@
+{
+  "filename": "ribbon-cutting.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "Ribbon cutting for the new Eastway"
+      }
+    }
+  ],
+  "notes": "Event-shaped prose with no registered event predicate: a note titled from the first six words."
+}

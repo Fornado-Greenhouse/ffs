@@ -1,0 +1,12 @@
+{
+  "filename": "blank.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "untitled"
+      }
+    }
+  ],
+  "notes": "Whitespace only. Nothing is lost: an untitled note."
+}

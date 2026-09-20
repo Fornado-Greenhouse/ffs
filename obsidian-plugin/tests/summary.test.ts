@@ -5,6 +5,7 @@ import {
   MAX_PANEL_ITEMS,
   PanelItem,
   SummaryPanelModel,
+  engineLabel,
 } from "../src/summary.js";
 
 function fakeClient(callMap: Record<string, unknown>) {
@@ -86,8 +87,37 @@ describe("SummaryPanelModel", () => {
         submissionId: "sub-001",
         sourceUri: "file:///note.md",
         proposalCount: 1,
+        proposals: [{ predicate: "contact.person", claim: {}, rationale: "" }],
       },
     ]);
+  });
+
+  it("carries engine and model from ingest.list_pending into the preview (task_36)", async () => {
+    const client = fakeClient({
+      "audit.query": summaryAtom([]),
+      "ingest.list_pending": [
+        {
+          id: "sub-002",
+          source_uri: "file:///card.md",
+          proposals: [
+            { predicate: "contact.person", engine: "llm", model: "claude-sonnet-5" },
+            { predicate: "note", engine: "heuristic", model: "" },
+            { predicate: "note" },
+          ],
+        },
+      ],
+    });
+    const model = new SummaryPanelModel(client);
+    const state = await model.refresh();
+    const previews = state.pendingProposals[0].proposals;
+    expect(previews[0].engine).toBe("llm");
+    expect(previews[0].model).toBe("claude-sonnet-5");
+    expect(previews[1].engine).toBe("heuristic");
+    expect(previews[1].model).toBeUndefined();
+    expect(previews[2].engine).toBeUndefined();
+    expect(engineLabel(previews[0])).toBe("engine: llm (claude-sonnet-5)");
+    expect(engineLabel(previews[1])).toBe("engine: heuristic");
+    expect(engineLabel(previews[2])).toBe("");
   });
 
   it("accept() calls ingest.accept with the submission id then refreshes", async () => {

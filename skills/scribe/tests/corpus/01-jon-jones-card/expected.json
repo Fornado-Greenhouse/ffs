@@ -1,0 +1,18 @@
+{
+  "filename": "Jon Jones.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Jon Jones",
+        "phone": "919-428-4074"
+      },
+      "soft": {
+        "role": "UFC fighter"
+      }
+    }
+  ],
+  "notes": "The verbatim ADR-026 postmortem card. Filename is the only name source; the body is a key-value card with a typo'd label. Must never again yield 'Bones Occupation'. REQUIRED.",
+  "required": true,
+  "awaits": "hygiene fixes 36.8 (filename source, card-shape parsing, label stop-words)"
+}

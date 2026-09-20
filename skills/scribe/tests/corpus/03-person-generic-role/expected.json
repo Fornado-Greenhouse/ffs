@@ -1,0 +1,14 @@
+{
+  "filename": "Marcus Bell.md",
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Marcus Bell",
+        "role": "Facilities lead",
+        "team": "Operations"
+      }
+    }
+  ],
+  "notes": "Frontmatter name plus role and team, no contact hints: person.generic."
+}

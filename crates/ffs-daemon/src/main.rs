@@ -48,6 +48,26 @@
 //!   user already wrote the file in another tool.
 //! - `FFS_LOG` — `tracing-subscriber` env filter (default `info`).
 //!
+//! Scribe extraction engine (task_36, ADR-026). These are read by
+//! the scribe skill subprocess, which inherits the daemon's
+//! environment; the daemon itself only documents and forwards them.
+//!
+//! - `FFS_SCRIBE_ENGINE` — `heuristic` (default) or `llm`. Privacy
+//!   statement in one sentence: nothing leaves the machine unless
+//!   this is `llm` AND `FFS_SCRIBE_LLM_URL` points off-host.
+//! - `FFS_SCRIBE_LLM_URL` — backend base URL for the `llm` engine.
+//!   Default `http://localhost:11434` (Ollama chat API, local). When
+//!   the URL host is `api.anthropic.com` the Anthropic Messages API
+//!   adapter is used instead.
+//! - `FFS_SCRIBE_LLM_MODEL` — model id passed to the backend (for
+//!   example `llama3.1:8b` or `claude-sonnet-5`).
+//! - `FFS_SCRIBE_ANTHROPIC_KEY` — API key for the Anthropic adapter.
+//!   When unset on macOS the scribe looks for the keychain item
+//!   `ffs-scribe-anthropic` (task_27/33 machinery).
+//! - `FFS_SCRIBE_CORPUS_DIR` — external golden-corpus directory for
+//!   the scorer, so real press text can be scored locally without
+//!   ever entering git.
+//!
 //! Key precedence (per task_27): env-var → OS keychain →
 //! generate-and-warn. The env-var path also writes the value into
 //! the keychain (when not disabled) so the next boot can drop the
@@ -215,6 +235,15 @@ async fn run() -> Result<(), StartupError> {
     // the skill's identity.
     let skills_dir = data_dir.join("skills");
     let mut skills_host = SkillsHost::new(Arc::new(RefuseAllProxy));
+    // Every skill gets FFS_DATA_DIR explicitly (the daemon may have
+    // defaulted it from $HOME, in which case the variable is not in
+    // our own environment) so bundles can read
+    // $FFS_DATA_DIR/config/predicates/ (task_36). FFS_SCRIBE_* and
+    // the rest of our environment are inherited untouched.
+    skills_host.set_child_env(vec![(
+        "FFS_DATA_DIR".to_string(),
+        data_dir.to_string_lossy().into_owned(),
+    )]);
     let mut skill_registry = ffs_skills_host::SkillRegistry::new();
     match skill_registry.discover(&skills_dir) {
         Ok(()) => {

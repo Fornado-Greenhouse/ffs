@@ -1,0 +1,13 @@
+{
+  "filename": "Rafael Ortiz.md",
+  "proposals": [
+    {
+      "predicate": "contact.person",
+      "claim": {
+        "display_name": "Rafael Ortiz",
+        "phone": "704-555-0150"
+      }
+    }
+  ],
+  "notes": "A contact plus narrative body; the contact is the expected proposal, a companion note is allowed."
+}

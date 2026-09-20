@@ -404,6 +404,11 @@ async fn process_one(ctx: &EventLoopCtx, path: &Path) {
                     let _ = hash;
                 }
                 Err(e) => {
+                    // A failed extraction is not silent: the submission
+                    // becomes `Failed` (visible to the auditor), and the
+                    // reason is logged so a scribe timeout or crash shows
+                    // up in the daemon log without inspecting the DB.
+                    warn!(error = %e, id = %submission_id, "ingest_watcher: scribe extraction failed; submission marked failed");
                     if let Err(e2) = quarantine
                         .fail(&submission_id, format!("scribe: {e}"))
                         .await
@@ -469,6 +474,8 @@ mod tests {
                 claim: serde_json::json!({"title": "stub"}),
                 provenance: vec![],
                 rationale: "stub extractor".into(),
+                engine: None,
+                model: None,
             }])
         }
     }

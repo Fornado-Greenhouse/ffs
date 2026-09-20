@@ -112,6 +112,19 @@ impl SkillProcess {
     /// Spawn the skill and start the supervisor. Returns immediately;
     /// the first invocation may be sent right away.
     pub fn spawn(manifest: SkillManifest, proxy: Arc<dyn SubstrateAccess>) -> Self {
+        Self::spawn_with_env(manifest, proxy, Vec::new())
+    }
+
+    /// Like [`spawn`](Self::spawn) but sets extra environment
+    /// variables on the child (on top of the inherited daemon
+    /// environment). The daemon uses this to hand every skill
+    /// `FFS_DATA_DIR` so a bundle can read `config/predicates/`
+    /// directly (task_36) without a host round trip.
+    pub fn spawn_with_env(
+        manifest: SkillManifest,
+        proxy: Arc<dyn SubstrateAccess>,
+        extra_env: Vec<(String, String)>,
+    ) -> Self {
         let (tx_to_child, rx_to_child) = mpsc::unbounded_channel::<HostToSkill>();
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
         let restart_count = Arc::new(AtomicU32::new(0));
@@ -119,6 +132,7 @@ impl SkillProcess {
 
         tokio::spawn(supervise(
             manifest.clone(),
+            extra_env,
             proxy,
             rx_to_child,
             tx_to_child.clone(),
@@ -183,6 +197,7 @@ impl Drop for SkillProcess {
 #[allow(clippy::too_many_arguments)]
 async fn supervise(
     manifest: SkillManifest,
+    extra_env: Vec<(String, String)>,
     proxy: Arc<dyn SubstrateAccess>,
     mut rx_to_child: mpsc::UnboundedReceiver<HostToSkill>,
     tx_to_child: mpsc::UnboundedSender<HostToSkill>,
@@ -194,7 +209,7 @@ async fn supervise(
     let mut buffered: Option<HostToSkill> = None;
 
     loop {
-        let mut child = match spawn_child(&manifest) {
+        let mut child = match spawn_child(&manifest, &extra_env) {
             Ok(c) => c,
             Err(e) => {
                 warn!(skill = %manifest.name, error = %e, "skill_spawn_failed");
@@ -349,10 +364,15 @@ async fn write_one<W: AsyncWriteExt + Unpin>(
     stdin.flush().await
 }
 
-fn spawn_child(manifest: &SkillManifest) -> std::io::Result<Child> {
+/// Spawn the interpreter. The child inherits the daemon's full
+/// environment (so `FFS_SCRIBE_*` and friends pass through
+/// untouched; there is deliberately no `env_clear`) plus
+/// `extra_env`, which the host sets to at least `FFS_DATA_DIR`.
+fn spawn_child(manifest: &SkillManifest, extra_env: &[(String, String)]) -> std::io::Result<Child> {
     Command::new(&manifest.python)
         .arg(manifest.entry_point_abs())
         .current_dir(&manifest.dir)
+        .envs(extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

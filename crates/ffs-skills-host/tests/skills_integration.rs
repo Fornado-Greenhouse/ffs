@@ -96,6 +96,44 @@ run(handle)
     assert_eq!(result, serde_json::json!({"echoed": {"hello": "world"}}));
 }
 
+/// task_36: the skill subprocess must see `FFS_DATA_DIR` (set by
+/// the host) and inherit the daemon's `FFS_SCRIBE_*` variables so
+/// the scribe can read predicate specs and pick its engine.
+#[tokio::test]
+async fn skill_child_env_carries_data_dir_and_inherits_scribe_vars() {
+    if !python_available() {
+        eprintln!("skipping: python3 not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let entry = r#"
+import os
+from ffs_skill import run
+
+def handle(inp):
+    return {k: os.environ.get(k) for k in inp["keys"]}
+
+run(handle)
+"#;
+    let m = make_skill(&tmp, "envecho", entry, 30_000);
+    // Inheritance check: the host must not env_clear, so a variable
+    // already present in this test process (HOME on every supported
+    // platform's CI runner) must reach the child unchanged. The same
+    // path carries FFS_SCRIBE_* from the daemon's environment.
+    let home = std::env::var("HOME").unwrap_or_default();
+    let proc = SkillProcess::spawn_with_env(
+        m,
+        Arc::new(RefuseAllProxy),
+        vec![("FFS_DATA_DIR".to_string(), "/tmp/ffs-test-data".to_string())],
+    );
+    let result = proc
+        .invoke(serde_json::json!({"keys": ["FFS_DATA_DIR", "HOME"]}))
+        .await
+        .expect("invoke ok");
+    assert_eq!(result["FFS_DATA_DIR"], "/tmp/ffs-test-data");
+    assert_eq!(result["HOME"], home);
+}
+
 #[tokio::test]
 async fn skill_that_crashes_then_recovers_on_next_invocation() {
     if !python_available() {

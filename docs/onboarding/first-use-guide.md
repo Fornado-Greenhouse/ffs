@@ -189,6 +189,42 @@ you flip a bridge off with one click. For MVP, walking through
 the initial handshake still needs the technical friend; once
 established, day-to-day federated use is in-Obsidian.
 
+## Choosing how the scribe reads
+
+The scribe is the part that turns what you drop into `ingest/`
+into proposals. It has two engines, and the choice is yours.
+
+- **`heuristic` (the default).** Pattern rules that run entirely
+  on your machine. Nothing leaves the computer, ever. Good at
+  contact cards and frontmatter; weak at prose.
+- **`llm` (opt in).** Sends the note's text to a language model
+  and asks for proposals shaped by your predicate specs. Two
+  backends: a local Ollama server (still nothing leaves the
+  machine) or the Anthropic API (the note's text is sent to
+  Anthropic, and only when you have turned this on).
+
+Exactly what leaves the machine, and when: with `heuristic`,
+nothing. With `llm` pointed at `localhost`, nothing. With `llm`
+pointed at `api.anthropic.com`, the text of each note you drop
+into `ingest/`, at the moment the scribe reads it, to Anthropic,
+under your API key. The proposals still land in your quarantine
+for you to accept or reject; the engine and model that produced
+each one are shown on the card.
+
+Model guidance from our own measurements: Claude Sonnet passes
+our extraction tests with margin. An 8-billion-parameter local
+model does not; treat local-only as a "digest" tier that files
+notes but will not reliably pull out people and organizations.
+
+Your technical friend switches engines with three environment
+variables (`FFS_SCRIBE_ENGINE`, `FFS_SCRIBE_LLM_URL`,
+`FFS_SCRIBE_LLM_MODEL`) described in the
+[technical-friend checklist](technical-friend-checklist.md).
+
+One rule about test material: no copyrighted press text ever
+goes into the FFS repository. Real articles used to measure the
+scribe live under your own data directory.
+
 ## What to do when something looks wrong
 
 - **A proposal looks weird.** Reject it. The scribe is

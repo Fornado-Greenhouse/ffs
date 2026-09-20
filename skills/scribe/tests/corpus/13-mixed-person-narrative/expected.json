@@ -1,0 +1,13 @@
+{
+  "filename": "Tessa Lindqvist.md",
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Tessa Lindqvist",
+        "role": "Program director"
+      }
+    }
+  ],
+  "notes": "A person record plus narrative body; the person is the expected proposal, a companion note is allowed."
+}

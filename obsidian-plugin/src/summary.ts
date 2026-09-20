@@ -47,6 +47,20 @@ export interface ProposalPreview {
   predicate: string;
   claim: Record<string, unknown>;
   rationale: string;
+  /** Extraction engine that produced the proposal (task_36 /
+   * ADR-026): "heuristic" or "llm". Absent for pre-task_36 rows. */
+  engine?: string;
+  /** Model id when engine is "llm". */
+  model?: string;
+}
+
+/** Human-readable engine label for a proposal card:
+ * "engine: heuristic", "engine: llm (claude-sonnet-5)", or "" when
+ * the daemon did not record an engine. */
+export function engineLabel(p: Pick<ProposalPreview, "engine" | "model">): string {
+  if (!p.engine) return "";
+  if (p.engine === "llm" && p.model) return `engine: llm (${p.model})`;
+  return `engine: ${p.engine}`;
 }
 
 export interface PanelState {
@@ -143,16 +157,27 @@ export class SummaryPanelModel {
         predicate?: string;
         claim?: Record<string, unknown>;
         rationale?: string;
+        engine?: string;
+        model?: string;
       }>;
     }>;
     const pendingProposals: ProposalItem[] = (Array.isArray(pending) ? pending : [])
       .map((sub) => {
         const raw = Array.isArray(sub?.proposals) ? sub.proposals : [];
-        const proposals: ProposalPreview[] = raw.map((p) => ({
-          predicate: String(p?.predicate ?? "unknown"),
-          claim: (p?.claim ?? {}) as Record<string, unknown>,
-          rationale: String(p?.rationale ?? ""),
-        }));
+        const proposals: ProposalPreview[] = raw.map((p) => {
+          const preview: ProposalPreview = {
+            predicate: String(p?.predicate ?? "unknown"),
+            claim: (p?.claim ?? {}) as Record<string, unknown>,
+            rationale: String(p?.rationale ?? ""),
+          };
+          if (typeof p?.engine === "string" && p.engine.length > 0) {
+            preview.engine = p.engine;
+          }
+          if (typeof p?.model === "string" && p.model.length > 0) {
+            preview.model = p.model;
+          }
+          return preview;
+        });
         return {
           submissionId: String(sub?.id ?? ""),
           sourceUri: String(sub?.source_uri ?? ""),

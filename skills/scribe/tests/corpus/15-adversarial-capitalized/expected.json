@@ -1,0 +1,18 @@
+{
+  "filename": "standup.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": {
+          "$contains": "Monday Morning"
+        }
+      }
+    }
+  ],
+  "notes": "Capitalized bigrams that are not people. Must not become a contact.",
+  "forbid": [
+    "contact.person",
+    "person.generic"
+  ]
+}

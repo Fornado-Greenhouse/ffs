@@ -1,0 +1,16 @@
+{
+  "filename": "grocery.md",
+  "proposals": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "Grocery list"
+      }
+    }
+  ],
+  "notes": "Frontmatter with a title and no body. Today _name_field treats `title` as a name and extract_person_generic uses `title` as the role, yielding person.generic display_name \"Grocery list\". Expected: a note titled Grocery list.",
+  "forbid": [
+    "person.generic"
+  ],
+  "awaits": "heuristic hygiene (title-only frontmatter is a note, not a person.generic with role=title); outside the three ADR-026 fixes, flagged for the parent"
+}

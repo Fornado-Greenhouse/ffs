@@ -37,3 +37,10 @@ obsidian-plugin/main.js.map
 # defense-in-depth.
 secrets/
 **/secrets/
+
+# task_36: local golden-corpus for real press articles. The scribe's
+# scorer reads real-text fixtures from FFS_SCRIBE_CORPUS_DIR (or this
+# directory when present). No copyrighted press text may enter git;
+# the in-repo corpus under skills/scribe/tests/corpus/ is paraphrased
+# or synthetic only.
+skills/scribe/tests/corpus-local/

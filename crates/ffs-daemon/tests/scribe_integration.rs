@@ -208,6 +208,8 @@ impl From<ScribeProposalWire> for Proposal {
             claim: w.claim,
             provenance,
             rationale: w.rationale,
+            engine: None,
+            model: None,
         }
     }
 }

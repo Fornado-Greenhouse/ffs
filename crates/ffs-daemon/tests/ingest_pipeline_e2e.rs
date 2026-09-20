@@ -236,6 +236,106 @@ async fn drop_markdown_in_ingest_produces_a_proposal_via_real_scribe() {
     }
 }
 
+/// task_36: opt-in `llm` engine, end to end. Runs only when the
+/// test process has `FFS_SCRIBE_ENGINE=llm` set (and, for a real
+/// backend, `FFS_SCRIBE_LLM_URL` / `FFS_SCRIBE_LLM_MODEL`); the
+/// daemon forwards its environment to the scribe subprocess. The
+/// scribe falls back to `heuristic` when the backend is unreachable
+/// or its output is schema-invalid, so the assertion is that the
+/// `engine` field is present and is one of the two values, with
+/// `llm` expected when the backend answered.
+#[tokio::test]
+async fn llm_engine_e2e_when_backend_configured() {
+    if std::env::var("FFS_SCRIBE_ENGINE").as_deref() != Ok("llm") {
+        eprintln!("skipping: set FFS_SCRIBE_ENGINE=llm (and FFS_SCRIBE_LLM_URL/MODEL) to run");
+        return;
+    }
+    if !python_available() {
+        eprintln!("skipping: python3 not on PATH");
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let data_dir = tmp.path().to_path_buf();
+    seed_data_dir(&data_dir);
+
+    let bin = env!("CARGO_BIN_EXE_ffs-daemon");
+    let mut child = Command::new(bin)
+        .env("FFS_DATA_DIR", &data_dir)
+        .env(
+            "FFS_OWNER_KEY_HEX",
+            "0909090909090909090909090909090909090909090909090909090909090909",
+        )
+        .env(
+            "FFS_SQLCIPHER_KEY_HEX",
+            "abadcafeabadcafeabadcafeabadcafeabadcafeabadcafeabadcafeabadcafe",
+        )
+        .env("FFS_KEYRING_DISABLE", "1")
+        .env("FFS_INGEST_STABILITY_MS", "0")
+        .env("FFS_LOG", "warn")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon");
+
+    let socket = data_dir.join("run").join("ffs.sock");
+    assert!(
+        wait_for(&socket, Duration::from_secs(5)).await,
+        "daemon never bound the socket"
+    );
+    let ingest_dir = data_dir.join("ingest");
+    let card = "---\nname: Sara Chen\nemail: sara@example.com\nphone: 919-555-0100\n---\n\nMet at the distributed-systems conference.\n";
+    std::fs::write(ingest_dir.join("sara-llm.md"), card).unwrap();
+
+    let start = Instant::now();
+    let mut submissions = Vec::new();
+    // LLM backends are slow; allow up to 90s.
+    while start.elapsed() < Duration::from_secs(90) {
+        let resp = rpc(&socket, "ingest.list_pending", serde_json::json!({})).await;
+        submissions = resp
+            .get("result")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if !submissions.is_empty()
+            && submissions[0]
+                .get("status")
+                .and_then(|s| s.as_str())
+                .map(|s| s.eq_ignore_ascii_case("extracted"))
+                .unwrap_or(false)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert!(!submissions.is_empty(), "no submission surfaced");
+    let proposals = submissions[0]
+        .get("proposals")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(!proposals.is_empty(), "no proposals: {}", submissions[0]);
+    let engine = proposals[0]
+        .get("engine")
+        .and_then(|e| e.as_str())
+        .unwrap_or("");
+    assert!(
+        engine == "llm" || engine == "heuristic",
+        "proposal must carry an engine field; got {:?}",
+        proposals[0]
+    );
+    if engine == "heuristic" {
+        eprintln!("note: scribe fell back to heuristic (backend unreachable or invalid output)");
+    }
+
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .expect("kill");
+    let _ = child.wait();
+}
+
 /// task_32: unstructured body text ("Met Sara Chen at the
 /// conference. Phone 919-428-4074.") should produce a
 /// `contact.person` proposal with display_name "Sara Chen",
