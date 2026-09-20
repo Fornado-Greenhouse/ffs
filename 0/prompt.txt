@@ -1080,3 +1080,43 @@ Note outside scope: the `[blocking]` table in the starter file was placed under 
 One note for the daemon fork: `affiliation.valid_from` is emitted only when the article states a start date; the daemon should default it to the article's `published_at` (available on the `source.article` proposal in the same set).</result>
 <usage><subagent_tokens>769027</subagent_tokens><tool_uses>14</tool_uses><duration_ms>428541</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a0d8a6b33e3bbecff</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a0d8a6b33e3bbecff.output</output-file>
+<status>completed</status>
+<summary>Agent "task_45 R2: daemon resolver + accept path" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: daemon half of task_45 (resolver, ResolvingExtractor, accept path with choices, ref rewriting, role endings, alias growth, priors, opaque ids; entity_search aliases; plugin card; docs; tests). Done; nothing committed.
+
+**Verification (all fresh, after the last change)**
+- `cargo nextest run --workspace --all-features`: 513 tests run, 513 passed, 0 skipped.
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: 0 warnings.
+- `npm test` (obsidian-plugin): 11 files, 73 passed.
+
+**Files**
+- New: `crates/ffs-daemon/src/resolver.rs` (11 unit tests), `crates/ffs-daemon/tests/resolver_task45.rs` (8 integration tests incl. the four identity fixtures and the multi-entity e2e).
+- Changed: `crates/ffs-daemon/src/{scribe.rs, dispatch.rs, api.rs, main.rs, lib.rs, ingest_watcher.rs}`, `crates/ffs-daemon/tests/{filing_cabinet_task38, scribe_integration, summary_panel_integration}.rs` (Proposal literal fields only), `obsidian-plugin/src/{summary.ts, main.ts}`, `obsidian-plugin/tests/summary.test.ts`, `docs/onboarding/first-use-guide.md`, `starter/config/resolution.toml` (weights only).
+
+**Resolver public signature**
+`pub fn resolve_set(set: &amp;mut Vec&lt;Proposal&gt;, lookups: &amp;dyn CandidateLookup, cfg: &amp;ResolutionConfig, ctx: &amp;mut SubmissionContext) -&gt; ResolveReport` (a `Vec`, not a slice, because NIL-dropped bare mentions are removed from the set), plus `pub fn dependency_order(&amp;[Proposal]) -&gt; Vec&lt;usize&gt;`, `pub trait CandidateLookup`, `pub struct StoreLookup&lt;'a&gt; { store, registry }`, `SubmissionContext { submission_id, now, bound: HashMap&lt;local_ref, EntityId&gt;, article_org }` (the coherence seam), `ResolveReport { warnings, backfill: Vec&lt;(submission_id, display)&gt;, dropped }`. `ResolvingExtractor::new(inner, store, registry, Some(data_dir))` decorates any `ScribeExtractor`, re-reads `config/resolution.toml` per call, and is wired in `main.rs` around the skills-host extractor; `ResolvingExtractor::resolve(source_uri, set)` is the sync entry for tests.
+
+**Accept `choices` shape**
+`ingest.accept { submission_id, choices?: { "&lt;local_ref or #index&gt;": "&lt;entity id&gt;" | "new" } }`. Any `ambiguous` proposal without a choice fails with `ERR_INVALID_PARAMS`, message listing the refs and `data.ambiguous: [...]`. Accept then runs in dependency order: existing binds (following `same_as` again) and supersedes the head with an additive merge; new mints an opaque id; refs are rewritten via `CrossRef::apply`; `ends_role` supersedes the matching head affiliation with `valid_to` (skipped with a warning when none); affiliation `valid_from` defaults to the article's `published_at`; every existing bind records a prior; minted persons clear their NIL sighting. Alias growth: a differing mention text joins `aliases[]`; a proposal whose aliases name the head's current display is treated as a rename (its name becomes primary, the old one an alias). `entity.search` hits gain `matched_on: ["display_name"|"alias"]`.
+
+**Decisions worth the parent's eye**
+- `source_article` provenance maps to `SourceKind::IngestFile` (no variant exists in ffs-core); the uri is kept. Adding a variant is an envelope decision.
+- `starter/config/resolution.toml` weights changed: `display_name.agree` 6.0 to 8.0 (an exact name with nothing contradicting links on its own; otherwise every repeat org mention was ambiguous) and `organization.disagree` -2.0 to -5.0 (same name, different stated org must not auto-link; fixture 32 caught this). Both commented in the file.
+- NIL policy scoped to `person.generic` inside a set that carries a `source.article`; a contact card or standalone person note always mints (the real-scribe e2e tests caught the wider gate dropping contacts). Distinguishing fields extended to email, phone, location, team.
+- Person-only rules: surname blocking, the diminutive/initial rule ("Sam"/"Samuel", "S."/"Sara"), and the surname penalty apply only to person predicates; article titles and org names use exact-name and alias matching.
+- Identity harness simulates the owner's review picks from the gold labels for ambiguous outcomes (a wrong `existing` is the failure it catches); all four fixtures score 1.0 pairwise and B-cubed, with fixture 32 correctly returning ambiguous for the same-name different-org case.
+
+**Out of scope, noted**
+- Reverse-lookup sections render links by basename, and an org's `## People` rendered before the person materialized shows the entity id; the e2e test re-materializes once. In production the org file is stale until its next commit; the materializer should re-render entities referenced by a newly committed affiliation or person.
+- ffs-core: nothing changed. The merge-undo materializer stub and the reconciliation picker remain task_39.</result>
+<usage><subagent_tokens>860010</subagent_tokens><tool_uses>56</tool_uses><duration_ms>1188145</duration_ms></usage>
+</task-notification>
