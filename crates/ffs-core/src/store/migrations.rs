@@ -4,7 +4,7 @@
 
 use rusqlite::{Connection, params};
 
-use super::schema::{V1_DDL, V2_DDL, V3_DDL, V4_DDL};
+use super::schema::{V1_DDL, V2_DDL, V3_DDL, V4_DDL, V5_DDL};
 use super::{SCHEMA_VERSION, StoreError};
 
 /// Apply schema migrations idempotently.
@@ -48,6 +48,7 @@ pub fn apply(conn: &Connection) -> Result<(), StoreError> {
             2 => V2_DDL,
             3 => V3_DDL,
             4 => V4_DDL,
+            5 => V5_DDL,
             other => {
                 return Err(StoreError::UnsupportedSchemaVersion {
                     found: other,
@@ -260,6 +261,65 @@ mod tests {
 
         conn.execute_batch("SELECT family, basename, entity, display FROM path_index LIMIT 0")
             .expect("v4 path_index table exists");
+        let version: u32 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    /// A v4 database (task_38 shape) must step to v5 and gain the
+    /// resolution columns and tables (task_45, ADR-030); rows written
+    /// before v5 read back with NULL resolution fields.
+    #[test]
+    fn applying_v5_on_top_of_existing_v4_db_adds_resolution_columns_and_tables() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+        )
+        .unwrap();
+        conn.execute_batch("BEGIN;").unwrap();
+        for ddl in [V1_DDL, V2_DDL, V3_DDL, V4_DDL] {
+            conn.execute_batch(ddl).unwrap();
+        }
+        for v in 1..=4u32 {
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at) VALUES (?1, ?2)",
+                params![v, now_iso()],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO quarantine_submissions(id, source_uri, content_hash, content, tx_time, status)
+             VALUES ('s1', 'file:///a', X'00', X'00', '2026-01-01T00:00:00Z', 'extracted')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO quarantine_proposals(submission_id, seq, predicate, claim, provenance, rationale)
+             VALUES ('s1', 0, 'note', '{}', '[]', 'r')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch("COMMIT;").unwrap();
+
+        apply(&conn).expect("step to v5");
+
+        let resolution: Option<String> = conn
+            .query_row(
+                "SELECT resolution FROM quarantine_proposals WHERE submission_id = 's1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(resolution.is_none(), "pre-v5 rows read back NULL");
+        conn.execute_batch("SELECT form, entity, count FROM resolution_priors LIMIT 0")
+            .expect("priors table");
+        conn.execute_batch(
+            "SELECT key, submission_id, display, first_seen FROM nil_sightings LIMIT 0",
+        )
+        .expect("sightings table");
         let version: u32 = conn
             .query_row("SELECT MAX(version) FROM schema_version", [], |row| {
                 row.get(0)

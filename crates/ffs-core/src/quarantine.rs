@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::{Iso8601, Multihash, PredicateName, Provenance};
+use crate::{EntityId, Iso8601, Multihash, PredicateName, Provenance};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QuarantineError {
@@ -47,10 +47,109 @@ pub enum SubmissionStatus {
     Rejected,
 }
 
+/// Outcome of daemon-side entity resolution for one proposal
+/// (ADR-030): the mention matched a known entity, is a new one, or
+/// sits between the thresholds (or between two close candidates) and
+/// needs the owner's eye. `ambiguous` is always conflicting under
+/// ADR-029, so no Accept grant can auto-file it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Resolution {
+    Existing,
+    New,
+    Ambiguous,
+}
+
+/// One candidate the resolver considered for a proposal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Candidate {
+    pub entity: EntityId,
+    pub score: f64,
+    /// Which fields matched: `display_name`, `alias`, `fts`, `prior`,
+    /// `organization`, `role`, `location`.
+    pub matched_on: Vec<String>,
+    /// The candidate's current display name, for the review picker.
+    pub display: String,
+}
+
+/// A cross-reference between proposals in one submission: `field` is
+/// a JSON-pointer-like path inside this proposal's claim (`organization`,
+/// `person`, `mentions/2/entity`, `participants/0/entity`) that must be
+/// filled with the entity id the proposal tagged `local_ref` resolves
+/// to. The Python wire writes `mentions[2].entity`; see
+/// [`CrossRef::from_wire_field`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrossRef {
+    pub field: String,
+    pub local_ref: String,
+}
+
+impl CrossRef {
+    /// Normalize a wire field (`mentions[2].entity`, `organization`) to
+    /// the pointer form (`mentions/2/entity`).
+    pub fn from_wire_field(field: &str) -> String {
+        let mut out = String::with_capacity(field.len());
+        for ch in field.chars() {
+            match ch {
+                '[' | '.' => out.push('/'),
+                ']' => {}
+                other => out.push(other),
+            }
+        }
+        out.trim_matches('/').to_string()
+    }
+
+    /// Set `value` at the pointer path `field` inside `claim`, creating
+    /// intermediate objects and the final key as needed. Array segments
+    /// must already exist (a cross-reference never invents a mention).
+    /// Returns false when the path cannot be applied.
+    pub fn apply(claim: &mut serde_json::Value, field: &str, value: serde_json::Value) -> bool {
+        let path = Self::from_wire_field(field);
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if segments.is_empty() {
+            return false;
+        }
+        let mut cur = claim;
+        for (i, seg) in segments.iter().enumerate() {
+            let last = i + 1 == segments.len();
+            if let Ok(idx) = seg.parse::<usize>() {
+                let Some(arr) = cur.as_array_mut() else {
+                    return false;
+                };
+                let Some(item) = arr.get_mut(idx) else {
+                    return false;
+                };
+                if last {
+                    *item = value;
+                    return true;
+                }
+                cur = item;
+            } else {
+                if !cur.is_object() {
+                    if cur.is_null() {
+                        *cur = serde_json::Value::Object(Default::default());
+                    } else {
+                        return false;
+                    }
+                }
+                let obj = cur.as_object_mut().expect("object");
+                if last {
+                    obj.insert((*seg).to_string(), value);
+                    return true;
+                }
+                cur = obj
+                    .entry((*seg).to_string())
+                    .or_insert(serde_json::Value::Null);
+            }
+        }
+        false
+    }
+}
+
 /// A single proposed atom produced by the scribe from a submission.
 /// Proposals carry their own provenance (back to the submission) and
 /// a rationale string so the user understands what the scribe inferred.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Proposal {
     pub predicate: PredicateName,
     pub claim: serde_json::Value,
@@ -67,13 +166,69 @@ pub struct Proposal {
     /// for the heuristic engine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Submission-local handle other proposals in the same set refer
+    /// to (task_45 cross-references). Not an entity id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_ref: Option<String>,
+    /// Fields of this claim that must be filled with the entity ids of
+    /// other proposals in the same set, by their `local_ref`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<CrossRef>,
+    /// Bitemporal window the scribe asserts for this claim (a role's
+    /// start, an article's publication date). `None` means "now".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<Iso8601>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<Iso8601>,
+    /// True when this proposal ends an existing role (ADR-031): it is
+    /// a supersession setting `valid_to` on the head affiliation, never
+    /// a new atom, so ADR-029 routes it to review.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ends_role: bool,
+    /// The entity this proposal is about, once known: bound by the
+    /// resolver when `resolution == Existing`, or minted at accept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<EntityId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<Resolution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<Candidate>,
+}
+
+impl Proposal {
+    /// A proposal with only the pre-task_45 fields set; every
+    /// resolution field is empty. Keeps struct literals short in
+    /// callers that do not resolve.
+    pub fn new(
+        predicate: PredicateName,
+        claim: serde_json::Value,
+        provenance: Vec<Provenance>,
+        rationale: impl Into<String>,
+    ) -> Self {
+        Self {
+            predicate,
+            claim,
+            provenance,
+            rationale: rationale.into(),
+            engine: None,
+            model: None,
+            local_ref: None,
+            refs: Vec::new(),
+            valid_from: None,
+            valid_to: None,
+            ends_role: false,
+            entity: None,
+            resolution: None,
+            candidates: Vec::new(),
+        }
+    }
 }
 
 /// A unit of work submitted to the ingest pipeline. Each submission
 /// carries the raw bytes, a content-addressed hash so duplicates can
 /// be detected, and (after extraction) the proposals the scribe
 /// produced.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Submission {
     pub id: String,
     pub source_uri: String,
@@ -284,6 +439,12 @@ mod tests {
             rationale: "extracted from frontmatter".into(),
             engine: Some("heuristic".into()),
             model: None,
+            ..Proposal::new(
+                PredicateName::new("contact.person"),
+                serde_json::Value::Null,
+                vec![],
+                "",
+            )
         };
         q.complete(&id, vec![p.clone()]).await.unwrap();
         let sub = q.get(&id).await.unwrap();
@@ -370,5 +531,71 @@ mod tests {
             .unwrap();
         let err = q.accept(&id, vec![]).await.unwrap_err();
         assert!(matches!(err, QuarantineError::BadTransition { .. }));
+    }
+}
+
+#[cfg(test)]
+mod cross_ref_tests {
+    use super::*;
+
+    #[test]
+    fn wire_fields_normalize_to_pointer_form() {
+        assert_eq!(
+            CrossRef::from_wire_field("mentions[2].entity"),
+            "mentions/2/entity"
+        );
+        assert_eq!(CrossRef::from_wire_field("organization"), "organization");
+        assert_eq!(
+            CrossRef::from_wire_field("participants/0/entity"),
+            "participants/0/entity"
+        );
+    }
+
+    #[test]
+    fn apply_sets_top_level_and_array_item_keys() {
+        let mut claim =
+            serde_json::json!({"title": "t", "mentions": [{"display": "A"}, {"display": "B"}]});
+        assert!(CrossRef::apply(
+            &mut claim,
+            "mentions[1].entity",
+            serde_json::json!("zabc")
+        ));
+        assert_eq!(claim["mentions"][1]["entity"], "zabc");
+        assert!(claim["mentions"][0].get("entity").is_none());
+        assert!(CrossRef::apply(
+            &mut claim,
+            "organization",
+            serde_json::json!("zorg")
+        ));
+        assert_eq!(claim["organization"], "zorg");
+        assert!(
+            !CrossRef::apply(&mut claim, "mentions[9].entity", serde_json::json!("x")),
+            "missing item is not invented"
+        );
+        assert!(!CrossRef::apply(&mut claim, "", serde_json::json!("x")));
+    }
+
+    #[test]
+    fn resolution_serializes_lowercase_and_empty_fields_are_omitted() {
+        let p = Proposal::new(
+            PredicateName::new("note"),
+            serde_json::json!({}),
+            vec![],
+            "r",
+        );
+        let v = serde_json::to_value(&p).unwrap();
+        assert!(
+            v.get("refs").is_none()
+                && v.get("candidates").is_none()
+                && v.get("ends_role").is_none()
+        );
+        let mut q = p.clone();
+        q.resolution = Some(Resolution::Ambiguous);
+        q.ends_role = true;
+        let v = serde_json::to_value(&q).unwrap();
+        assert_eq!(v["resolution"], "ambiguous");
+        assert_eq!(v["ends_role"], true);
+        let back: Proposal = serde_json::from_value(v).unwrap();
+        assert_eq!(back.resolution, Some(Resolution::Ambiguous));
     }
 }

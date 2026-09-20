@@ -41,6 +41,8 @@ import {
   type ProposalItem,
   type ProposalPreview,
   engineLabel,
+  resolutionLabel,
+  candidateLines,
   type PanelItem,
 } from "./summary.js";
 
@@ -540,6 +542,23 @@ class SummaryView extends ItemView {
         text: engine,
         cls: "ffs-proposal-engine",
       });
+    }
+    const resolution = resolutionLabel(proposal);
+    if (resolution) {
+      detail.createEl("div", {
+        text: resolution,
+        cls: "ffs-proposal-resolution",
+      });
+      // The reconciliation picker itself is task_39; here the card
+      // only shows what the resolver saw so an ambiguous item is
+      // legible before the picker exists.
+      const lines = candidateLines(proposal);
+      if (proposal.resolution === "ambiguous" && lines.length > 0) {
+        const ul = detail.createEl("ul", { cls: "ffs-proposal-candidates" });
+        for (const line of lines) {
+          ul.createEl("li", { text: line });
+        }
+      }
     }
   }
 

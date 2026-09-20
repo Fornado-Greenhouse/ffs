@@ -1,0 +1,20 @@
+{
+  "filename": "saltmarsh-a.md",
+  "engine": "llm",
+  "identity": true,
+  "articles": [
+    "input.md",
+    "input-b.md"
+  ],
+  "notes": "Identity fixture: two distinct people with one name; the daemon test merges them by mistake with entity.same_as, then supersedes the same_as atom and expects both clusters restored with no data movement.",
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Chris Adair",
+        "organization": "Saltmarsh Kitchen"
+      },
+      "refs_count": 1
+    }
+  ]
+}

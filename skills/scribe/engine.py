@@ -140,21 +140,200 @@ def make_proposal(
     rationale: str,
     engine_name: str,
     model: str,
+    *,
+    local_ref: Optional[str] = None,
+    valid_from: Optional[str] = None,
+    valid_to: Optional[str] = None,
+    ends_role: bool = False,
+    extra_provenance: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    return {
+    """Build one wire proposal.
+
+    The keyword-only extras are the task_45 multi-entity conventions.
+    Every one of them is optional and omitted from the dict when unset,
+    so a single proposal without them is the degenerate case and the
+    wire stays backward compatible:
+
+    - ``local_ref``: a token unique within one submission's set
+      (``"org-1"``, ``"person-2"``, ``"article"``) that other proposals'
+      ``refs`` point at.
+    - ``valid_from`` / ``valid_to``: ISO dates for the claim's validity
+      window (an affiliation's start, or its end when ``ends_role``).
+    - ``ends_role``: the proposal ends an existing role; the daemon
+      turns it into a supersession of the matching affiliation head
+      rather than a new atom.
+    - ``extra_provenance``: further provenance entries (the
+      ``source_article`` entry that ties every proposal in an article
+      set to the article url).
+    """
+    provenance: List[Dict[str, Any]] = [
+        {
+            "kind": "ingest",
+            "uri": submission.source_uri,
+            "hash_hex": submission.content_hash_hex,
+        }
+    ]
+    if extra_provenance:
+        provenance.extend(dict(e) for e in extra_provenance)
+    out: Dict[str, Any] = {
         "predicate": predicate,
         "claim": claim,
-        "provenance": [
-            {
-                "kind": "ingest",
-                "uri": submission.source_uri,
-                "hash_hex": submission.content_hash_hex,
-            }
-        ],
+        "provenance": provenance,
         "rationale": rationale,
         "engine": engine_name,
         "model": model,
     }
+    if local_ref:
+        out["local_ref"] = local_ref
+    if valid_from:
+        out["valid_from"] = valid_from
+    if valid_to:
+        out["valid_to"] = valid_to
+    if ends_role:
+        out["ends_role"] = True
+    return out
+
+
+def source_article_provenance(submission: Submission, url: str) -> Dict[str, Any]:
+    """The provenance entry that ties a proposal to the article it came
+    from (task_45). ``hash_hex`` is the submission's content hash so the
+    entry is stable across every proposal in the set."""
+    return {"kind": "source_article", "uri": url, "hash_hex": submission.content_hash_hex}
+
+
+# ---------------------------------------------------------------------
+# Cross-references within one submission's proposal set (task_45)
+# ---------------------------------------------------------------------
+
+# Where a proposal may name another proposal by display string. The
+# field list is a wire convention, not a predicate list: any predicate
+# whose claim carries these fields participates. `display_name` and
+# `title` are what a proposal is *called*; the rest are where it is
+# *referenced*.
+_NAME_FIELDS: Tuple[str, ...] = ("display_name", "title")
+_SCALAR_REF_FIELDS: Tuple[str, ...] = ("organization", "person", "target", "other")
+_OBJECT_LIST_REF_FIELDS: Tuple[str, ...] = ("mentions", "participants")
+
+
+def normalize_display(value: Any) -> str:
+    """Case- and whitespace-insensitive key for display matching."""
+    return re.sub(r"\s+", " ", str(value)).strip().casefold()
+
+
+def _proposal_names(proposal: Dict[str, Any]) -> List[str]:
+    claim = proposal.get("claim") or {}
+    names: List[str] = []
+    for f in _NAME_FIELDS:
+        v = claim.get(f)
+        if isinstance(v, str) and v.strip():
+            names.append(v)
+    aliases = claim.get("aliases")
+    if isinstance(aliases, list):
+        names.extend(str(a) for a in aliases if str(a).strip())
+    return names
+
+
+def assign_local_refs(proposals: List[Dict[str, Any]]) -> None:
+    """Give every proposal a ``local_ref`` unique within the set. Refs
+    the engine or model already supplied are kept when unique; the
+    rest are derived from the predicate's last dotted segment plus a
+    counter (``org-1``, ``person-2``, ``article-1``)."""
+    seen: set = set()
+    for p in proposals:
+        ref = p.get("local_ref")
+        if isinstance(ref, str) and ref.strip() and ref not in seen:
+            p["local_ref"] = ref.strip()
+            seen.add(p["local_ref"])
+        else:
+            p.pop("local_ref", None)
+    counters: Dict[str, int] = {}
+    for p in proposals:
+        if p.get("local_ref"):
+            continue
+        stem = str(p.get("predicate", "item")).split(".")[-1].replace("_", "-") or "item"
+        while True:
+            counters[stem] = counters.get(stem, 0) + 1
+            candidate = f"{stem}-{counters[stem]}"
+            if candidate not in seen:
+                break
+        p["local_ref"] = candidate
+        seen.add(candidate)
+
+
+def bind_refs(proposals: List[Dict[str, Any]]) -> None:
+    """Record, on each proposal, which other proposals in the same set
+    its display references resolve to::
+
+        "refs": [{"field": "organization", "local_ref": "org-1"},
+                 {"field": "mentions[2].entity", "local_ref": "person-1"}]
+
+    Matching is by display string (case and whitespace insensitive)
+    against the other proposals' names and aliases. A display that
+    matches nothing gets no entry; the daemon resolves those against
+    the substrate. A proposal never references itself. Requires
+    ``assign_local_refs`` to have run.
+    """
+    index: Dict[str, str] = {}
+    for p in proposals:
+        ref = p.get("local_ref")
+        if not ref:
+            continue
+        for name in _proposal_names(p):
+            index.setdefault(normalize_display(name), ref)
+    for p in proposals:
+        me = p.get("local_ref")
+        claim = p.get("claim") or {}
+        refs: List[Dict[str, str]] = []
+        for f in _SCALAR_REF_FIELDS:
+            v = claim.get(f)
+            if isinstance(v, str) and v.strip():
+                target = index.get(normalize_display(v))
+                if target and target != me:
+                    refs.append({"field": f, "local_ref": target})
+        for f in _OBJECT_LIST_REF_FIELDS:
+            items = claim.get(f)
+            if not isinstance(items, list):
+                continue
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                d = item.get("display")
+                if isinstance(d, str) and d.strip():
+                    target = index.get(normalize_display(d))
+                    if target and target != me:
+                        refs.append({"field": f"{f}[{i}].entity", "local_ref": target})
+        if refs:
+            p["refs"] = refs
+        else:
+            p.pop("refs", None)
+
+
+def article_url_for_set(submission: Submission, proposals: List[Dict[str, Any]]) -> Optional[str]:
+    """The article url a proposal set belongs to: the submission's
+    frontmatter ``url`` when present, else the first proposal whose
+    claim carries a string ``url``."""
+    fm_url = (submission.frontmatter or {}).get("url")
+    if isinstance(fm_url, str) and fm_url.strip():
+        return fm_url.strip()
+    for p in proposals:
+        u = (p.get("claim") or {}).get("url")
+        if isinstance(u, str) and u.strip():
+            return u.strip()
+    return None
+
+
+def attach_source_article(submission: Submission, proposals: List[Dict[str, Any]]) -> Optional[str]:
+    """Add the ``source_article`` provenance entry to every proposal in
+    the set when an article url is known. Idempotent. Returns the url."""
+    url = article_url_for_set(submission, proposals)
+    if not url:
+        return None
+    entry = source_article_provenance(submission, url)
+    for p in proposals:
+        prov = p.setdefault("provenance", [])
+        if not any(e.get("kind") == "source_article" and e.get("uri") == url for e in prov if isinstance(e, dict)):
+            prov.append(dict(entry))
+    return url
 
 
 # ---------------------------------------------------------------------
@@ -306,6 +485,7 @@ def apply_hint(
             return EngineResult(proposals=kept, warnings=list(result.warnings))
         built = _claim_from_frontmatter(submission, hint, registry)
         if built is not None:
+            url = built.get("url") if isinstance(built.get("url"), str) else None
             proposal = make_proposal(
                 hint,
                 built,
@@ -314,6 +494,8 @@ def apply_hint(
                 "claim built from the frontmatter keys the schema declares",
                 engine_name,
                 model,
+                local_ref="hint",
+                extra_provenance=[source_article_provenance(submission, url)] if url else None,
             )
             return EngineResult(proposals=[proposal], warnings=list(result.warnings))
         return EngineResult(

@@ -52,6 +52,42 @@ export interface ProposalPreview {
   engine?: string;
   /** Model id when engine is "llm". */
   model?: string;
+  /** Daemon-side resolution outcome (task_45 / ADR-030): "existing",
+   * "new", or "ambiguous". Absent for proposals that were never
+   * resolved. */
+  resolution?: string;
+  /** Bound entity id when resolution is "existing". */
+  entity?: string;
+  /** Candidates the resolver considered, best first. */
+  candidates?: ProposalCandidate[];
+}
+
+export interface ProposalCandidate {
+  entity: string;
+  display: string;
+  score: number;
+  matchedOn: string[];
+}
+
+/** Human-readable resolution label for a proposal card:
+ * "resolution: existing (Sara Chen)", "resolution: new",
+ * "resolution: ambiguous" (the candidate list renders separately), or
+ * "" when the daemon recorded no resolution. */
+export function resolutionLabel(
+  p: Pick<ProposalPreview, "resolution" | "candidates">,
+): string {
+  if (!p.resolution) return "";
+  if (p.resolution === "existing") {
+    const best = p.candidates?.[0]?.display;
+    return best ? `resolution: existing (${best})` : "resolution: existing";
+  }
+  return `resolution: ${p.resolution}`;
+}
+
+/** Candidate lines for an ambiguous (or existing) proposal:
+ * "Sara Chen (12.5)". Empty when there are none. */
+export function candidateLines(p: Pick<ProposalPreview, "candidates">): string[] {
+  return (p.candidates ?? []).map((c) => `${c.display} (${c.score.toFixed(1)})`);
 }
 
 /** Human-readable engine label for a proposal card:
@@ -159,6 +195,14 @@ export class SummaryPanelModel {
         rationale?: string;
         engine?: string;
         model?: string;
+        resolution?: string;
+        entity?: string;
+        candidates?: Array<{
+          entity?: string;
+          display?: string;
+          score?: number;
+          matched_on?: string[];
+        }>;
       }>;
     }>;
     const pendingProposals: ProposalItem[] = (Array.isArray(pending) ? pending : [])
@@ -175,6 +219,20 @@ export class SummaryPanelModel {
           }
           if (typeof p?.model === "string" && p.model.length > 0) {
             preview.model = p.model;
+          }
+          if (typeof p?.resolution === "string" && p.resolution.length > 0) {
+            preview.resolution = p.resolution;
+          }
+          if (typeof p?.entity === "string" && p.entity.length > 0) {
+            preview.entity = p.entity;
+          }
+          if (Array.isArray(p?.candidates) && p.candidates.length > 0) {
+            preview.candidates = p.candidates.map((c) => ({
+              entity: String(c?.entity ?? ""),
+              display: String(c?.display ?? ""),
+              score: typeof c?.score === "number" ? c.score : 0,
+              matchedOn: Array.isArray(c?.matched_on) ? c.matched_on.map(String) : [],
+            }));
           }
           return preview;
         });

@@ -52,7 +52,7 @@ use crate::multihash::Multihash;
 /// - v3 (task_36): `engine` and `model` columns on `quarantine_proposals`.
 /// - v4 (task_38, ADR-030): `path_index` table (family, basename ->
 ///   entity, display) so entity ids can be opaque.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -129,6 +129,121 @@ pub trait AtomStore: Send + Sync {
     /// Full-text search over claim payloads. Returns content hashes for
     /// matched atoms in arbitrary order. The query is an FTS5 MATCH expression.
     fn search_fts(&self, query: &str, limit: usize) -> Result<Vec<Multihash>, StoreError>;
+
+    // ---- entity identity helpers (task_45, ADR-030) ----
+
+    /// The `target` of the head `entity.same_as` atom for `entity`, if
+    /// one exists: this entity has been merged into the target.
+    fn same_as_target(
+        &self,
+        entity: &EntityId,
+        as_of: Option<&Iso8601>,
+    ) -> Result<Option<EntityId>, StoreError> {
+        let Some(head) =
+            self.head_of_chain(entity, &PredicateName::new(SAME_AS_PREDICATE), as_of)?
+        else {
+            return Ok(None);
+        };
+        if head.valid_to.is_some() {
+            // An undone merge: the same_as atom was superseded with a
+            // valid_to, so the redirect no longer applies.
+            return Ok(None);
+        }
+        Ok(head
+            .claim
+            .get("target")
+            .and_then(|v| v.as_str())
+            .map(EntityId::new))
+    }
+
+    /// Follow `entity.same_as` chains to the final winner. Returns the
+    /// input when no merge applies. Bounded to 16 hops so a cycle
+    /// (two atoms pointing at each other) cannot spin.
+    fn follow_same_as(
+        &self,
+        entity: &EntityId,
+        as_of: Option<&Iso8601>,
+    ) -> Result<EntityId, StoreError> {
+        let mut cur = entity.clone();
+        for _ in 0..16 {
+            match self.same_as_target(&cur, as_of)? {
+                Some(next) if next != cur => cur = next,
+                _ => break,
+            }
+        }
+        Ok(cur)
+    }
+
+    /// Every entity the owner has asserted is `different_from` this
+    /// one, in either direction (the assertion is symmetric). The
+    /// reverse direction scans the predicate; fine at personal scale.
+    fn different_from(
+        &self,
+        entity: &EntityId,
+        as_of: Option<&Iso8601>,
+    ) -> Result<Vec<EntityId>, StoreError> {
+        let pred = PredicateName::new(DIFFERENT_FROM_PREDICATE);
+        let mut out: Vec<EntityId> = Vec::new();
+        for atom in self.list_by_entity(entity, Some(&pred), as_of)? {
+            if let Some(other) = atom.claim.get("other").and_then(|v| v.as_str()) {
+                let other = EntityId::new(other);
+                if !out.contains(&other) {
+                    out.push(other);
+                }
+            }
+        }
+        for atom in self.list_by_predicate(&pred, None, 10_000)? {
+            if as_of.is_some_and(|t| atom.tx_time.as_str() > t.as_str()) {
+                continue;
+            }
+            let other_is_me = atom
+                .claim
+                .get("other")
+                .and_then(|v| v.as_str())
+                .is_some_and(|o| o == entity.as_str());
+            if other_is_me && atom.entity != *entity && !out.contains(&atom.entity) {
+                out.push(atom.entity.clone());
+            }
+        }
+        Ok(out)
+    }
+
+    /// Record one accepted resolution of surface form `form` to `entity`
+    /// (the prior grows from use, ADR-030).
+    fn record_resolution(&self, form: &str, entity: &EntityId) -> Result<(), StoreError>;
+
+    /// Accepted-resolution counts for a surface form, highest first.
+    fn prior_counts(&self, form: &str) -> Result<Vec<(EntityId, u32)>, StoreError>;
+
+    /// Record a bare mention that did not mint (NIL policy). Returns
+    /// the prior sighting for the same key when one exists, so the
+    /// caller can mint on the second sighting and back-fill the first.
+    /// The row is left in place either way.
+    fn record_sighting(
+        &self,
+        key: &str,
+        submission_id: &str,
+        display: &str,
+        when: &Iso8601,
+    ) -> Result<Option<Sighting>, StoreError>;
+
+    /// Forget a NIL sighting (after minting).
+    fn clear_sighting(&self, key: &str) -> Result<(), StoreError>;
+}
+
+/// Predicate of the merge-redirect atom (ADR-030).
+pub const SAME_AS_PREDICATE: &str = "entity.same_as";
+/// Predicate of the owner's "these are different people" assertion.
+pub const DIFFERENT_FROM_PREDICATE: &str = "entity.different_from";
+
+/// A bare mention recorded under the NIL policy, keyed by normalized
+/// name plus article organization context.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Sighting {
+    pub key: String,
+    pub submission_id: String,
+    pub display: String,
+    pub first_seen: Iso8601,
 }
 
 pub use self::keyring::{

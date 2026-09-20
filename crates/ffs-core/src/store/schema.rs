@@ -160,3 +160,36 @@ CREATE TABLE IF NOT EXISTS path_index (
     UNIQUE (family, entity)
 );
 "#;
+
+/// V5 (task_45, ADR-030): entity resolution. Eight nullable columns on
+/// `quarantine_proposals` carry the resolver's output (`local_ref`,
+/// cross-references, the bitemporal window, `ends_role`, the bound
+/// entity, `resolution`, `candidates`); `resolution_priors` counts
+/// accepted resolutions per surface form so priors come from the
+/// store, never process memory; `nil_sightings` records a bare
+/// mention that did not mint so the second sighting can find the
+/// first (the NIL cluster key).
+pub const V5_DDL: &str = r#"
+ALTER TABLE quarantine_proposals ADD COLUMN local_ref       TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN refs_json       TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN valid_from      TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN valid_to        TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN ends_role       INTEGER;
+ALTER TABLE quarantine_proposals ADD COLUMN entity          TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN resolution      TEXT;
+ALTER TABLE quarantine_proposals ADD COLUMN candidates_json TEXT;
+
+CREATE TABLE IF NOT EXISTS resolution_priors (
+    form   TEXT    NOT NULL,
+    entity TEXT    NOT NULL,
+    count  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (form, entity)
+);
+
+CREATE TABLE IF NOT EXISTS nil_sightings (
+    key           TEXT PRIMARY KEY,
+    submission_id TEXT NOT NULL,
+    display       TEXT NOT NULL,
+    first_seen    TEXT NOT NULL
+);
+"#;

@@ -189,6 +189,12 @@ pub struct IngestSubmitResult {
 #[derive(Debug, Clone, Deserialize)]
 pub struct IngestAcceptParams {
     pub submission_id: String,
+    /// The owner's picks for `ambiguous` proposals (ADR-030), keyed by
+    /// the proposal's `local_ref` (or `#<index>` when it has none):
+    /// an entity id to bind, or the literal `"new"` to mint. Required
+    /// for every ambiguous proposal; accept refuses otherwise.
+    #[serde(default)]
+    pub choices: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -213,6 +219,9 @@ pub struct EntitySearchHit {
     /// `Sara_Chen_(Acme).md` rather than guessing from the display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub basename: Option<String>,
+    /// How the query matched: `display_name` or `alias` (task_45).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub matched_on: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

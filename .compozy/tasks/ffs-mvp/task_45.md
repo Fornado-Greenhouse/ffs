@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Scribe v3 — multi-entity proposals + entity resolver (ADR-030, ADR-031)
 type: backend
 complexity: high
@@ -36,14 +36,24 @@ ADR-030 (`docs/research/2026-09-14-entity-resolution.md`) supplies the identity 
 - MUST NOT add any pip dependency to the skill bundle and MUST NOT change the skills-host wire protocol beyond the backward-compatible envelope above.
 </requirements>
 
+## Result (2026-09-20)
+
+Implemented in three slices. Scribe (stdlib): the prompt renders, from the registry alone, the multi-entity rules (one proposal per distinct entity, cross-references by display name as printed, an `affiliation` proposal for any registered predicate whose schema requires `person` and `organization`, role endings as `ends_role` with `valid_to`); the llm engine validates the per-proposal keys, assigns `local_ref`s, binds display references within the set into `refs`, and stamps every proposal in an article set with `source_article` provenance. Core: `Proposal` gained `local_ref`, `refs`, `valid_from`, `valid_to`, `ends_role`, `entity`, `resolution`, `candidates` (quarantine schema v5), and the store gained `same_as` chain following, symmetric `different_from`, store-backed `resolution_priors`, and `nil_sightings`; `resolution.toml` gained `margin` and `[blocking]`. Daemon: `resolver.rs` resolves a whole set in dependency order with blocking, candidates from names, aliases, priors, and FTS, Fellegi-Sunter scoring from the config, `different_from` as a hard block, three outcomes with `candidates[]`, and the NIL policy; a `ResolvingExtractor` decorates the skills-host extractor and re-reads the config per call; `ingest.accept` takes `choices` for ambiguous proposals, binds or mints in dependency order, rewrites refs to entity ids, turns `ends_role` into a supersession of the matching affiliation head, defaults an affiliation's `valid_from` to the article's `published_at`, grows aliases, records priors, and clears sightings. The plugin card shows resolution and candidates; the picker is task_39.
+
+Corpus: five synthetic business-press fixtures and four identity fixtures with canned model output exercised in CI through a fake transport (llm-only for live scoring). The identity harness resolves each fixture's articles in sequence over one store, simulates the owner's review picks for ambiguous outcomes from the gold labels, and scores 1.0 pairwise and B-cubed on all four: nickname across three articles resolves to one entity; two same-name people at different orgs stay separate (correctly ambiguous, never auto-linked); a rename becomes the new primary name with the old one as an alias; a wrong merge undone by superseding the `same_as` atom restores both clusters.
+
+Decisions recorded: `source_article` provenance maps to `IngestFile` with the uri kept (a new `SourceKind` is an envelope decision); starter weights tuned from the fixtures (`display_name.agree` 8.0, `organization.disagree` -5.0, commented in the file); the NIL policy applies to `person.generic` inside an article set only, so contact cards and standalone person notes always mint; person-only rules (surname blocking, diminutives and initials) never apply to orgs or titles.
+
+Verification: cargo nextest 513 passed; fmt clean; clippy 0 warnings; pytest 168 passed; vitest 73 passed; no press names in the corpus. Follow-ups: the materializer should re-render entities referenced by a newly committed affiliation or person (an org's People section can show an id until its next commit); `entity.search` v2 (task_40) exposes the resolver's candidate generation as an RPC; the reconciliation picker and merge undo UI are task_39.
+
 ## Subtasks
-- [ ] 45.1 Multi-entity proposal envelope + prompt rendering for every registered predicate, including ADR-028's `org.company`, `source.article`, `event.business`, and `person.generic` v2; cross-references between proposals in one set; wire shape stays backward compatible.
-- [ ] 45.2 `resolution.toml` reader in the daemon (weights as m/u pairs, two thresholds, margin, blocking options; hot-reload alongside predicate specs).
-- [ ] 45.3 Daemon-side resolver in `scribe.rs`: blocking, candidate generation via `entity.search` v2 + `search_fts`, `same_as` chain following, `different_from` hard block, scoring, three outcomes with `candidates[]`, whole-envelope input with the coherence hook; `resolution` and `candidates` carried through quarantine storage (task_29 tables) and `ingest.list_pending`.
-- [ ] 45.4 NIL policy and opaque id minting in the signing path for `new`; second-sighting key; back-fill of the first mention when the second sighting mints.
-- [ ] 45.5 `affiliation` proposals and object-shaped `mentions[]` / `participants[]` (ADR-031); role-ending as supersession proposals.
-- [ ] 45.6 Alias growth on accept and auto-accept; store-backed priors; unit tests.
-- [ ] 45.7 Business-press corpus fixtures (hire, funding, acquisition, opening, profile) with expected multi-entity proposals including affiliations; expected entity ids; pairwise P/R + B-cubed in the scorer; the four identity fixtures; three-outcome tests; `same_as` and `different_from` tests.
+- [x] 45.1 Multi-entity proposal envelope + prompt rendering for every registered predicate, including ADR-028's `org.company`, `source.article`, `event.business`, and `person.generic` v2; cross-references between proposals in one set; wire shape stays backward compatible.
+- [x] 45.2 `resolution.toml` reader in the daemon (weights as m/u pairs, two thresholds, margin, blocking options; hot-reload alongside predicate specs).
+- [x] 45.3 Daemon-side resolver in `scribe.rs`: blocking, candidate generation via `entity.search` v2 + `search_fts`, `same_as` chain following, `different_from` hard block, scoring, three outcomes with `candidates[]`, whole-envelope input with the coherence hook; `resolution` and `candidates` carried through quarantine storage (task_29 tables) and `ingest.list_pending`.
+- [x] 45.4 NIL policy and opaque id minting in the signing path for `new`; second-sighting key; back-fill of the first mention when the second sighting mints.
+- [x] 45.5 `affiliation` proposals and object-shaped `mentions[]` / `participants[]` (ADR-031); role-ending as supersession proposals.
+- [x] 45.6 Alias growth on accept and auto-accept; store-backed priors; unit tests.
+- [x] 45.7 Business-press corpus fixtures (hire, funding, acquisition, opening, profile) with expected multi-entity proposals including affiliations; expected entity ids; pairwise P/R + B-cubed in the scorer; the four identity fixtures; three-outcome tests; `same_as` and `different_from` tests.
 
 ## Implementation Details
 The engine seam, prompt builder, and schema validator from task_36 are reused unchanged; this task widens the envelope the engine returns and adds the daemon-side pass between the skill's output and the quarantine. The resolver is a pure function over (proposal set, candidate lookups, config) so it can be unit-tested with an in-memory store.
@@ -81,18 +91,18 @@ Resolution runs once per submission over the whole set, in dependency order: org
 
 ## Tests
 - Unit tests:
-  - [ ] Multi-entity: the executive-hire fixture yields one `source.article`, one `person.generic`, one `org.company`, one `event.business` (`kind: hire`), and one `affiliation` proposal, all carrying the article URL in provenance and cross-referencing by entity id.
-  - [ ] Three outcomes: a score above the upper threshold yields `existing`; below the lower yields `new`; between, or two candidates within the margin, yields `ambiguous` with a populated `candidates[]`; changing the thresholds in `resolution.toml` moves the outcome without a code change.
-  - [ ] `same_as` and `different_from`: a mention matching an alias of a merged (losing) entity resolves to the winner; a candidate blocked by `different_from` is never returned as `existing`, even with a perfect name match.
-  - [ ] NIL policy: a bare name with no distinguishing attribute stays in `mentions[]` with `entity` unset and mints on the second sighting with both mentions back-filled; an unknown person with an organization mints on first sighting.
-  - [ ] Opaque ids: a `new` resolution yields, on accept, a base58btc multibase id that is not derived from the name.
-  - [ ] Affiliation: a "stepped down" fixture yields a supersession proposal setting `valid_to` on the existing affiliation, not a new one.
-  - [ ] Alias growth: accepting a proposal whose mention text was "S. Chen" for the entity displayed as "Sara Chen" appends "S. Chen" to her `aliases[]`; the prior for "S. Chen" then counts one.
-  - [ ] Resolution order: organizations resolve before the people that reference them within one submission.
+  - [x] Multi-entity: the executive-hire fixture yields one `source.article`, one `person.generic`, one `org.company`, one `event.business` (`kind: hire`), and one `affiliation` proposal, all carrying the article URL in provenance and cross-referencing by entity id.
+  - [x] Three outcomes: a score above the upper threshold yields `existing`; below the lower yields `new`; between, or two candidates within the margin, yields `ambiguous` with a populated `candidates[]`; changing the thresholds in `resolution.toml` moves the outcome without a code change.
+  - [x] `same_as` and `different_from`: a mention matching an alias of a merged (losing) entity resolves to the winner; a candidate blocked by `different_from` is never returned as `existing`, even with a perfect name match.
+  - [x] NIL policy: a bare name with no distinguishing attribute stays in `mentions[]` with `entity` unset and mints on the second sighting with both mentions back-filled; an unknown person with an organization mints on first sighting.
+  - [x] Opaque ids: a `new` resolution yields, on accept, a base58btc multibase id that is not derived from the name.
+  - [x] Affiliation: a "stepped down" fixture yields a supersession proposal setting `valid_to` on the existing affiliation, not a new one.
+  - [x] Alias growth: accepting a proposal whose mention text was "S. Chen" for the entity displayed as "Sara Chen" appends "S. Chen" to her `aliases[]`; the prior for "S. Chen" then counts one.
+  - [x] Resolution order: organizations resolve before the people that reference them within one submission.
 - Integration tests:
-  - [ ] Multi-entity e2e over a paraphrased article: articles/, people/, orgs/ files land in the vault with wikilinks after accept.
-  - [ ] `ingest.list_pending` exposes `resolution` and `candidates` on every proposal in a multi-entity set.
-  - [ ] Identity scorer: pairwise precision/recall and B-cubed computed over the four identity fixtures; the wrong-merge-undo fixture restores both entities' clusters after the `same_as` atom is superseded.
+  - [x] Multi-entity e2e over a paraphrased article: articles/, people/, orgs/ files land in the vault with wikilinks after accept.
+  - [x] `ingest.list_pending` exposes `resolution` and `candidates` on every proposal in a multi-entity set.
+  - [x] Identity scorer: pairwise precision/recall and B-cubed computed over the four identity fixtures; the wrong-merge-undo fixture restores both entities' clusters after the `same_as` atom is superseded.
 - Test coverage target: >=80%
 - All tests must pass
 

@@ -100,6 +100,40 @@ Output back to the host (`result.output`):
 }
 ```
 
+### Multi-entity sets (task_45, ADR-030, ADR-031)
+
+One article submission yields a set of proposals: the article, the
+people and organizations it names, the events it reports, and the
+roles that connect them. The wire stays backward compatible: every
+key below is optional, and a single proposal without them is the
+degenerate case.
+
+- `local_ref`: a token unique within the set (`org-1`, `person-2`,
+  `event-1`, `article-1`, or `hint` for the frontmatter-hint path).
+- Cross-references use the display name **as printed**, never an id:
+  `person.generic.claim.organization`, `affiliation.claim.person` and
+  `.organization`, `source.article.claim.mentions[]` items
+  `{display, context}`, `event.business.claim.participants[]` items
+  `{display, role}`, and `event.business.claim.source` (the article
+  url). The scribe never emits an `entity` key; the daemon binds
+  displays to entity ids at accept.
+- `refs`: for every display that matched another proposal in the
+  same set (case and whitespace insensitive), an entry
+  `{"field": "organization", "local_ref": "org-1"}` or
+  `{"field": "mentions[2].entity", "local_ref": "person-1"}`, so the
+  daemon rewrites references without re-matching. Unmatched displays
+  get no entry and are resolved against the substrate.
+- `affiliation` proposals carry `claim.{person, organization, title,
+  kind, source}` (`kind` from the spec's enum), a top-level
+  `valid_from` (stated start date, else the article's `published_at`
+  supplied by the daemon), and, for a role ending, `ends_role: true`
+  with `valid_to`. An ending is never a new affiliation; the daemon
+  supersedes the matching affiliation head.
+- Every proposal in an article set carries a second provenance entry
+  `{"kind": "source_article", "uri": "<url>", "hash_hex": "<content
+  hash>"}` when the article url is known (submission frontmatter or
+  the article proposal's `claim.url`).
+
 ## ADRs
 
 - ADR-009 — Claw integration via OpenClaw or Hermes pattern (skill packaging shape).

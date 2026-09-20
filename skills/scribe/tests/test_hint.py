@@ -226,3 +226,22 @@ def test_registered_hint_without_required_fields_keeps_engine_output_and_warns(m
     out = apply_hint(sub, EngineResult(proposals=[], warnings=[]), _registry(), "heuristic", "")
     assert out.proposals == []
     assert any("produced no contact.person proposal" in w for w in out.warnings)
+
+
+def test_frontmatter_hint_proposal_carries_local_ref_and_article_provenance(monkeypatch):
+    """task_45: the hint path joins the multi-entity conventions."""
+    _install_fake_query(monkeypatch)
+    schemas = dict(SCHEMAS)
+    schemas["source.article"] = {
+        "type": "object",
+        "required": ["title", "url"],
+        "properties": {"title": {"type": "string"}, "url": {"type": "string"}, "summary": {"type": "string"}},
+    }
+    registry = PredicateRegistry.from_specs({k: {"claim_schema": v} for k, v in schemas.items()})
+    sub = Submission.from_input(
+        {"source_uri": "file:///ingest/a.md", "content": "---\npredicate: source.article\ntitle: T\nurl: https://example.com/a\n---\nbody\n"}
+    )
+    out = apply_hint(sub, EngineResult(proposals=[], warnings=[]), registry, "heuristic", "")
+    p = out.proposals[0]
+    assert p["predicate"] == "source.article" and p["local_ref"] == "hint"
+    assert [(e["kind"], e["uri"]) for e in p["provenance"]] == [("ingest", "file:///ingest/a.md"), ("source_article", "https://example.com/a")]

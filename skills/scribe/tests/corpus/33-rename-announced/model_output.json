@@ -1,0 +1,86 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Birchwood Law promotes two to partner",
+        "url": "https://example-ledger.test/news/2026/09/05/birchwood-partners",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-05",
+        "summary": "Two promotions to partner.",
+        "mentions": [
+          {
+            "display": "Elena Marsh",
+            "context": "promoted to partner"
+          },
+          {
+            "display": "Victor Hale",
+            "context": "promoted to partner"
+          },
+          {
+            "display": "Birchwood Law",
+            "context": "the firm"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Birchwood Law",
+        "industry": "law"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Elena Marsh",
+        "organization": "Birchwood Law",
+        "role": "Partner"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-2",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Victor Hale",
+        "organization": "Birchwood Law",
+        "role": "Partner"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Elena Marsh",
+        "organization": "Birchwood Law",
+        "title": "Partner",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/05/birchwood-partners"
+      },
+      "valid_from": "2026-09-05"
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-2",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Victor Hale",
+        "organization": "Birchwood Law",
+        "title": "Partner",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/05/birchwood-partners"
+      },
+      "valid_from": "2026-09-05"
+    }
+  ],
+  "summary": "s"
+}

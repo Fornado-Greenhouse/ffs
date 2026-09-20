@@ -1,0 +1,49 @@
+{
+  "filename": "profile-marisol-vega.md",
+  "engine": "llm",
+  "required": true,
+  "notes": "Profile piece: one person with two affiliations over time (one ended), an alias from prose, two orgs, no event.",
+  "forbid": [
+    "event.business"
+  ],
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Marisol Vega",
+        "aliases": [
+          "Mari"
+        ]
+      },
+      "refs_count": 1
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Marisol Vega",
+        "organization": "Tidewater Roasters"
+      },
+      "top": {
+        "valid_from": "2023-01-01"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Marisol Vega",
+        "organization": "Copper Kettle Coffee"
+      },
+      "top": {
+        "ends_role": true
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Copper Kettle Coffee"
+      }
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document itself",
+      "claim": {
+        "title": "Kestrel Building Systems acquires Oakline Millwork",
+        "url": "https://example-ledger.test/news/2026/09/20/kestrel-buys-oakline",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-20",
+        "summary": "Kestrel acquired Oakline Millwork; founder Ruth Calloway steps down as CEO at closing.",
+        "mentions": [
+          {
+            "display": "Kestrel Building Systems",
+            "context": "the acquirer"
+          },
+          {
+            "display": "Oakline Millwork",
+            "context": "the target"
+          },
+          {
+            "display": "Ruth Calloway",
+            "context": "Oakline founder, stepping down"
+          },
+          {
+            "display": "Ben Tran",
+            "context": "Kestrel chief executive"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Kestrel Building Systems"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-2",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Oakline Millwork",
+        "industry": "cabinet making",
+        "location": "Monroe"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named in the text",
+      "claim": {
+        "display_name": "Ruth Calloway",
+        "organization": "Oakline Millwork",
+        "role": "Founder"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-2",
+      "rationale": "person named in the text",
+      "claim": {
+        "display_name": "Ben Tran",
+        "organization": "Kestrel Building Systems",
+        "role": "Chief Executive"
+      }
+    },
+    {
+      "predicate": "event.business",
+      "local_ref": "event-1",
+      "rationale": "event reported",
+      "claim": {
+        "title": "Kestrel Building Systems acquires Oakline Millwork",
+        "kind": "acquisition",
+        "date": "2026-09-20",
+        "source": "https://example-ledger.test/news/2026/09/20/kestrel-buys-oakline",
+        "participants": [
+          {
+            "display": "Kestrel Building Systems",
+            "role": "acquirer"
+          },
+          {
+            "display": "Oakline Millwork",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Ruth Calloway",
+        "organization": "Oakline Millwork",
+        "title": "Chief Executive",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/20/kestrel-buys-oakline"
+      },
+      "ends_role": true,
+      "valid_to": "2026-09-20"
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-2",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Ben Tran",
+        "organization": "Kestrel Building Systems",
+        "title": "Chief Executive",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/20/kestrel-buys-oakline"
+      }
+    }
+  ],
+  "summary": "An acquisition with an executive departure."
+}

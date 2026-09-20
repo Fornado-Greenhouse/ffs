@@ -1,0 +1,46 @@
+{
+  "clusters": {
+    "P1": [
+      {
+        "article": "input.md",
+        "predicate": "person.generic",
+        "display": "Samuel Okafor"
+      },
+      {
+        "article": "input-b.md",
+        "predicate": "person.generic",
+        "display": "Sam Okafor"
+      },
+      {
+        "article": "input-c.md",
+        "predicate": "person.generic",
+        "display": "Samuel Okafor"
+      }
+    ],
+    "O1": [
+      {
+        "article": "input.md",
+        "predicate": "org.company",
+        "display": "Northgate Brewing"
+      },
+      {
+        "article": "input-b.md",
+        "predicate": "org.company",
+        "display": "Northgate Brewing"
+      },
+      {
+        "article": "input-c.md",
+        "predicate": "org.company",
+        "display": "Northgate Brewing"
+      }
+    ]
+  },
+  "distinct": [],
+  "aliases_expected": {
+    "P1": [
+      "Sam Okafor",
+      "Sammy"
+    ]
+  },
+  "notes": "After all three articles are accepted in order, P1 is one entity with aliases grown from the accepted mention texts; the second sighting (Sam Okafor at Northgate Brewing) must resolve to existing via organization agreement even though the display differs."
+}

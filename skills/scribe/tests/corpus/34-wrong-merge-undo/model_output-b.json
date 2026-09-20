@@ -1,0 +1,58 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Ledger & Lane adds accountant",
+        "url": "https://example-ledger.test/news/2026/09/13/ledger-lane-hire",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-13",
+        "summary": "An accounting hire.",
+        "mentions": [
+          {
+            "display": "Chris Adair",
+            "context": "senior accountant"
+          },
+          {
+            "display": "Ledger & Lane",
+            "context": "the firm"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Ledger & Lane",
+        "industry": "accounting"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Chris Adair",
+        "organization": "Ledger & Lane",
+        "role": "Senior Accountant"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Chris Adair",
+        "organization": "Ledger & Lane",
+        "title": "Senior Accountant",
+        "kind": "employee",
+        "source": "https://example-ledger.test/news/2026/09/13/ledger-lane-hire"
+      }
+    }
+  ],
+  "summary": "s"
+}

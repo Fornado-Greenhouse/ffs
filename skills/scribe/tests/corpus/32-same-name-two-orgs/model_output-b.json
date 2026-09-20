@@ -1,0 +1,58 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "City Parks Department names trails coordinator",
+        "url": "https://example-ledger.test/news/2026/09/10/parks-coordinator",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-10",
+        "summary": "The parks department named its first trails coordinator.",
+        "mentions": [
+          {
+            "display": "Jordan Reyes",
+            "context": "trails coordinator"
+          },
+          {
+            "display": "City Parks Department",
+            "context": "the department"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "City Parks Department"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Jordan Reyes",
+        "organization": "City Parks Department",
+        "role": "Trails Coordinator"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Jordan Reyes",
+        "organization": "City Parks Department",
+        "title": "Trails Coordinator",
+        "kind": "employee",
+        "source": "https://example-ledger.test/news/2026/09/10/parks-coordinator"
+      },
+      "valid_from": "2026-09-10"
+    }
+  ],
+  "summary": "s"
+}

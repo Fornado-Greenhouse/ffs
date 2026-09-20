@@ -6,6 +6,8 @@ import {
   PanelItem,
   SummaryPanelModel,
   engineLabel,
+  resolutionLabel,
+  candidateLines,
 } from "../src/summary.js";
 
 function fakeClient(callMap: Record<string, unknown>) {
@@ -246,5 +248,61 @@ describe("SummaryPanelModel", () => {
       },
     });
     expect(model.state.lastCommittedAt).toBeInstanceOf(Date);
+  });
+});
+
+
+describe("resolution on the proposal card (task_45)", () => {
+  it("carries resolution, entity, and candidates from ingest.list_pending", async () => {
+    const client = fakeClient({
+      "audit.query": summaryAtom([]),
+      "ingest.list_pending": [
+        {
+          id: "sub-1",
+          source_uri: "file:///ingest/a.md",
+          proposals: [
+            {
+              predicate: "person.generic",
+              claim: { display_name: "Sara Chen" },
+              rationale: "r",
+              resolution: "ambiguous",
+              candidates: [
+                { entity: "zA", display: "Sara Chen (Acme)", score: 6.5, matched_on: ["display_name"] },
+                { entity: "zB", display: "Sara Chen (City)", score: 6.0, matched_on: ["display_name"] },
+              ],
+            },
+            { predicate: "org.company", claim: { display_name: "Acme" }, rationale: "r", resolution: "new" },
+          ],
+        },
+      ],
+    });
+    const model = new SummaryPanelModel(client);
+    const state = await model.refresh();
+    const previews = state.pendingProposals[0].proposals;
+    expect(previews[0].resolution).toBe("ambiguous");
+    expect(previews[0].candidates?.length).toBe(2);
+    expect(previews[0].candidates?.[0].matchedOn).toEqual(["display_name"]);
+    expect(previews[1].resolution).toBe("new");
+    expect(previews[1].candidates).toBeUndefined();
+  });
+
+  it("labels the three outcomes and lists candidates", () => {
+    expect(resolutionLabel({})).toBe("");
+    expect(resolutionLabel({ resolution: "new" })).toBe("resolution: new");
+    expect(resolutionLabel({ resolution: "ambiguous" })).toBe("resolution: ambiguous");
+    expect(
+      resolutionLabel({
+        resolution: "existing",
+        candidates: [{ entity: "zA", display: "Sara Chen", score: 12.5, matchedOn: [] }],
+      }),
+    ).toBe("resolution: existing (Sara Chen)");
+    expect(
+      candidateLines({
+        candidates: [
+          { entity: "zA", display: "Sara Chen (Acme)", score: 6.5, matchedOn: [] },
+          { entity: "zB", display: "Sara Chen (City)", score: 6.04, matchedOn: [] },
+        ],
+      }),
+    ).toEqual(["Sara Chen (Acme) (6.5)", "Sara Chen (City) (6.0)"]);
   });
 });

@@ -1,0 +1,48 @@
+{
+  "filename": "kestrel-oakline.md",
+  "engine": "llm",
+  "required": true,
+  "notes": "Acquisition: two orgs, event kind acquisition with acquirer/target, and the founder's departure emitted as ends_role, never as a new affiliation.",
+  "forbid": [],
+  "proposals": [
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Kestrel Building Systems"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Oakline Millwork"
+      }
+    },
+    {
+      "predicate": "event.business",
+      "claim": {
+        "kind": "acquisition"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Ruth Calloway",
+        "organization": "Oakline Millwork"
+      },
+      "top": {
+        "ends_role": true,
+        "valid_to": "2026-09-20"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Ben Tran",
+        "organization": "Kestrel Building Systems",
+        "kind": "executive"
+      }
+    }
+  ]
+}

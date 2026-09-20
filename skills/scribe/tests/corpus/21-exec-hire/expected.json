@@ -1,0 +1,59 @@
+{
+  "filename": "pinewood-coo.md",
+  "engine": "llm",
+  "required": true,
+  "notes": "Executive hire: article + person + org + event kind hire + affiliation (plus the departure as ends_role). llm-only: the heuristic engine cannot produce these; test_multi_entity.py feeds model_output.json through LlmEngine with a fake transport.",
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "claim": {
+        "title": "Pinewood Freight names new chief operating officer",
+        "url": "https://example-ledger.test/news/2026/09/18/pinewood-freight-coo"
+      },
+      "refs_count": 4
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Pinewood Freight"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Dana Whitfield",
+        "organization": "Pinewood Freight"
+      },
+      "refs_count": 1
+    },
+    {
+      "predicate": "event.business",
+      "claim": {
+        "kind": "hire"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Dana Whitfield",
+        "organization": "Pinewood Freight",
+        "kind": "executive"
+      },
+      "top": {
+        "valid_from": "2026-10-01"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Lee Marsh"
+      },
+      "top": {
+        "ends_role": true,
+        "valid_to": "2026-09-30"
+      }
+    }
+  ]
+}

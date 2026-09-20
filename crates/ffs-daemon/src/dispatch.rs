@@ -394,43 +394,321 @@ impl Dispatcher {
             });
         }
 
-        let mut hashes: Vec<Multihash> = Vec::with_capacity(sub.proposals.len());
-        for proposal in &sub.proposals {
-            let tmpl = AtomTemplate {
-                v: 1,
-                // ADR-030: opaque, permanent ids. The display name is
-                // claim data; the file name is the materializer's concern.
-                entity: EntityId::mint(),
-                predicate: proposal.predicate.clone(),
-                claim: proposal.claim.clone(),
-                valid_from: now.clone(),
-                valid_to: None,
-                tx_time: now.clone(),
-                classification: Tier::new("existence"),
-                supersedes: None,
-                provenance: proposal.provenance.clone(),
-            };
-            let env = tmpl.sign(key).map_err(|e| ApiError {
-                code: ERR_INTERNAL,
-                message: format!("sign: {e}"),
-                data: None,
-            })?;
-            let h = self.store.insert(&env).map_err(store_err)?;
-            // Publish so the working-set materializer (task_25) can
-            // render the projection file to disk.
-            self.notifier.publish(crate::notify::Event::AtomCommitted {
-                hash: h.clone(),
-                entity: env.entity.clone(),
-                predicate: env.predicate.clone(),
-            });
-            hashes.push(h);
-        }
+        let hashes = self
+            .sign_and_insert_set(&sub.proposals, &p.choices, key, &now)
+            .await?;
 
         self.quarantine
             .accept(&p.submission_id, hashes.clone())
             .await
             .map_err(quarantine_err)?;
         to_value(&serde_json::json!({"accepted_atom_hashes": hashes}))
+    }
+
+    /// Sign and insert a resolved proposal set (task_45, ADR-030,
+    /// ADR-031) in dependency order:
+    ///
+    /// 1. `ambiguous` proposals need an owner choice (`choices`), an
+    ///    entity id or `"new"`; otherwise accept refuses and lists them.
+    /// 2. `existing` binds the entity (following `same_as` again, in
+    ///    case a merge landed since extraction) and the new atom
+    ///    supersedes that entity's head, merging additively: scalars
+    ///    the head already has are kept, arrays are unioned, and the
+    ///    mention text joins `aliases[]` when it differs from the head's
+    ///    display (alias growth).
+    /// 3. `new` mints an opaque id.
+    /// 4. Cross-references are rewritten from displays to the bound ids.
+    /// 5. `ends_role` supersedes the matching head affiliation with
+    ///    `valid_to`; it never creates a new atom.
+    /// 6. Every existing bind records a prior for its surface form;
+    ///    every minted person clears its NIL sighting.
+    async fn sign_and_insert_set(
+        &self,
+        proposals: &[Proposal],
+        choices: &std::collections::HashMap<String, String>,
+        key: &SigningKey,
+        now: &Iso8601,
+    ) -> Result<Vec<Multihash>, ApiError> {
+        use ffs_core::quarantine::{CrossRef, Resolution};
+        use std::collections::HashMap;
+
+        let lref = |p: &Proposal, i: usize| p.local_ref.clone().unwrap_or_else(|| format!("#{i}"));
+
+        // 1. Ambiguous proposals need the owner's pick.
+        let unresolved: Vec<String> = proposals
+            .iter()
+            .enumerate()
+            .filter(|(i, p)| {
+                p.resolution == Some(Resolution::Ambiguous) && !choices.contains_key(&lref(p, *i))
+            })
+            .map(|(i, p)| lref(p, i))
+            .collect();
+        if !unresolved.is_empty() {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!(
+                    "ambiguous proposals need a choice (entity id or \"new\") before accept: {}",
+                    unresolved.join(", ")
+                ),
+                data: Some(serde_json::json!({"ambiguous": unresolved})),
+            });
+        }
+
+        // The article's published_at, the default start of any role
+        // stated in it (ADR-031): "as reported" dating.
+        let article_date: Option<Iso8601> = proposals
+            .iter()
+            .find(|p| p.predicate.as_str() == "source.article")
+            .and_then(|p| p.claim.get("published_at").and_then(|v| v.as_str()))
+            .and_then(crate::scribe::parse_scribe_date);
+
+        let order = crate::resolver::dependency_order(proposals);
+        let mut bound: HashMap<String, EntityId> = HashMap::new();
+        let mut hashes: Vec<Multihash> = Vec::with_capacity(proposals.len());
+        let affiliation = PredicateName::new("affiliation");
+
+        for i in order {
+            let proposal = &proposals[i];
+            let this_ref = lref(proposal, i);
+            let mut claim = proposal.claim.clone();
+            // 4. Rewrite refs already bound.
+            for r in &proposal.refs {
+                if let Some(id) = bound.get(&r.local_ref) {
+                    CrossRef::apply(&mut claim, &r.field, Value::String(id.as_str().to_string()));
+                }
+            }
+
+            // 5. Role endings supersede an existing affiliation head.
+            if proposal.ends_role {
+                let person = claim
+                    .get("person")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                let org = claim
+                    .get("organization")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                let head = self
+                    .store
+                    .list_by_predicate(&affiliation, None, 10_000)
+                    .map_err(store_err)?
+                    .into_iter()
+                    .filter(|a| {
+                        a.claim.get("person").and_then(|v| v.as_str()) == person.as_deref()
+                            && a.claim.get("organization").and_then(|v| v.as_str())
+                                == org.as_deref()
+                    })
+                    .find_map(|a| {
+                        self.store
+                            .head_of_chain(&a.entity, &affiliation, None)
+                            .ok()
+                            .flatten()
+                            .filter(|h| h.valid_to.is_none())
+                    });
+                match head {
+                    Some(head) => {
+                        let hash = head.content_hash().map_err(|e| ApiError {
+                            code: ERR_INTERNAL,
+                            message: format!("hash: {e}"),
+                            data: None,
+                        })?;
+                        let tmpl = AtomTemplate {
+                            v: 1,
+                            entity: head.entity.clone(),
+                            predicate: head.predicate.clone(),
+                            claim: head.claim.clone(),
+                            valid_from: head.valid_from.clone(),
+                            valid_to: Some(
+                                proposal
+                                    .valid_to
+                                    .clone()
+                                    .or_else(|| article_date.clone())
+                                    .unwrap_or_else(|| now.clone()),
+                            ),
+                            tx_time: now.clone(),
+                            classification: head.classification.clone(),
+                            supersedes: Some(hash),
+                            provenance: proposal.provenance.clone(),
+                        };
+                        let h = self.sign_insert_publish(tmpl, key)?;
+                        hashes.push(h);
+                    }
+                    None => tracing::warn!(
+                        local_ref = %this_ref,
+                        "ends_role: no current affiliation head for this person and organization; skipped"
+                    ),
+                }
+                continue;
+            }
+
+            // 2 and 3. Decide the entity and whether this supersedes a head.
+            let choice = choices.get(&this_ref).map(String::as_str);
+            let resolution = match (proposal.resolution, choice) {
+                (Some(Resolution::Ambiguous), Some("new")) => Resolution::New,
+                (Some(Resolution::Ambiguous), Some(_)) => Resolution::Existing,
+                (Some(r), _) => r,
+                (None, _) => Resolution::New,
+            };
+            let mut supersedes: Option<Multihash> = None;
+            let mut valid_from = proposal.valid_from.clone().unwrap_or_else(|| now.clone());
+            let entity = match resolution {
+                Resolution::Existing => {
+                    let chosen = match choice {
+                        Some(id) if id != "new" => EntityId::new(id),
+                        _ => proposal.entity.clone().ok_or_else(|| ApiError {
+                            code: ERR_INTERNAL,
+                            message: format!("{this_ref}: existing resolution without an entity"),
+                            data: None,
+                        })?,
+                    };
+                    let entity = self
+                        .store
+                        .follow_same_as(&chosen, None)
+                        .map_err(store_err)?;
+                    if let Some(head) = self
+                        .store
+                        .head_of_chain(&entity, &proposal.predicate, None)
+                        .map_err(store_err)?
+                    {
+                        // Additive merge + alias growth (ADR-030 § 6.2).
+                        let name_field = self
+                            .registry
+                            .family_for_predicate(proposal.predicate.as_str())
+                            .map(|f| f.name_field)
+                            .unwrap_or_else(|| "display_name".into());
+                        let mention = claim
+                            .get(&name_field)
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        let head_display = head
+                            .claim
+                            .get(&name_field)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        // A rename: the proposal lists the head's current
+                        // name among its aliases ("formerly ..."), so its
+                        // own name becomes primary and the old one an alias.
+                        let is_rename = claim
+                            .get("aliases")
+                            .and_then(|v| v.as_array())
+                            .is_some_and(|a| {
+                                a.iter().any(|v| {
+                                    v.as_str().is_some_and(|s| {
+                                        ffs_core::resolve::normalized_name_key(s)
+                                            == ffs_core::resolve::normalized_name_key(&head_display)
+                                    })
+                                })
+                            });
+                        claim = merge_additive(&head.claim, &claim, &name_field);
+                        if let Some(m) = mention {
+                            if is_rename {
+                                claim[name_field.as_str()] = Value::String(m.clone());
+                                push_alias(&mut claim, &head_display);
+                            } else if ffs_core::resolve::normalized_name_key(&m)
+                                != ffs_core::resolve::normalized_name_key(&head_display)
+                            {
+                                push_alias(&mut claim, &m);
+                            }
+                            self.store
+                                .record_resolution(
+                                    &ffs_core::resolve::normalized_name_key(&m),
+                                    &entity,
+                                )
+                                .map_err(store_err)?;
+                        }
+                        supersedes = Some(head.content_hash().map_err(|e| ApiError {
+                            code: ERR_INTERNAL,
+                            message: format!("hash: {e}"),
+                            data: None,
+                        })?);
+                        valid_from = head.valid_from.clone();
+                    }
+                    entity
+                }
+                Resolution::New | Resolution::Ambiguous => {
+                    let minted = EntityId::mint();
+                    if crate::resolver::NIL_GATED_PREDICATES.contains(&proposal.predicate.as_str())
+                        && let Some(d) = claim.get("display_name").and_then(|v| v.as_str())
+                    {
+                        // Best-effort: the sighting key used the article's
+                        // organization context; clear both the bare and the
+                        // contextual form.
+                        let base = ffs_core::resolve::normalized_name_key(d);
+                        let _ = self.store.clear_sighting(&format!("{base}|"));
+                        if let Some(org) = claim.get("organization").and_then(|v| v.as_str()) {
+                            let org_display = self
+                                .registry
+                                .families()
+                                .into_iter()
+                                .find_map(|f| {
+                                    self.store
+                                        .head_of_chain(
+                                            &EntityId::new(org),
+                                            &PredicateName::new(&f.predicate),
+                                            None,
+                                        )
+                                        .ok()
+                                        .flatten()
+                                        .and_then(|h| {
+                                            h.claim
+                                                .get(&f.name_field)
+                                                .and_then(|v| v.as_str())
+                                                .map(str::to_string)
+                                        })
+                                })
+                                .unwrap_or_else(|| org.to_string());
+                            let _ = self.store.clear_sighting(&format!(
+                                "{base}|{}",
+                                ffs_core::resolve::normalized_name_key(&org_display)
+                            ));
+                        }
+                    }
+                    minted
+                }
+            };
+            if proposal.predicate.as_str() == "affiliation" && proposal.valid_from.is_none() {
+                valid_from = article_date.clone().unwrap_or_else(|| now.clone());
+            }
+            bound.insert(this_ref, entity.clone());
+
+            let tmpl = AtomTemplate {
+                v: 1,
+                entity,
+                predicate: proposal.predicate.clone(),
+                claim,
+                valid_from,
+                valid_to: proposal.valid_to.clone(),
+                tx_time: now.clone(),
+                classification: Tier::new("existence"),
+                supersedes,
+                provenance: proposal.provenance.clone(),
+            };
+            let h = self.sign_insert_publish(tmpl, key)?;
+            hashes.push(h);
+        }
+        Ok(hashes)
+    }
+
+    fn sign_insert_publish(
+        &self,
+        tmpl: AtomTemplate,
+        key: &SigningKey,
+    ) -> Result<Multihash, ApiError> {
+        let env = tmpl.sign(key).map_err(|e| ApiError {
+            code: ERR_INTERNAL,
+            message: format!("sign: {e}"),
+            data: None,
+        })?;
+        let h = self.store.insert(&env).map_err(store_err)?;
+        // Publish so the working-set materializer (task_25) can
+        // render the projection file to disk.
+        self.notifier.publish(crate::notify::Event::AtomCommitted {
+            hash: h.clone(),
+            entity: env.entity.clone(),
+            predicate: env.predicate.clone(),
+        });
+        Ok(h)
     }
 
     /// Reject a quarantined submission. No atoms are authored; the
@@ -483,9 +761,24 @@ impl Dispatcher {
                 let Some(display) = env.claim.get(name_field).and_then(|v| v.as_str()) else {
                     continue;
                 };
-                if !display.to_lowercase().contains(&needle) {
+                // task_45: an alias hit counts too (ADR-030 alias table).
+                let matched_on = if display.to_lowercase().contains(&needle) {
+                    "display_name"
+                } else if env
+                    .claim
+                    .get("aliases")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|a| {
+                        a.iter().any(|v| {
+                            v.as_str()
+                                .is_some_and(|s| s.to_lowercase().contains(&needle))
+                        })
+                    })
+                {
+                    "alias"
+                } else {
                     continue;
-                }
+                };
                 // Capability-filter so unauthorized hits don't leak.
                 let target = Target {
                     predicate: env.predicate.clone(),
@@ -512,6 +805,7 @@ impl Dispatcher {
                     predicate: env.predicate.clone(),
                     display_name: display.to_string(),
                     basename,
+                    matched_on: vec![matched_on.to_string()],
                 });
             }
             if results.len() >= limit {
@@ -1087,6 +1381,78 @@ fn to_value<T: Serialize>(v: &T) -> Result<Value, ApiError> {
         message: format!("serialization: {e}"),
         data: None,
     })
+}
+
+/// Additive merge of a proposal claim onto an existing head claim
+/// (ADR-027: never silently overwrite): scalars present on the head
+/// are kept, arrays are unioned (objects with a `display` key are
+/// keyed by display so a mention gaining an `entity` replaces its
+/// earlier form), and everything the head lacks comes from the
+/// proposal. The name field always keeps the head's value; a
+/// differing mention text becomes an alias instead.
+pub fn merge_additive(head: &Value, proposal: &Value, name_field: &str) -> Value {
+    let mut out = head.clone();
+    let (Some(out_obj), Some(prop_obj)) = (out.as_object_mut(), proposal.as_object()) else {
+        return proposal.clone();
+    };
+    for (k, v) in prop_obj {
+        match out_obj.get_mut(k) {
+            None => {
+                out_obj.insert(k.clone(), v.clone());
+            }
+            Some(existing) => match (existing.as_array_mut(), v.as_array()) {
+                (Some(arr), Some(add)) => {
+                    for item in add {
+                        let key_of = |x: &Value| {
+                            x.get("display")
+                                .and_then(|d| d.as_str())
+                                .map(str::to_string)
+                        };
+                        if let Some(dk) = key_of(item) {
+                            if let Some(pos) = arr
+                                .iter()
+                                .position(|x| key_of(x).as_deref() == Some(dk.as_str()))
+                            {
+                                arr[pos] = item.clone();
+                            } else {
+                                arr.push(item.clone());
+                            }
+                        } else if !arr.contains(item) {
+                            arr.push(item.clone());
+                        }
+                    }
+                }
+                _ => {
+                    if k == name_field || !existing.is_null() {
+                        // keep the head's scalar
+                    } else {
+                        *existing = v.clone();
+                    }
+                }
+            },
+        }
+    }
+    out
+}
+
+fn push_alias(claim: &mut Value, alias: &str) {
+    let Some(obj) = claim.as_object_mut() else {
+        return;
+    };
+    let entry = obj
+        .entry("aliases")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if let Some(arr) = entry.as_array_mut() {
+        let dup = arr.iter().any(|v| {
+            v.as_str().is_some_and(|s| {
+                ffs_core::resolve::normalized_name_key(s)
+                    == ffs_core::resolve::normalized_name_key(alias)
+            })
+        });
+        if !dup {
+            arr.push(Value::String(alias.to_string()));
+        }
+    }
 }
 
 fn quarantine_err(e: ffs_core::quarantine::QuarantineError) -> ApiError {

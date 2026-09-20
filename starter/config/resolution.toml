@@ -21,6 +21,18 @@
 [thresholds]
 auto_link = 8.0
 review_floor = 2.0
+# Two candidates whose scores fall within `margin` of each other are
+# ambiguous even when the best clears auto_link: the owner picks.
+margin = 1.0
+
+# Blocking (ADR-030): which existing entities are even compared.
+# `same_family = true` compares people only with people and orgs only
+# with orgs. `key = "full_name"` blocks on the normalized full name
+# (aliases included); `"surname"` widens the block to everyone sharing
+# a surname, which finds more nicknames at the cost of more scoring.
+[blocking]
+same_family = true
+key = "full_name"
 
 # Agreement on organization is strong evidence: two "Sara Chen" at the
 # same company are almost certainly one person. A shared surname alone
@@ -28,17 +40,25 @@ review_floor = 2.0
 # and its disagree weight is strongly negative (different surname, not
 # the same person).
 
+# An exact display-name match with nothing contradicting it links on
+# its own (8.0 reaches auto_link); a disagreeing organization or role
+# pulls it into the review band, and two equally good candidates fall
+# under the margin rule. Without this, every repeat mention of a
+# known organization would be ambiguous.
 [weights.display_name]
-agree = 6.0
+agree = 8.0
 disagree = -4.0
 
 [weights.alias]
 agree = 5.0
 disagree = 0.0
 
+# A stated organization that disagrees is strong evidence of a
+# different person: with an exact name match (8.0) it must pull the
+# score into the review band, not leave it linkable on a shared title.
 [weights.organization]
 agree = 4.0
-disagree = -2.0
+disagree = -5.0
 
 [weights.role]
 agree = 1.5

@@ -227,10 +227,10 @@ async fn run() -> Result<(), StartupError> {
             auto_link = cfg.thresholds.auto_link,
             review_floor = cfg.thresholds.review_floor,
             weights = cfg.weights.len(),
-            "resolution config loaded (not yet consumed; task_45)"
+            "resolution config loaded (consumed by the resolver on every submission)"
         ),
         Err(e) => {
-            tracing::warn!(error = %e, "resolution config missing or invalid; the resolver (task_45) will need it")
+            tracing::warn!(error = %e, "resolution config missing or invalid; the resolver uses the compiled default")
         }
     }
 
@@ -301,8 +301,16 @@ async fn run() -> Result<(), StartupError> {
     let skills_host = Arc::new(skills_host);
     let scribe: Option<Arc<dyn ffs_daemon::dispatch::ScribeExtractor>> =
         if skills_host.get("scribe").is_some() {
-            Some(Arc::new(SkillsHostScribeExtractor::new(
-                skills_host.clone(),
+            // task_45: every extraction runs through the daemon-side
+            // resolver so proposals reach the quarantine with
+            // `resolution` and `candidates` (ADR-030).
+            let inner: Arc<dyn ffs_daemon::dispatch::ScribeExtractor> =
+                Arc::new(SkillsHostScribeExtractor::new(skills_host.clone()));
+            Some(Arc::new(ffs_daemon::ResolvingExtractor::new(
+                inner,
+                store.clone(),
+                registry.clone(),
+                Some(&data_dir),
             )))
         } else {
             tracing::warn!(

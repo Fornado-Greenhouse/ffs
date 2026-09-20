@@ -218,6 +218,14 @@ impl From<ScribeProposalWire> for Proposal {
             rationale: w.rationale,
             engine: None,
             model: None,
+            local_ref: None,
+            refs: vec![],
+            valid_from: None,
+            valid_to: None,
+            ends_role: false,
+            entity: None,
+            resolution: None,
+            candidates: vec![],
         }
     }
 }

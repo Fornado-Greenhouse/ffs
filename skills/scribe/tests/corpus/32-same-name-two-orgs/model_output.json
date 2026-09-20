@@ -1,0 +1,58 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Halcyon Dental adds third office",
+        "url": "https://example-ledger.test/news/2026/09/03/halcyon-office",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-03",
+        "summary": "Halcyon Dental opens a third office.",
+        "mentions": [
+          {
+            "display": "Jordan Reyes",
+            "context": "practice owner"
+          },
+          {
+            "display": "Halcyon Dental",
+            "context": "the practice"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Halcyon Dental",
+        "industry": "dentistry"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Jordan Reyes",
+        "organization": "Halcyon Dental",
+        "role": "Practice Owner"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Jordan Reyes",
+        "organization": "Halcyon Dental",
+        "title": "Practice Owner",
+        "kind": "founder",
+        "source": "https://example-ledger.test/news/2026/09/03/halcyon-office"
+      }
+    }
+  ],
+  "summary": "s"
+}

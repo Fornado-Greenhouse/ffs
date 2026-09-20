@@ -469,14 +469,12 @@ mod tests {
             _source_uri: &str,
             _content: &[u8],
         ) -> Result<Vec<Proposal>, crate::dispatch::ScribeExtractError> {
-            Ok(vec![Proposal {
-                predicate: PredicateName::new("note"),
-                claim: serde_json::json!({"title": "stub"}),
-                provenance: vec![],
-                rationale: "stub extractor".into(),
-                engine: None,
-                model: None,
-            }])
+            Ok(vec![Proposal::new(
+                PredicateName::new("note"),
+                serde_json::json!({"title": "stub"}),
+                vec![],
+                "stub extractor",
+            )])
         }
     }
 

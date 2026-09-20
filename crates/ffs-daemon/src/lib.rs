@@ -14,6 +14,7 @@ pub mod dispatch;
 pub mod ingest_watcher;
 pub mod materializer;
 pub mod notify;
+pub mod resolver;
 pub mod scribe;
 pub mod transport;
 
@@ -22,4 +23,5 @@ pub use dispatch::Dispatcher;
 pub use ingest_watcher::{IngestWatcher, IngestWatcherConfig};
 pub use materializer::{MaterializeError, Materialized, WorkingSetMaterializer};
 pub use notify::{Event, EventPublisher};
-pub use scribe::SkillsHostScribeExtractor;
+pub use resolver::{CandidateLookup, ResolveReport, StoreLookup, SubmissionContext, resolve_set};
+pub use scribe::{ResolvingExtractor, SkillsHostScribeExtractor};

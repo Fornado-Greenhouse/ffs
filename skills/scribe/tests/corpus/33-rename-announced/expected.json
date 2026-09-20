@@ -1,0 +1,26 @@
+{
+  "filename": "birchwood-a.md",
+  "engine": "llm",
+  "identity": true,
+  "articles": [
+    "input.md",
+    "input-b.md"
+  ],
+  "notes": "Identity fixture: a rename announced in an article; the new display carries the old name as an alias so the resolver links via the alias tier and the materializer moves the file with a redirect stub.",
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Elena Marsh",
+        "organization": "Birchwood Law"
+      },
+      "refs_count": 1
+    },
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Victor Hale"
+      }
+    }
+  ]
+}

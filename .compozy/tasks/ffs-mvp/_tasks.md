@@ -48,7 +48,7 @@
 | 42 | Spike: extraction quality on real business-press articles (gates task_36) | completed | low | task_11 |
 | 43 | Spike: intake reality, does the courier need a browser or an agent (gates task_40) | completed | low | task_26 |
 | 44 | Spike: review load and the review surface (gates task_39) | completed | low | task_19, task_29 |
-| 45 | Scribe v3: multi-entity proposals + entity resolver (ADR-030, ADR-031) | pending | high | task_36, task_38 |
+| 45 | Scribe v3: multi-entity proposals + entity resolver (ADR-030, ADR-031) | completed | high | task_36, task_38 |
 | 46 | Attestations, derived status, and staleness (ADR-034 local half) | pending | medium | task_38, task_41 |
 | 47 | Shared intake and shared accuracy over federation (ADR-034 federation half) | pending | high | task_15, task_40, task_45, task_46 |
 | 48 | Morning read: the owner-present reading session skill (ADR-035) | pending | medium | task_37, task_40, task_46 |

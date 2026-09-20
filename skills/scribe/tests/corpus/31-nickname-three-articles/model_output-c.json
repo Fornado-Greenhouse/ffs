@@ -1,0 +1,60 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Northgate Brewing taproom gets county approval",
+        "url": "https://example-ledger.test/news/2026/09/15/northgate-approval",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-15",
+        "summary": "County approved the taproom; construction starts in October.",
+        "mentions": [
+          {
+            "display": "Samuel Okafor",
+            "context": "CFO, known as Sammy"
+          },
+          {
+            "display": "Northgate Brewing",
+            "context": "the brewery"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Northgate Brewing"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Samuel Okafor",
+        "organization": "Northgate Brewing",
+        "role": "CFO",
+        "aliases": [
+          "Sammy"
+        ]
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Samuel Okafor",
+        "organization": "Northgate Brewing",
+        "title": "CFO",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/15/northgate-approval"
+      }
+    }
+  ],
+  "summary": "s"
+}

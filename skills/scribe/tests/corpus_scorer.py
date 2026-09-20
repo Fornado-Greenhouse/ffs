@@ -26,6 +26,14 @@ scored. ``forbid`` lists predicates that must not appear at all.
 ``expected_when_registered`` is ignored by the scorer; it documents
 how the expectation flips once a later task registers a predicate.
 
+task_45 additions per expected proposal: ``refs_count`` pins how many
+cross-references the proposal bound to other proposals in its set, and
+``top`` pins top-level proposal keys (``ends_role``, ``valid_from``,
+``valid_to``). Per fixture: ``engine`` ("heuristic" default, or "llm"
+for fixtures only a model can produce; those carry a canned
+``model_output.json``), ``identity`` plus ``articles`` for multi-article
+identity fixtures with ``expected_identity.json``.
+
 The corpus directory is ``$FFS_SCRIBE_CORPUS_DIR`` when set (so real
 articles can be scored locally without entering git) and the in-repo
 ``tests/corpus/`` otherwise.
@@ -68,10 +76,47 @@ class Fixture:
     awaits: Optional[str] = None
     notes: str = ""
     expected_when_registered: Optional[List[Dict[str, Any]]] = None
+    # task_45: which engine the expectation is written for. "heuristic"
+    # fixtures run in the normal test pass; "llm" fixtures are skipped
+    # there unless a backend is reachable, and are exercised
+    # deterministically by test_multi_entity.py through their canned
+    # model_output.json.
+    engine: str = "heuristic"
+    # task_45 identity fixtures: several articles in one directory
+    # (``input.md``, ``input-b.md``, ...), each with a matching
+    # ``model_output[-x].json``; ``expected_identity.json`` describes
+    # the expected clustering for the daemon's resolver tests.
+    identity: bool = False
+    articles: List[str] = field(default_factory=list)
 
     @property
     def source_uri(self) -> str:
         return f"file:///ingest/{self.filename}"
+
+    def article_input(self, article: str) -> str:
+        with open(os.path.join(self.path, article), encoding="utf-8") as f:
+            return f.read()
+
+    def model_output_path(self, article: str = "input.md") -> str:
+        """``model_output.json`` for ``input.md``, ``model_output-b.json``
+        for ``input-b.md``, and so on."""
+        stem, _ = os.path.splitext(article)
+        suffix = stem[len("input"):] if stem.startswith("input") else ""
+        return os.path.join(self.path, f"model_output{suffix}.json")
+
+    def model_output(self, article: str = "input.md") -> Optional[Dict[str, Any]]:
+        path = self.model_output_path(article)
+        if not os.path.isfile(path):
+            return None
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def expected_identity(self) -> Optional[Dict[str, Any]]:
+        path = os.path.join(self.path, "expected_identity.json")
+        if not os.path.isfile(path):
+            return None
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
 
 
 def corpus_dir() -> str:
@@ -117,6 +162,9 @@ def load_corpus(directory: Optional[str] = None) -> List[Fixture]:
                 awaits=exp.get("awaits"),
                 notes=str(exp.get("notes") or ""),
                 expected_when_registered=exp.get("expected_when_registered"),
+                engine=str(exp.get("engine") or "heuristic"),
+                identity=bool(exp.get("identity", False)),
+                articles=list(exp.get("articles") or ["input.md"]),
             )
         )
     return fixtures
@@ -274,23 +322,34 @@ def score(expected: List[Dict[str, Any]], actual: List[Dict[str, Any]], forbid: 
         claim = exp.get("claim") or {}
         soft = exp.get("soft") or {}
         best: Tuple[int, Optional[int], List[str]] = (-1, None, [])
+        # task_45: an expectation may also pin the count of bound
+        # cross-references (``refs_count``) and top-level proposal keys
+        # such as ``ends_role`` / ``valid_from`` (``top``). They score
+        # like claim fields, under synthetic names.
+        top = exp.get("top") or {}
+        refs_count = exp.get("refs_count")
+        n_expected = len(claim) + len(top) + (1 if refs_count is not None else 0)
         for i, act in enumerate(actual):
             if i in used or act.get("predicate") != pred:
                 continue
             aclaim = act.get("claim") or {}
             misses = [k for k, v in claim.items() if not field_matches(v, aclaim.get(k))]
-            hits = len(claim) - len(misses)
+            misses += [f"top.{k}" for k, v in top.items() if not field_matches(v, act.get(k))]
+            if refs_count is not None and len(act.get("refs") or []) != refs_count:
+                misses.append(f"refs_count({len(act.get('refs') or [])}!={refs_count})")
+            hits = n_expected - len(misses)
             if hits > best[0]:
                 best = (hits, i, misses)
         hits, idx, misses = best
         if idx is None:
-            matches.append(ProposalMatch(pred, len(claim), 0, list(claim.keys()), [], list(soft.keys()), None))
+            names = list(claim.keys()) + [f"top.{k}" for k in top] + (["refs_count"] if refs_count is not None else [])
+            matches.append(ProposalMatch(pred, n_expected, 0, names, [], list(soft.keys()), None))
             continue
         used.add(idx)
         aclaim = actual[idx].get("claim") or {}
         soft_hits = [k for k, v in soft.items() if field_matches(v, aclaim.get(k))]
         soft_misses = [k for k in soft if k not in soft_hits]
-        matches.append(ProposalMatch(pred, len(claim), hits, misses, soft_hits, soft_misses, idx))
+        matches.append(ProposalMatch(pred, n_expected, hits, misses, soft_hits, soft_misses, idx))
     extras = [str(a.get("predicate")) for i, a in enumerate(actual) if i not in used]
     forbidden = [str(a.get("predicate")) for a in actual if a.get("predicate") in set(forbid or [])]
     return Score(fixture_id, matches, extras, forbidden)

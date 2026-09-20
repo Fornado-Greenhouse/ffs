@@ -1,0 +1,20 @@
+{
+  "filename": "halcyon-a.md",
+  "engine": "llm",
+  "identity": true,
+  "articles": [
+    "input.md",
+    "input-b.md"
+  ],
+  "notes": "Identity fixture: two different people with the same name at different organizations must stay separate.",
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Jordan Reyes",
+        "organization": "Halcyon Dental"
+      },
+      "refs_count": 1
+    }
+  ]
+}

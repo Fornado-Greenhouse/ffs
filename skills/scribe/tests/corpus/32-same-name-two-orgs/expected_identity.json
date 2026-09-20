@@ -1,0 +1,25 @@
+{
+  "clusters": {
+    "P1": [
+      {
+        "article": "input.md",
+        "predicate": "person.generic",
+        "display": "Jordan Reyes"
+      }
+    ],
+    "P2": [
+      {
+        "article": "input-b.md",
+        "predicate": "person.generic",
+        "display": "Jordan Reyes"
+      }
+    ]
+  },
+  "distinct": [
+    [
+      "P1",
+      "P2"
+    ]
+  ],
+  "notes": "Second article: exact name match but organization disagreement; the resolver must not return existing. Either new (if the surname/org disagree weights push it below review_floor) or ambiguous (review) is acceptable; existing is a failure."
+}

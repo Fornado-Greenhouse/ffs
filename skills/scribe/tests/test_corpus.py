@@ -30,7 +30,27 @@ import pytest
 import corpus_scorer as cs  # type: ignore  # conftest put tests/ on sys.path
 import extraction  # type: ignore
 
-FIXTURES: List[cs.Fixture] = cs.load_corpus(cs.IN_REPO_CORPUS)
+ALL_FIXTURES: List[cs.Fixture] = cs.load_corpus(cs.IN_REPO_CORPUS)
+
+
+def _llm_backend_available() -> bool:
+    """task_45: llm-only fixtures run here only when the developer opted
+    in (FFS_SCRIBE_ENGINE=llm) and a backend answers; otherwise they are
+    exercised deterministically by test_multi_entity.py."""
+    if (os.environ.get("FFS_SCRIBE_ENGINE") or "").strip().lower() != "llm":
+        return False
+    try:
+        from score_llm import _backend_reachable  # type: ignore
+
+        ok, _why = _backend_reachable(os.environ)
+        return bool(ok)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_LLM_LIVE = _llm_backend_available()
+FIXTURES: List[cs.Fixture] = [f for f in ALL_FIXTURES if f.engine == "heuristic" or _LLM_LIVE]
+LLM_ONLY: List[cs.Fixture] = [f for f in ALL_FIXTURES if f.engine == "llm"]
 REQUIRED_IDS = {f.id for f in FIXTURES if f.required}
 
 _SCORES: List[cs.Score] = []
@@ -51,6 +71,21 @@ def engine_env(tmp_path, monkeypatch):
 def test_corpus_has_twenty_fixtures():
     assert len(FIXTURES) >= 20
     assert {"01-jon-jones-card", "10-hint-source-article", "11-hint-unknown-predicate", "02-frontmatter-contact"} <= REQUIRED_IDS
+
+
+def test_llm_only_fixtures_are_present_and_carry_model_outputs():
+    """task_45: five business-press fixtures and four identity fixtures,
+    every article with a canned model envelope."""
+    ids = {f.id for f in LLM_ONLY}
+    assert {"21-exec-hire", "22-funding-round", "23-acquisition", "24-real-estate-opening", "25-profile-piece"} <= ids
+    assert {"31-nickname-three-articles", "32-same-name-two-orgs", "33-rename-announced", "34-wrong-merge-undo"} <= ids
+    for f in LLM_ONLY:
+        for article in f.articles:
+            assert f.model_output(article) is not None, f"{f.id}: missing model output for {article}"
+        if f.identity:
+            assert f.expected_identity() is not None, f"{f.id}: missing expected_identity.json"
+    if not _LLM_LIVE:
+        assert not any(f.engine == "llm" for f in FIXTURES), "llm fixtures must be skipped without a backend"
 
 
 @pytest.mark.parametrize("fixture", FIXTURES, ids=_ids(FIXTURES))

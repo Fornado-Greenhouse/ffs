@@ -5,18 +5,22 @@
 //! without standing up a SQLCipher database. Uses a `BTreeMap` for ordered
 //! iteration; concurrent access goes through a single `Mutex`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 use crate::atom::{AtomEnvelope, EntityId, Iso8601, PredicateName};
 use crate::multihash::Multihash;
 
-use super::{AtomStore, StoreError};
+use super::{AtomStore, Sighting, StoreError};
 
 #[derive(Default)]
 struct Inner {
     /// content_hash → envelope
     atoms: BTreeMap<Vec<u8>, AtomEnvelope>,
+    /// surface form → (entity → accepted-resolution count)
+    priors: HashMap<String, BTreeMap<String, u32>>,
+    /// NIL cluster key → first sighting
+    sightings: HashMap<String, Sighting>,
 }
 
 #[derive(Default)]
@@ -151,5 +155,59 @@ impl AtomStore for MemAtomStore {
             }
         }
         Ok(out)
+    }
+
+    fn record_resolution(&self, form: &str, entity: &EntityId) -> Result<(), StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        *inner
+            .priors
+            .entry(form.to_string())
+            .or_default()
+            .entry(entity.as_str().to_string())
+            .or_insert(0) += 1;
+        Ok(())
+    }
+
+    fn prior_counts(&self, form: &str) -> Result<Vec<(EntityId, u32)>, StoreError> {
+        let inner = self.inner.lock().unwrap();
+        let mut out: Vec<(EntityId, u32)> = inner
+            .priors
+            .get(form)
+            .map(|m| {
+                m.iter()
+                    .map(|(e, c)| (EntityId::new(e.clone()), *c))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.as_str().cmp(b.0.as_str())));
+        Ok(out)
+    }
+
+    fn record_sighting(
+        &self,
+        key: &str,
+        submission_id: &str,
+        display: &str,
+        when: &Iso8601,
+    ) -> Result<Option<Sighting>, StoreError> {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(prior) = inner.sightings.get(key) {
+            return Ok(Some(prior.clone()));
+        }
+        inner.sightings.insert(
+            key.to_string(),
+            Sighting {
+                key: key.to_string(),
+                submission_id: submission_id.to_string(),
+                display: display.to_string(),
+                first_seen: when.clone(),
+            },
+        );
+        Ok(None)
+    }
+
+    fn clear_sighting(&self, key: &str) -> Result<(), StoreError> {
+        self.inner.lock().unwrap().sightings.remove(key);
+        Ok(())
     }
 }

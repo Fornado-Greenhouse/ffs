@@ -1,0 +1,31 @@
+{
+  "clusters": {
+    "P1": [
+      {
+        "article": "input.md",
+        "predicate": "person.generic",
+        "display": "Chris Adair"
+      }
+    ],
+    "P2": [
+      {
+        "article": "input-b.md",
+        "predicate": "person.generic",
+        "display": "Chris Adair"
+      }
+    ]
+  },
+  "distinct": [
+    [
+      "P1",
+      "P2"
+    ]
+  ],
+  "wrong_merge": {
+    "loser": "P2",
+    "winner": "P1",
+    "undo": "supersede the entity.same_as atom with valid_to now",
+    "expect_after_undo": "P1 and P2 are separate clusters again; both files render; no atoms moved"
+  },
+  "notes": "Pairwise P/R and B-cubed over the four identity fixtures must score 1.0 for a correct resolver; after the wrong merge they drop; after the undo they return to 1.0."
+}

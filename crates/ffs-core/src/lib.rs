@@ -16,6 +16,7 @@ pub mod projection;
 pub mod quarantine;
 pub mod quarantine_sqlite;
 pub mod resolution;
+pub mod resolve;
 pub mod store;
 pub mod suppress;
 pub mod working_set;
@@ -35,11 +36,18 @@ pub use federation_peers::{
 pub use multibase::MultibaseError;
 pub use multihash::{Multihash, MultihashError};
 pub use quarantine::{
-    InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError, Submission, SubmissionStatus,
+    Candidate, CrossRef, InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError,
+    Resolution, Submission, SubmissionStatus,
 };
 pub use quarantine_sqlite::SqliteQuarantine;
-pub use resolution::{FieldWeight, ResolutionConfig, ResolutionConfigError, Thresholds};
-pub use store::{AtomStore, MemAtomStore, SCHEMA_VERSION, SqliteAtomStore, StoreError};
+pub use resolution::{
+    BlockingConfig, BlockingKey, FieldWeight, ResolutionConfig, ResolutionConfigError, Thresholds,
+};
+pub use resolve::{normalized_name_key, surname_key};
+pub use store::{
+    AtomStore, DIFFERENT_FROM_PREDICATE, MemAtomStore, SAME_AS_PREDICATE, SCHEMA_VERSION, Sighting,
+    SqliteAtomStore, StoreError,
+};
 pub use suppress::SuppressionRegistry;
 pub use working_set::{
     InMemoryPathIndex, InMemoryWorkingSet, PathIndex, WorkingSetEntry, WorkingSetError,

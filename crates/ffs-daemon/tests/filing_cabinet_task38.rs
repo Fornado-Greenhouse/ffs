@@ -254,6 +254,14 @@ async fn ingest_accept_mints_opaque_ids_and_the_file_is_named_from_the_display_n
                 rationale: "test".into(),
                 engine: None,
                 model: None,
+                local_ref: None,
+                refs: vec![],
+                valid_from: None,
+                valid_to: None,
+                ends_role: false,
+                entity: None,
+                resolution: None,
+                candidates: vec![],
             }],
         )
         .await

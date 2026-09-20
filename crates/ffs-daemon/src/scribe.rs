@@ -27,10 +27,16 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use ffs_core::{Multihash, PredicateName, Proposal, Provenance, SourceKind};
+use ffs_core::predicate::SpecRegistry;
+use ffs_core::quarantine::CrossRef;
+use ffs_core::store::AtomStore;
+use ffs_core::{
+    Iso8601, Multihash, PredicateName, Proposal, Provenance, ResolutionConfig, SourceKind,
+};
 use ffs_skills_host::{SkillError, SkillsHost};
 
 use crate::dispatch::{ScribeExtractError, ScribeExtractor};
+use crate::resolver::{StoreLookup, SubmissionContext, resolve_set};
 
 /// Production `ScribeExtractor` that forwards extraction calls to
 /// the scribe `SkillProcess` inside `SkillsHost`. Holds the host as
@@ -156,6 +162,24 @@ struct ScribeProposalWire {
     /// for the heuristic engine (normalized to `None`).
     #[serde(default)]
     model: Option<String>,
+    // ---- task_45 multi-entity set (all optional; ADR-030 / ADR-031) ----
+    #[serde(default)]
+    local_ref: Option<String>,
+    #[serde(default)]
+    refs: Vec<ScribeRefWire>,
+    /// `YYYY-MM-DD` or a full ISO 8601 timestamp.
+    #[serde(default)]
+    valid_from: Option<String>,
+    #[serde(default)]
+    valid_to: Option<String>,
+    #[serde(default)]
+    ends_role: bool,
+}
+
+#[derive(Deserialize)]
+struct ScribeRefWire {
+    field: String,
+    local_ref: String,
 }
 
 #[derive(Deserialize)]
@@ -163,6 +187,21 @@ struct ScribeProvenanceWire {
     kind: String,
     uri: String,
     hash_hex: String,
+}
+
+/// Parse a scribe date: a bare `YYYY-MM-DD` becomes midnight UTC; a
+/// full ISO 8601 timestamp is validated as-is. Anything else is `None`
+/// (the proposal falls back to "now" at accept) rather than an error,
+/// so a model's malformed date never sinks a submission.
+pub fn parse_scribe_date(raw: &str) -> Option<Iso8601> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t.len() == 10 && t.as_bytes()[4] == b'-' && t.as_bytes()[7] == b'-' {
+        return Iso8601::new(format!("{t}T00:00:00Z")).ok();
+    }
+    Iso8601::new(t).ok()
 }
 
 impl From<ScribeProposalWire> for Proposal {
@@ -176,24 +215,217 @@ impl From<ScribeProposalWire> for Proposal {
                 hash: hex_to_multihash(&p.hash_hex),
             })
             .collect();
-        Proposal {
-            predicate: PredicateName::new(w.predicate),
-            claim: w.claim,
+        let mut p = Proposal::new(
+            PredicateName::new(w.predicate),
+            w.claim,
             provenance,
-            rationale: w.rationale,
-            engine: w.engine.filter(|s| !s.is_empty()),
-            model: w.model.filter(|s| !s.is_empty()),
-        }
+            w.rationale,
+        );
+        p.engine = w.engine.filter(|s| !s.is_empty());
+        p.model = w.model.filter(|s| !s.is_empty());
+        p.local_ref = w.local_ref.filter(|s| !s.is_empty());
+        p.refs = w
+            .refs
+            .into_iter()
+            .filter(|r| !r.field.is_empty() && !r.local_ref.is_empty())
+            .map(|r| CrossRef {
+                field: CrossRef::from_wire_field(&r.field),
+                local_ref: r.local_ref,
+            })
+            .collect();
+        p.valid_from = w.valid_from.as_deref().and_then(parse_scribe_date);
+        p.valid_to = w.valid_to.as_deref().and_then(parse_scribe_date);
+        p.ends_role = w.ends_role;
+        p
     }
 }
 
+/// `source_article` (the article every proposal in a multi-entity set
+/// points back to) maps to `IngestFile` because `ffs-core` has no
+/// dedicated `SourceKind` for it yet; the uri is kept, which is what
+/// dedup and the briefing read. Adding a variant is an envelope
+/// decision (ADR needed), noted as a follow-up.
 fn scribe_kind_to_source_kind(kind: &str) -> SourceKind {
     match kind {
-        "ingest" | "ingest_file" => SourceKind::IngestFile,
+        "ingest" | "ingest_file" | "source_article" => SourceKind::IngestFile,
         "federation_pull" => SourceKind::FederationPull,
         "fast_path" => SourceKind::FastPath,
         _ => SourceKind::IngestFile,
     }
+}
+
+/// Decorator that runs the daemon-side resolver (task_45, ADR-030)
+/// over whatever the wrapped extractor returns, so every proposal
+/// reaching the quarantine carries `resolution` and `candidates`.
+///
+/// The resolution config is re-read from
+/// `$FFS_DATA_DIR/config/resolution.toml` on every call so an owner
+/// edit takes effect on the next submission, like predicate specs.
+/// When the file is missing or invalid a compiled default is used
+/// and a warning is logged.
+pub struct ResolvingExtractor {
+    inner: Arc<dyn ScribeExtractor>,
+    store: Arc<dyn AtomStore>,
+    registry: Arc<SpecRegistry>,
+    config_path: Option<std::path::PathBuf>,
+}
+
+impl ResolvingExtractor {
+    pub fn new(
+        inner: Arc<dyn ScribeExtractor>,
+        store: Arc<dyn AtomStore>,
+        registry: Arc<SpecRegistry>,
+        data_dir: Option<&std::path::Path>,
+    ) -> Self {
+        Self {
+            inner,
+            store,
+            registry,
+            config_path: data_dir.map(|d| d.join("config").join("resolution.toml")),
+        }
+    }
+
+    /// Compiled fallback mirroring `starter/config/resolution.toml`.
+    pub fn default_config() -> ResolutionConfig {
+        ResolutionConfig::from_toml_str(include_str!("../../../starter/config/resolution.toml"))
+            .expect("starter resolution.toml is valid")
+    }
+
+    fn load_config(&self) -> ResolutionConfig {
+        match &self.config_path {
+            Some(path) => match ResolutionConfig::load(path) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    tracing::warn!(error = %e, path = %path.display(), "resolution config unusable; using the compiled default");
+                    Self::default_config()
+                }
+            },
+            None => Self::default_config(),
+        }
+    }
+
+    /// Resolve an already-extracted set (used by `ingest.submit`
+    /// callers and tests that have proposals in hand).
+    pub fn resolve(&self, source_uri: &str, mut set: Vec<Proposal>) -> Vec<Proposal> {
+        let cfg = self.load_config();
+        let lookups = StoreLookup {
+            store: &*self.store,
+            registry: &self.registry,
+        };
+        let mut ctx = SubmissionContext::new(source_uri, now_iso());
+        let report = resolve_set(&mut set, &lookups, &cfg, &mut ctx);
+        for w in &report.warnings {
+            tracing::info!(source_uri = %source_uri, "resolver: {w}");
+        }
+        if !report.backfill.is_empty() {
+            set = attach_backfills(set, &report.backfill, &*self.store, &self.registry);
+        }
+        set
+    }
+}
+
+#[async_trait]
+impl ScribeExtractor for ResolvingExtractor {
+    async fn extract(
+        &self,
+        source_uri: &str,
+        content: &[u8],
+    ) -> Result<Vec<Proposal>, ScribeExtractError> {
+        let set = self.inner.extract(source_uri, content).await?;
+        Ok(self.resolve(source_uri, set))
+    }
+}
+
+/// When a bare mention crosses the second-sighting line, the earlier
+/// article (identified by the sighting's submission id, which is its
+/// source uri) should gain the entity on its mention. This adds a
+/// synthetic supersession proposal of that article's head atom with
+/// the mention referencing the newly minted person's `local_ref`;
+/// accept rewrites the ref once the id exists. Skipped with a warning
+/// when the earlier article was never accepted.
+fn attach_backfills(
+    mut set: Vec<Proposal>,
+    backfills: &[(String, String)],
+    store: &dyn AtomStore,
+    registry: &SpecRegistry,
+) -> Vec<Proposal> {
+    let Some(article_family) = registry
+        .families()
+        .into_iter()
+        .find(|f| f.predicate == "source.article")
+    else {
+        return set;
+    };
+    let pred = PredicateName::new(&article_family.predicate);
+    let articles = store
+        .list_by_predicate(&pred, None, 10_000)
+        .unwrap_or_default();
+    for (earlier_uri, display) in backfills {
+        // The minted person: the proposal whose display equals the sighting's.
+        let person_ref = set
+            .iter()
+            .find(|p| {
+                ffs_core::resolve::normalized_name_key(
+                    p.claim
+                        .get("display_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                ) == ffs_core::resolve::normalized_name_key(display)
+            })
+            .and_then(|p| p.local_ref.clone());
+        let Some(person_ref) = person_ref else {
+            continue;
+        };
+        let earlier = articles
+            .iter()
+            .find(|a| a.provenance.iter().any(|pv| &pv.uri == earlier_uri));
+        let Some(earlier) = earlier else {
+            tracing::warn!(earlier = %earlier_uri, "backfill skipped: earlier article was never accepted");
+            continue;
+        };
+        let Ok(Some(head)) = store.head_of_chain(&earlier.entity, &pred, None) else {
+            continue;
+        };
+        let idx = head
+            .claim
+            .get("mentions")
+            .and_then(|m| m.as_array())
+            .and_then(|arr| {
+                arr.iter().position(|m| {
+                    m.get("display").and_then(|d| d.as_str()).is_some_and(|d| {
+                        ffs_core::resolve::normalized_name_key(d)
+                            == ffs_core::resolve::normalized_name_key(display)
+                    })
+                })
+            });
+        let Some(idx) = idx else {
+            continue;
+        };
+        let mut bp = Proposal::new(
+            pred.clone(),
+            head.claim.clone(),
+            head.provenance.clone(),
+            format!(
+                "backfill: second sighting of {display:?} minted an entity; earlier mention gains it"
+            ),
+        );
+        bp.local_ref = Some(format!("backfill-{}", set.len()));
+        bp.entity = Some(head.entity.clone());
+        bp.resolution = Some(ffs_core::quarantine::Resolution::Existing);
+        bp.refs = vec![CrossRef {
+            field: format!("mentions/{idx}/entity"),
+            local_ref: person_ref,
+        }];
+        set.push(bp);
+    }
+    set
+}
+
+fn now_iso() -> Iso8601 {
+    let s = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Iso8601::DEFAULT)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
+    Iso8601::new(s).unwrap_or_else(|_| Iso8601::new("1970-01-01T00:00:00Z").expect("constant"))
 }
 
 /// Decode a hex-encoded BLAKE3-256 digest into a Multihash. If the

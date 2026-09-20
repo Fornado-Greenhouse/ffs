@@ -25,7 +25,7 @@ use rusqlite::{Connection, OpenFlags, params};
 use crate::atom::{AtomEnvelope, EntityId, Iso8601, PredicateName, PublicKey};
 use crate::multihash::Multihash;
 
-use super::{AtomStore, StoreError, migrations};
+use super::{AtomStore, Sighting, StoreError, migrations};
 use crate::working_set::{PathIndex, WorkingSetError, basename_candidates, slugify_display};
 
 /// Production atom store. SQLCipher-encrypted, file-backed.
@@ -341,6 +341,80 @@ impl AtomStore for SqliteAtomStore {
             .into_iter()
             .map(|b| Multihash::from_bytes(&b).map_err(|e| StoreError::Malformed(e.to_string())))
             .collect()
+    }
+
+    fn record_resolution(&self, form: &str, entity: &EntityId) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO resolution_priors(form, entity, count) VALUES (?1, ?2, 1)
+             ON CONFLICT(form, entity) DO UPDATE SET count = count + 1",
+            params![form, entity.as_str()],
+        )?;
+        Ok(())
+    }
+
+    fn prior_counts(&self, form: &str) -> Result<Vec<(EntityId, u32)>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT entity, count FROM resolution_priors WHERE form = ?1
+             ORDER BY count DESC, entity ASC",
+        )?;
+        let rows = stmt.query_map(params![form], |row| {
+            Ok((
+                EntityId::new(row.get::<_, String>(0)?),
+                row.get::<_, i64>(1)? as u32,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    fn record_sighting(
+        &self,
+        key: &str,
+        submission_id: &str,
+        display: &str,
+        when: &Iso8601,
+    ) -> Result<Option<Sighting>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let prior = conn
+            .query_row(
+                "SELECT key, submission_id, display, first_seen FROM nil_sightings WHERE key = ?1",
+                params![key],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other),
+            })?;
+        if let Some((k, sid, disp, seen)) = prior {
+            return Ok(Some(Sighting {
+                key: k,
+                submission_id: sid,
+                display: disp,
+                first_seen: Iso8601::new(&seen)
+                    .map_err(|e| StoreError::Malformed(e.to_string()))?,
+            }));
+        }
+        conn.execute(
+            "INSERT INTO nil_sightings(key, submission_id, display, first_seen) VALUES (?1, ?2, ?3, ?4)",
+            params![key, submission_id, display, when.as_str()],
+        )?;
+        Ok(None)
+    }
+
+    fn clear_sighting(&self, key: &str) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM nil_sightings WHERE key = ?1", params![key])?;
+        Ok(())
     }
 }
 

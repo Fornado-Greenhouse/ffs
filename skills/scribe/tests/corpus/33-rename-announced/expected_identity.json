@@ -1,0 +1,36 @@
+{
+  "clusters": {
+    "P1": [
+      {
+        "article": "input.md",
+        "predicate": "person.generic",
+        "display": "Elena Marsh"
+      },
+      {
+        "article": "input-b.md",
+        "predicate": "person.generic",
+        "display": "Elena Marsh-Tanaka"
+      }
+    ],
+    "P2": [
+      {
+        "article": "input.md",
+        "predicate": "person.generic",
+        "display": "Victor Hale"
+      }
+    ]
+  },
+  "distinct": [
+    [
+      "P1",
+      "P2"
+    ]
+  ],
+  "rename": {
+    "cluster": "P1",
+    "from": "Elena Marsh",
+    "to": "Elena Marsh-Tanaka",
+    "expect_redirect_stub": true
+  },
+  "notes": "The second article's person proposal must resolve to existing via the alias Elena Marsh plus organization agreement; acceptance supersedes display_name, the file moves, and a Moved to stub remains at the old basename."
+}

@@ -34,7 +34,7 @@ use crate::quarantine::{
     IngestQuarantine, Proposal, QuarantineError, Submission, SubmissionStatus,
 };
 use crate::store::{StoreError, migrations};
-use crate::{Iso8601, PredicateName, Provenance};
+use crate::{EntityId, Iso8601, PredicateName, Provenance};
 
 /// SQLCipher-backed quarantine. Opens its own connection to the
 /// same `atoms.db` the atom store opens. WAL mode (enabled by the
@@ -187,7 +187,8 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
     } = row;
     let mut stmt = conn
         .prepare(
-            "SELECT predicate, claim, provenance, rationale, engine, model
+            "SELECT predicate, claim, provenance, rationale, engine, model,
+                    local_ref, refs_json, valid_from, valid_to, ends_role, entity, resolution, candidates_json
              FROM quarantine_proposals
              WHERE submission_id = ?1
              ORDER BY seq ASC",
@@ -201,6 +202,14 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
             let rationale: String = row.get(3)?;
             let engine: Option<String> = row.get(4)?;
             let model: Option<String> = row.get(5)?;
+            let local_ref: Option<String> = row.get(6)?;
+            let refs_json: Option<String> = row.get(7)?;
+            let valid_from: Option<String> = row.get(8)?;
+            let valid_to: Option<String> = row.get(9)?;
+            let ends_role: Option<i64> = row.get(10)?;
+            let entity: Option<String> = row.get(11)?;
+            let resolution: Option<String> = row.get(12)?;
+            let candidates_json: Option<String> = row.get(13)?;
             let claim: serde_json::Value =
                 serde_json::from_str(&claim_json).unwrap_or(serde_json::Value::Null);
             let provenance: Vec<Provenance> =
@@ -212,6 +221,19 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
                 rationale,
                 engine,
                 model,
+                local_ref,
+                refs: refs_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
+                valid_from: valid_from.and_then(|t| Iso8601::new(&t).ok()),
+                valid_to: valid_to.and_then(|t| Iso8601::new(&t).ok()),
+                ends_role: ends_role.unwrap_or(0) != 0,
+                entity: entity.map(EntityId::new),
+                resolution: resolution
+                    .and_then(|r| serde_json::from_value(serde_json::Value::String(r)).ok()),
+                candidates: candidates_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
             })
         })
         .map_err(map_io)?
@@ -413,8 +435,9 @@ impl IngestQuarantine for SqliteQuarantine {
         for (seq, p) in proposals.iter().enumerate() {
             tx.execute(
                 "INSERT INTO quarantine_proposals
-                    (submission_id, seq, predicate, claim, provenance, rationale, engine, model)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    (submission_id, seq, predicate, claim, provenance, rationale, engine, model,
+                     local_ref, refs_json, valid_from, valid_to, ends_role, entity, resolution, candidates_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     id,
                     seq as i64,
@@ -424,6 +447,26 @@ impl IngestQuarantine for SqliteQuarantine {
                     p.rationale,
                     p.engine,
                     p.model,
+                    p.local_ref,
+                    if p.refs.is_empty() {
+                        None
+                    } else {
+                        serde_json::to_string(&p.refs).ok()
+                    },
+                    p.valid_from.as_ref().map(|t| t.as_str().to_string()),
+                    p.valid_to.as_ref().map(|t| t.as_str().to_string()),
+                    p.ends_role as i64,
+                    p.entity.as_ref().map(|e| e.as_str().to_string()),
+                    p.resolution.and_then(|r| {
+                        serde_json::to_value(r)
+                            .ok()
+                            .and_then(|v| v.as_str().map(String::from))
+                    }),
+                    if p.candidates.is_empty() {
+                        None
+                    } else {
+                        serde_json::to_string(&p.candidates).ok()
+                    },
                 ],
             )
             .map_err(map_io)?;
@@ -529,7 +572,50 @@ mod tests {
             rationale: "test".into(),
             engine: Some("llm".into()),
             model: Some("claude-sonnet-5".into()),
+            ..Proposal::new(
+                PredicateName::new(predicate),
+                serde_json::Value::Null,
+                vec![],
+                "",
+            )
         }
+    }
+
+    #[tokio::test]
+    async fn resolution_fields_round_trip_through_sqlite() {
+        use crate::quarantine::{Candidate, CrossRef, Resolution};
+        let q = SqliteQuarantine::open_in_memory(&dek()).unwrap();
+        let id = q
+            .submit("file:///a.md".into(), b"x".to_vec())
+            .await
+            .unwrap();
+        let mut p = proposal("person.generic");
+        p.local_ref = Some("p1".into());
+        p.refs = vec![CrossRef {
+            field: "organization".into(),
+            local_ref: "o1".into(),
+        }];
+        p.valid_from = Some(Iso8601::new("2026-09-01T00:00:00Z").unwrap());
+        p.ends_role = true;
+        p.entity = Some(EntityId::new("zabc"));
+        p.resolution = Some(Resolution::Ambiguous);
+        p.candidates = vec![Candidate {
+            entity: EntityId::new("zc1"),
+            score: 4.5,
+            matched_on: vec!["display_name".into(), "organization".into()],
+            display: "Sara Chen".into(),
+        }];
+        q.complete(&id, vec![p.clone()]).await.unwrap();
+        let back = q.get(&id).await.unwrap().proposals.remove(0);
+        assert_eq!(back, p);
+        // A bare proposal reads back with empty resolution fields.
+        let id2 = q
+            .submit("file:///b.md".into(), b"y".to_vec())
+            .await
+            .unwrap();
+        q.complete(&id2, vec![proposal("note")]).await.unwrap();
+        let bare = q.get(&id2).await.unwrap().proposals.remove(0);
+        assert!(bare.resolution.is_none() && bare.candidates.is_empty() && !bare.ends_role);
     }
 
     #[tokio::test]

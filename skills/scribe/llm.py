@@ -48,7 +48,14 @@ if _LIB not in sys.path:
 
 from ffs_skill import log  # noqa: E402
 
-from engine import EngineResult, Submission, make_proposal  # noqa: E402
+from engine import (  # noqa: E402
+    EngineResult,
+    Submission,
+    assign_local_refs,
+    attach_source_article,
+    bind_refs,
+    make_proposal,
+)
 from heuristic import HeuristicEngine  # noqa: E402
 from prompt import build_prompt  # noqa: E402
 from registry import PredicateRegistry  # noqa: E402
@@ -282,6 +289,41 @@ def parse_envelope(text: str) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------
+# Per-proposal extras (task_45 multi-entity conventions)
+# --------------------------------------------------------------------
+
+_ISO_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def proposal_extras(item: Dict[str, Any], idx: int, warnings: List[str]) -> Dict[str, Any]:
+    """Validate the optional per-proposal keys a model may emit. Wrong
+    types are dropped with a warning; unknown keys are ignored."""
+    out: Dict[str, Any] = {}
+    ref = item.get("local_ref")
+    if ref is not None:
+        if isinstance(ref, str) and ref.strip():
+            out["local_ref"] = ref.strip()
+        else:
+            warnings.append(f"proposal #{idx}: local_ref is not a non-empty string; dropped")
+    for key in ("valid_from", "valid_to"):
+        v = item.get(key)
+        if v is None:
+            continue
+        if isinstance(v, str) and _ISO_DATE_RE.match(v.strip()):
+            out[key] = v.strip()
+        else:
+            warnings.append(f"proposal #{idx}: {key} {v!r} is not YYYY-MM-DD; dropped")
+    er = item.get("ends_role")
+    if er is not None:
+        if isinstance(er, bool):
+            if er:
+                out["ends_role"] = True
+        else:
+            warnings.append(f"proposal #{idx}: ends_role {er!r} is not a boolean; dropped")
+    return out
+
+
+# --------------------------------------------------------------------
 # Engine
 # --------------------------------------------------------------------
 
@@ -348,12 +390,32 @@ class LlmEngine:
                 rationale = f"{rationale} (llm; summary: {summary.strip()})"
             else:
                 rationale = f"{rationale} (llm)"
+            extras = proposal_extras(item, idx, warnings)
             proposals.append(
-                make_proposal(predicate, claim, submission, rationale, self.name, self.model)
+                make_proposal(
+                    predicate,
+                    claim,
+                    submission,
+                    rationale,
+                    self.name,
+                    self.model,
+                    local_ref=extras.get("local_ref"),
+                    valid_from=extras.get("valid_from"),
+                    valid_to=extras.get("valid_to"),
+                    ends_role=bool(extras.get("ends_role")),
+                )
             )
 
         if not proposals:
             result = self._fallback(submission, registry, "zero schema-valid proposals")
             result.warnings.extend(warnings)
             return result
+        # Multi-entity conventions (task_45): every proposal gets a
+        # local_ref, display references inside the set are bound to
+        # local_refs, and the article url (when known) is stamped on
+        # every proposal's provenance. A single proposal that names
+        # nothing else ends up with a local_ref only.
+        assign_local_refs(proposals)
+        bind_refs(proposals)
+        attach_source_article(submission, proposals)
         return EngineResult(proposals=proposals, warnings=warnings)

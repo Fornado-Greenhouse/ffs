@@ -1,0 +1,92 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document itself",
+      "claim": {
+        "title": "Larkspur Commons opens in Belmont with 40 shops",
+        "url": "https://example-ledger.test/news/2026/09/21/larkspur-commons-opens",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-21",
+        "summary": "Larkspur Commons, developed by Foxglove Development Partners, opened in Belmont; Grove & Vine Market anchors it.",
+        "mentions": [
+          {
+            "display": "Foxglove Development Partners",
+            "context": "developer"
+          },
+          {
+            "display": "Owen Slater",
+            "context": "managing partner"
+          },
+          {
+            "display": "Grove & Vine Market",
+            "context": "anchor tenant"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Foxglove Development Partners",
+        "industry": "real estate development"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-2",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Grove & Vine Market",
+        "industry": "grocery"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named in the text",
+      "claim": {
+        "display_name": "Owen Slater",
+        "organization": "Foxglove Development Partners",
+        "role": "Managing Partner"
+      }
+    },
+    {
+      "predicate": "event.business",
+      "local_ref": "event-1",
+      "rationale": "event reported",
+      "claim": {
+        "title": "Larkspur Commons opens in Belmont",
+        "kind": "opening",
+        "date": "2026-09-21",
+        "source": "https://example-ledger.test/news/2026/09/21/larkspur-commons-opens",
+        "participants": [
+          {
+            "display": "Foxglove Development Partners",
+            "role": "developer"
+          },
+          {
+            "display": "Grove & Vine Market",
+            "role": "tenant"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Owen Slater",
+        "organization": "Foxglove Development Partners",
+        "title": "Managing Partner",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/21/larkspur-commons-opens"
+      }
+    }
+  ],
+  "summary": "A retail center opening."
+}

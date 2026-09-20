@@ -1,0 +1,37 @@
+{
+  "filename": "larkspur-commons.md",
+  "engine": "llm",
+  "required": true,
+  "notes": "Real-estate opening: org, event kind opening with a developer participant and a tenant, one affiliation.",
+  "proposals": [
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Foxglove Development Partners"
+      }
+    },
+    {
+      "predicate": "event.business",
+      "claim": {
+        "kind": "opening"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Owen Slater",
+        "organization": "Foxglove Development Partners"
+      },
+      "refs_count": 1
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Owen Slater",
+        "organization": "Foxglove Development Partners",
+        "kind": "executive"
+      }
+    }
+  ]
+}

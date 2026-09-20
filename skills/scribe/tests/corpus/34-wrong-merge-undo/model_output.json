@@ -1,0 +1,58 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Saltmarsh Kitchen names head chef",
+        "url": "https://example-ledger.test/news/2026/09/06/saltmarsh-chef",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-06",
+        "summary": "A head chef appointment.",
+        "mentions": [
+          {
+            "display": "Chris Adair",
+            "context": "head chef"
+          },
+          {
+            "display": "Saltmarsh Kitchen",
+            "context": "the restaurant"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Saltmarsh Kitchen",
+        "industry": "restaurant"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Chris Adair",
+        "organization": "Saltmarsh Kitchen",
+        "role": "Head Chef"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Chris Adair",
+        "organization": "Saltmarsh Kitchen",
+        "title": "Head Chef",
+        "kind": "employee",
+        "source": "https://example-ledger.test/news/2026/09/06/saltmarsh-chef"
+      }
+    }
+  ],
+  "summary": "s"
+}

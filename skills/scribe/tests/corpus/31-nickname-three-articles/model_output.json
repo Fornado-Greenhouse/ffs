@@ -1,0 +1,58 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Northgate Brewing plans second taproom",
+        "url": "https://example-ledger.test/news/2026/09/01/northgate-taproom",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-01",
+        "summary": "Northgate Brewing plans a second taproom in Mount Holly.",
+        "mentions": [
+          {
+            "display": "Samuel Okafor",
+            "context": "chief financial officer"
+          },
+          {
+            "display": "Northgate Brewing",
+            "context": "the brewery"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Northgate Brewing",
+        "industry": "brewing"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Samuel Okafor",
+        "organization": "Northgate Brewing",
+        "role": "Chief Financial Officer"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Samuel Okafor",
+        "organization": "Northgate Brewing",
+        "title": "Chief Financial Officer",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/01/northgate-taproom"
+      }
+    }
+  ],
+  "summary": "s"
+}

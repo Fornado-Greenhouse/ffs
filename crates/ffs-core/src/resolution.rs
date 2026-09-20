@@ -46,6 +46,47 @@ pub struct Thresholds {
     pub auto_link: f64,
     /// Scores below this mint a new entity; between the two is review.
     pub review_floor: f64,
+    /// Two candidates whose scores are within this margin of each
+    /// other are ambiguous even when the best clears `auto_link`.
+    #[serde(default = "default_margin")]
+    pub margin: f64,
+}
+
+fn default_margin() -> f64 {
+    1.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// How candidates are blocked before scoring (ADR-030): only entities
+/// in the same path family, keyed by the full normalized name or by
+/// the surname alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockingConfig {
+    #[serde(default = "default_true")]
+    pub same_family: bool,
+    #[serde(default)]
+    pub key: BlockingKey,
+}
+
+impl Default for BlockingConfig {
+    fn default() -> Self {
+        Self {
+            same_family: true,
+            key: BlockingKey::FullName,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockingKey {
+    #[default]
+    FullName,
+    Surname,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -57,6 +98,8 @@ pub struct ResolutionConfig {
     /// rather than a parse error.
     #[serde(default)]
     pub weights: BTreeMap<String, FieldWeight>,
+    #[serde(default)]
+    pub blocking: BlockingConfig,
 }
 
 impl ResolutionConfig {
@@ -117,6 +160,22 @@ mod tests {
         }
         // The ADR-030 hints: organization agreement strong, surname weak.
         assert!(cfg.weight("organization").unwrap().agree > cfg.weight("surname").unwrap().agree);
+    }
+
+    #[test]
+    fn margin_and_blocking_default_when_absent_and_load_when_present() {
+        let minimal = "[thresholds]\nauto_link = 5.0\nreview_floor = 1.0\n[weights.x]\nagree = 1.0\ndisagree = 0.0\n";
+        let cfg = ResolutionConfig::from_toml_str(minimal).unwrap();
+        assert_eq!(cfg.thresholds.margin, 1.0);
+        assert_eq!(cfg.blocking, BlockingConfig::default());
+        let full = "[thresholds]\nauto_link = 5.0\nreview_floor = 1.0\nmargin = 0.5\n[blocking]\nsame_family = false\nkey = \"surname\"\n[weights.x]\nagree = 1.0\ndisagree = 0.0\n";
+        let cfg = ResolutionConfig::from_toml_str(full).unwrap();
+        assert_eq!(cfg.thresholds.margin, 0.5);
+        assert!(!cfg.blocking.same_family);
+        assert_eq!(cfg.blocking.key, BlockingKey::Surname);
+        let starter = ResolutionConfig::load(&starter_path()).unwrap();
+        assert_eq!(starter.blocking.key, BlockingKey::FullName);
+        assert!(starter.thresholds.margin > 0.0);
     }
 
     #[test]

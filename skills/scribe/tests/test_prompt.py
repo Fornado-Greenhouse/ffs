@@ -101,3 +101,27 @@ def test_rules_are_rendered():
     system, _ = prompt.build_prompt(reg, _sub())
     for rule in prompt.RULES:
         assert rule in system
+
+
+# ---- task_45: multi-entity guidance is schema-driven ----
+
+
+def test_role_guidance_rendered_only_when_a_person_organization_predicate_exists():
+    from prompt import build_system, role_guidance
+
+    base = {"note": {"description": "n", "claim_schema": {"type": "object", "required": ["title"], "properties": {"title": {"type": "string"}}}}}
+    reg = PredicateRegistry.from_specs(base)
+    assert role_guidance(reg) == []
+    assert "holds a role at an organization" not in build_system(reg)
+
+    with_role = dict(base)
+    with_role["membership.role"] = {
+        "description": "a role",
+        "claim_schema": {"type": "object", "required": ["person", "organization"], "properties": {"person": {"type": "string"}, "organization": {"type": "string"}, "kind": {"type": "string", "enum": ["member", "chair"]}}},
+    }
+    reg2 = PredicateRegistry.from_specs(with_role)
+    lines = role_guidance(reg2)
+    assert len(lines) == 1 and "membership.role" in lines[0] and '["member", "chair"]' in lines[0]
+    system = build_system(reg2)
+    assert "membership.role" in system and "ends_role" in system and "local_ref" in system
+    assert "never emit an entity key" in system

@@ -1,0 +1,89 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document itself",
+      "claim": {
+        "title": "How Marisol Vega rebuilt Tidewater Roasters",
+        "url": "https://example-ledger.test/news/2026/09/22/profile-marisol-vega",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-22",
+        "summary": "A profile of Marisol Vega, owner and CEO of Tidewater Roasters, formerly operations director at Copper Kettle Coffee.",
+        "mentions": [
+          {
+            "display": "Marisol Vega",
+            "context": "the subject"
+          },
+          {
+            "display": "Tidewater Roasters",
+            "context": "her company"
+          },
+          {
+            "display": "Copper Kettle Coffee",
+            "context": "former employer"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named in the text",
+      "claim": {
+        "display_name": "Marisol Vega",
+        "organization": "Tidewater Roasters",
+        "role": "Owner and Chief Executive",
+        "aliases": [
+          "Mari"
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Tidewater Roasters",
+        "industry": "coffee roasting"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-2",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Copper Kettle Coffee",
+        "industry": "coffee"
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Marisol Vega",
+        "organization": "Tidewater Roasters",
+        "title": "Owner and Chief Executive",
+        "kind": "founder",
+        "source": "https://example-ledger.test/news/2026/09/22/profile-marisol-vega"
+      },
+      "valid_from": "2023-01-01"
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-2",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Marisol Vega",
+        "organization": "Copper Kettle Coffee",
+        "title": "Operations Director",
+        "kind": "employee",
+        "source": "https://example-ledger.test/news/2026/09/22/profile-marisol-vega"
+      },
+      "ends_role": true,
+      "valid_to": "2023-01-01"
+    }
+  ],
+  "summary": "A profile."
+}

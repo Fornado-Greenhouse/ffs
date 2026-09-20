@@ -225,6 +225,15 @@ One rule about test material: no copyrighted press text ever
 goes into the FFS repository. Real articles used to measure the
 scribe live under your own data directory.
 
+When a proposal says **ambiguous**, the scribe found more than one
+person or organization it might be talking about, or one it is not
+sure enough about, and it is asking you rather than guessing. The
+card lists the candidates it considered with a score for each.
+An ambiguous proposal always waits for you: it can never be filed
+automatically, and accepting it means choosing a candidate or
+telling FFS the mention is someone new. Where the choice is clear
+the card says **existing** with the matched name, or **new**.
+
 ## What to do when something looks wrong
 
 - **A proposal looks weird.** Reject it. The scribe is

@@ -1,0 +1,44 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Local brewers weigh tariff costs",
+        "url": "https://example-ledger.test/news/2026/09/08/brewers-tariffs",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-08",
+        "summary": "Brewers report rising aluminum costs.",
+        "mentions": [
+          {
+            "display": "Sam Okafor",
+            "context": "of Northgate Brewing"
+          },
+          {
+            "display": "Northgate Brewing",
+            "context": "brewery"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Northgate Brewing"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Sam Okafor",
+        "organization": "Northgate Brewing"
+      }
+    }
+  ],
+  "summary": "s"
+}

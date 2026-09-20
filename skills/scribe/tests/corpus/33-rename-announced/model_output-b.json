@@ -1,0 +1,48 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document",
+      "claim": {
+        "title": "Birchwood Law partner takes new name",
+        "url": "https://example-ledger.test/news/2026/09/12/birchwood-name",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-12",
+        "summary": "Elena Marsh-Tanaka, formerly Elena Marsh, leads a new practice.",
+        "mentions": [
+          {
+            "display": "Elena Marsh-Tanaka",
+            "context": "formerly Elena Marsh"
+          },
+          {
+            "display": "Birchwood Law",
+            "context": "the firm"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "org named",
+      "claim": {
+        "display_name": "Birchwood Law"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named",
+      "claim": {
+        "display_name": "Elena Marsh-Tanaka",
+        "organization": "Birchwood Law",
+        "role": "Partner",
+        "aliases": [
+          "Elena Marsh"
+        ]
+      }
+    }
+  ],
+  "summary": "s"
+}

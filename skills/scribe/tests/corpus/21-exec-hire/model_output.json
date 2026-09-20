@@ -1,0 +1,134 @@
+{
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "local_ref": "article-1",
+      "rationale": "the document itself",
+      "claim": {
+        "title": "Pinewood Freight names new chief operating officer",
+        "url": "https://example-ledger.test/news/2026/09/18/pinewood-freight-coo",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-18",
+        "summary": "Pinewood Freight named Dana Whitfield COO effective Oct. 1, succeeding Lee Marsh.",
+        "mentions": [
+          {
+            "display": "Dana Whitfield",
+            "context": "named chief operating officer"
+          },
+          {
+            "display": "Pinewood Freight",
+            "context": "the company"
+          },
+          {
+            "display": "Ridgeline Carriers",
+            "context": "her prior employer"
+          },
+          {
+            "display": "Lee Marsh",
+            "context": "outgoing COO"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-1",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Pinewood Freight",
+        "industry": "trucking",
+        "location": "Gastonia"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "local_ref": "org-2",
+      "rationale": "organization named in the text",
+      "claim": {
+        "display_name": "Ridgeline Carriers"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-1",
+      "rationale": "person named in the text",
+      "claim": {
+        "display_name": "Dana Whitfield",
+        "organization": "Pinewood Freight",
+        "role": "Chief Operating Officer"
+      }
+    },
+    {
+      "predicate": "person.generic",
+      "local_ref": "person-2",
+      "rationale": "person named in the text",
+      "claim": {
+        "display_name": "Lee Marsh",
+        "organization": "Pinewood Freight"
+      }
+    },
+    {
+      "predicate": "event.business",
+      "local_ref": "event-1",
+      "rationale": "event reported",
+      "claim": {
+        "title": "Pinewood Freight hires Dana Whitfield as COO",
+        "kind": "hire",
+        "date": "2026-09-18",
+        "source": "https://example-ledger.test/news/2026/09/18/pinewood-freight-coo",
+        "participants": [
+          {
+            "display": "Dana Whitfield",
+            "role": "hire"
+          },
+          {
+            "display": "Pinewood Freight",
+            "role": "employer"
+          }
+        ]
+      }
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-1",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Dana Whitfield",
+        "organization": "Pinewood Freight",
+        "title": "Chief Operating Officer",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/18/pinewood-freight-coo"
+      },
+      "valid_from": "2026-10-01"
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-2",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Lee Marsh",
+        "organization": "Pinewood Freight",
+        "title": "Chief Operating Officer",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/18/pinewood-freight-coo"
+      },
+      "ends_role": true,
+      "valid_to": "2026-09-30"
+    },
+    {
+      "predicate": "affiliation",
+      "local_ref": "aff-3",
+      "rationale": "stated role",
+      "claim": {
+        "person": "Dana Whitfield",
+        "organization": "Ridgeline Carriers",
+        "title": "regional operations lead",
+        "kind": "executive",
+        "source": "https://example-ledger.test/news/2026/09/18/pinewood-freight-coo"
+      },
+      "ends_role": true,
+      "valid_to": "2026-09-30"
+    }
+  ],
+  "summary": "An executive hire at a trucking company."
+}

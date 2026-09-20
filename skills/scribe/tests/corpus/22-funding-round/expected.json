@@ -1,0 +1,58 @@
+{
+  "filename": "brightloom-series-b.md",
+  "engine": "llm",
+  "required": true,
+  "notes": "Funding round: investee and investors as orgs, event kind funding with investor/investee roles, affiliations for named execs including a new board seat.",
+  "proposals": [
+    {
+      "predicate": "source.article",
+      "claim": {
+        "url": "https://example-ledger.test/news/2026/09/19/brightloom-series-b"
+      },
+      "refs_count": 5
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Brightloom Analytics"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Copperfield Ventures"
+      }
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Meridian Growth Partners"
+      }
+    },
+    {
+      "predicate": "event.business",
+      "claim": {
+        "kind": "funding",
+        "amount": "$24 million"
+      },
+      "refs_count": 3
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Tomas Eyre",
+        "organization": "Brightloom Analytics",
+        "kind": "board"
+      },
+      "refs_count": 2
+    },
+    {
+      "predicate": "affiliation",
+      "claim": {
+        "person": "Priya Raman",
+        "organization": "Brightloom Analytics",
+        "kind": "executive"
+      }
+    }
+  ]
+}

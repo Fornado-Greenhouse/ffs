@@ -1,0 +1,27 @@
+{
+  "filename": "northgate-a.md",
+  "engine": "llm",
+  "identity": true,
+  "articles": [
+    "input.md",
+    "input-b.md",
+    "input-c.md"
+  ],
+  "notes": "Identity fixture: the same person across three articles, once as Sam, once with the nickname Sammy, always at the same org. Python checks extraction and refs per article; expected_identity.json is for the daemon resolver tests.",
+  "proposals": [
+    {
+      "predicate": "person.generic",
+      "claim": {
+        "display_name": "Samuel Okafor",
+        "organization": "Northgate Brewing"
+      },
+      "refs_count": 1
+    },
+    {
+      "predicate": "org.company",
+      "claim": {
+        "display_name": "Northgate Brewing"
+      }
+    }
+  ]
+}
