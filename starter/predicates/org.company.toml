@@ -1,0 +1,100 @@
+# org.company — an organization in the movers-and-shakers cabinet.
+#
+# Atoms with this predicate represent a company, agency, nonprofit,
+# or other organization that appears in the business press or the
+# owner's own notes. People relate to it through `affiliation` atoms
+# (ADR-031), never through fields on this record; the `## People`
+# section of the rendered file is a reverse lookup over those atoms
+# and carries no reverse-map rule (edits there route to ingest).
+#
+# `aliases` holds the variant names the press uses ("BofA", "Bank of
+# America Corp."); the resolver (task_45) reads them. It renders as a
+# frontmatter flow list and has no reverse-map rule (list-valued
+# frontmatter is not an edit kind the classifier expresses).
+
+name = "org.company"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["display_name"]
+
+[claim_schema.properties]
+display_name = { type = "string" }
+aliases = { type = "array", items = { type = "string" } }
+industry = { type = "string" }
+location = { type = "string" }
+website = { type = "string" }
+description = { type = "string" }
+notes = { type = "array", items = { type = "string" } }
+tags = { type = "array", items = { type = "string" } }
+history = { type = "array", items = { type = "string" } }
+
+[rendering]
+template = "org-company.md.tera"
+frontmatter_fields = ["display_name", "aliases", "industry", "location", "website"]
+body_sections = ["Description", "Notes", "Tags", "History", "People"]
+additive_sections = ["Notes", "Tags", "History"]
+
+# -------- reverse-map rules (8) --------
+
+[[reverse_map]]
+output = "frontmatter.display_name"
+atom_field = "claim.display_name"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.industry"
+atom_field = "claim.industry"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.location"
+atom_field = "claim.location"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.website"
+atom_field = "claim.website"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "section.Description"
+atom_field = "claim.description"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "section.Notes.list_item"
+atom_field = "claim.notes[]"
+edit_kind = "additive_section"
+
+[[reverse_map]]
+output = "section.Tags.list_item"
+atom_field = "claim.tags[]"
+edit_kind = "additive_section"
+
+[[reverse_map]]
+output = "section.History.list_item"
+atom_field = "claim.history[]"
+edit_kind = "additive_section"
+
+# -------- pagination --------
+
+[pagination]
+strategy = "alphabetical_first_letter"
+group_field = "display_name"
+
+# -------- projection family (ADR-028) --------
+
+[path]
+family = "orgs"
+name_field = "display_name"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "object aggregate"
+cco = "cco:Organization"
+iao = ""
+note = "A group of persons acting as one agent; people attach through affiliation role atoms, not fields."

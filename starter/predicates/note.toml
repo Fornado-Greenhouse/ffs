@@ -68,3 +68,21 @@ edit_kind = "additive_section"
 
 [pagination]
 strategy = "recency"
+
+# -------- projection family (ADR-028) --------
+#
+# `family` is the folder root under $FFS_DATA_DIR; `name_field` is the
+# claim field that becomes the file basename (must agree with
+# `pagination.group_field` when both are present).
+
+[path]
+family = "notes"
+name_field = "title"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "information content entity"
+cco = ""
+iao = "iao:IAO_0000310"
+note = "Narrative content about entities; references are is-about links."

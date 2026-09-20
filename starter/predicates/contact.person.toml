@@ -28,6 +28,7 @@ required = ["display_name"]
 
 [claim_schema.properties]
 display_name = { type = "string" }
+aliases = { type = "array", items = { type = "string" } }
 work_email = { type = "string", format = "email" }
 personal_email = { type = "string", format = "email" }
 phone = { type = "string" }
@@ -53,6 +54,7 @@ history = { type = "array", items = { type = "string" } }
 template = "contact-person.md.tera"
 frontmatter_fields = [
     "display_name",
+    "aliases",
     "work_email",
     "personal_email",
     "phone",
@@ -61,7 +63,7 @@ frontmatter_fields = [
     "tier",
     "pronouns",
 ]
-body_sections = ["Notes", "Tags", "Organizations", "History"]
+body_sections = ["Notes", "Tags", "Organizations", "History", "Affiliations"]
 additive_sections = ["Notes", "Tags", "Organizations", "History"]
 
 # -------- reverse-map rules (12) --------
@@ -135,3 +137,21 @@ edit_kind = "additive_section"
 [pagination]
 strategy = "alphabetical_first_letter"
 group_field = "display_name"
+
+# -------- projection family (ADR-028) --------
+#
+# `family` is the folder root under $FFS_DATA_DIR; `name_field` is the
+# claim field that becomes the file basename (must agree with
+# `pagination.group_field` when both are present).
+
+[path]
+family = "contacts"
+name_field = "display_name"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "object"
+cco = "cco:Person"
+iao = ""
+note = "A person the owner has a relationship with; contact methods are qualities of the person, tier is the owner's classification."

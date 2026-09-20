@@ -1,0 +1,53 @@
+# resolution.toml — entity-resolution weights and thresholds (ADR-030).
+#
+# Consumed by the scribe's daemon-side resolver (task_45). Shipped and
+# validated by task_38 so the file exists, loads, and has sane starting
+# values before the resolver lands. Installed to
+# $FFS_DATA_DIR/config/resolution.toml; git-versioned and owner-edited
+# like the predicate specs.
+#
+# Model: Fellegi-Sunter style. Each compared field contributes `agree`
+# when the candidate and the proposal agree on it and `disagree` when
+# they disagree (both in log-odds units; positive favors a match). The
+# summed score is compared against two thresholds:
+#
+#   score >= auto_link     -> resolution: existing (link to the candidate)
+#   score <  review_floor  -> resolution: new     (mint a fresh entity)
+#   otherwise              -> resolution: ambiguous (route to the owner)
+#
+# The band between the thresholds is the clerical-review band. Start
+# wide; narrow only when the golden corpus (task_36, task_45) justifies it.
+
+[thresholds]
+auto_link = 8.0
+review_floor = 2.0
+
+# Agreement on organization is strong evidence: two "Sara Chen" at the
+# same company are almost certainly one person. A shared surname alone
+# is weak: common names collide constantly, so its agree weight is small
+# and its disagree weight is strongly negative (different surname, not
+# the same person).
+
+[weights.display_name]
+agree = 6.0
+disagree = -4.0
+
+[weights.alias]
+agree = 5.0
+disagree = 0.0
+
+[weights.organization]
+agree = 4.0
+disagree = -2.0
+
+[weights.role]
+agree = 1.5
+disagree = -0.5
+
+[weights.location]
+agree = 1.0
+disagree = -0.5
+
+[weights.surname]
+agree = 0.5
+disagree = -6.0

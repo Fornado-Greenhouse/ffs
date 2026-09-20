@@ -2,6 +2,9 @@
 {%- if claim.display_name %}
 display_name: {{ claim.display_name }}
 {%- endif -%}
+{%- if claim.aliases %}{%- if claim.aliases | length > 0 %}
+aliases: [{{ claim.aliases | join(sep=", ") }}]
+{%- endif -%}{%- endif -%}
 {%- if claim.work_email %}
 work_email: {{ claim.work_email }}
 {%- endif -%}
@@ -48,3 +51,9 @@ pronouns: {{ claim.pronouns }}
 - {{ entry }}
 {% endfor -%}
 {% endif -%}
+{% if affiliations %}{% if affiliations | length > 0 %}
+## Affiliations
+{% for a in affiliations -%}
+- {% if a.basename %}[[{{ a.basename }}|{{ a.display }}]]{% else %}{{ a.display }}{% endif %}: {{ a.title | default(value="affiliated") }} ({{ a.valid_from }} to {% if a.valid_to %}{{ a.valid_to }}{% else %}present{% endif %})
+{% endfor -%}
+{% endif %}{% endif -%}

@@ -41,10 +41,13 @@ use tracing::{debug, warn};
 
 use ffs_core::projection::{
     ProjectionRenderer, ProjectionRequest, RenderError,
-    path::{PathFamily, family_for_predicate, path_for_entity},
+    path::{PathFamily, family_for_predicate, path_for_basename},
 };
+use ffs_core::store::AtomStore;
 use ffs_core::working_set::WorkingSetStore;
-use ffs_core::{EntityId, Iso8601, Multihash, PredicateName, PublicKey, SuppressionRegistry};
+use ffs_core::{
+    AtomEnvelope, EntityId, Iso8601, Multihash, PredicateName, PublicKey, SuppressionRegistry,
+};
 
 use crate::notify::EventPublisher;
 
@@ -65,6 +68,7 @@ pub struct Materialized {
 /// joins relative paths against.
 pub struct WorkingSetMaterializer {
     renderer: Arc<ProjectionRenderer>,
+    store: Arc<dyn AtomStore>,
     working_set: Arc<dyn WorkingSetStore>,
     suppression: Arc<SuppressionRegistry>,
     data_dir: PathBuf,
@@ -74,6 +78,7 @@ pub struct WorkingSetMaterializer {
 impl WorkingSetMaterializer {
     pub fn new(
         renderer: Arc<ProjectionRenderer>,
+        store: Arc<dyn AtomStore>,
         working_set: Arc<dyn WorkingSetStore>,
         suppression: Arc<SuppressionRegistry>,
         data_dir: PathBuf,
@@ -81,6 +86,7 @@ impl WorkingSetMaterializer {
     ) -> Self {
         Self {
             renderer,
+            store,
             working_set,
             suppression,
             data_dir,
@@ -90,15 +96,66 @@ impl WorkingSetMaterializer {
 
     /// Materialize an entity by rendering its primary-predicate
     /// projection and writing the result. Returns `Some` on a write,
-    /// `None` on a no-op (idempotent, capability-denied, or
-    /// path-unmapped).
+    /// `None` on a no-op (idempotent, capability-denied, no head
+    /// atom, or path-unmapped).
+    ///
+    /// The file name is a projection concern (ADR-030): the head
+    /// atom's name field becomes the basename through the shared
+    /// path-to-entity index, which applies the parenthetical
+    /// collision qualifier (organization, role, year). A renamed
+    /// entity moves to its new basename and leaves a one-line
+    /// redirect stub at the old path. A merged entity (a head
+    /// `entity.same_as` atom) renders as the merged stub the renderer
+    /// returns; no full file is written for it.
     pub async fn materialize_entity(
         &self,
-        family: PathFamily,
+        family: &PathFamily,
         entity: &EntityId,
     ) -> Result<Option<Materialized>, MaterializeError> {
-        let Some(rel_path) = path_for_entity(family, entity) else {
-            debug!(entity = entity.as_str(), "no path mapping; skipping");
+        let head = match self
+            .store
+            .head_of_chain(entity, &family.predicate, None)
+            .map_err(|e| MaterializeError::Store(e.to_string()))?
+        {
+            Some(h) => h,
+            None => {
+                debug!(entity = entity.as_str(), "no head atom; not writing");
+                return Ok(None);
+            }
+        };
+        let display = head
+            .claim
+            .get(&family.name_field)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(|| entity.as_str().to_string());
+        let qualifiers = self.collision_qualifiers(&head);
+
+        let index = self.renderer.path_index();
+        let folder = family.as_str();
+        let index_err = |e: ffs_core::WorkingSetError| MaterializeError::Index(e.to_string());
+        let mut redirect_from: Option<String> = None;
+        let basename = match index.basename_for(folder, entity).map_err(index_err)? {
+            None => index
+                .assign(folder, entity, &display, &qualifiers)
+                .map_err(index_err)?,
+            Some(current) => {
+                redirect_from = index
+                    .rename(folder, entity, &display, &qualifiers)
+                    .map_err(index_err)?;
+                index
+                    .basename_for(folder, entity)
+                    .map_err(index_err)?
+                    .unwrap_or(current)
+            }
+        };
+        let Some(rel_path) = path_for_basename(family, &basename) else {
+            debug!(
+                entity = entity.as_str(),
+                basename, "no path mapping; skipping"
+            );
             return Ok(None);
         };
         let abs_path = self.data_dir.join(&rel_path);
@@ -126,6 +183,12 @@ impl WorkingSetMaterializer {
         };
         let bytes = rendered.markdown.into_bytes();
         let render_hash = rendered.render_hash;
+
+        if let Some(old_basename) = redirect_from.as_deref()
+            && old_basename != basename
+        {
+            self.write_redirect_stub(family, old_basename, &basename, &display)?;
+        }
 
         // Idempotence: skip the write if the existing file already
         // matches. Catches the common case where an atom supersession
@@ -162,18 +225,91 @@ impl WorkingSetMaterializer {
         }))
     }
 
+    /// Collision qualifiers in ADR-030 order: organization (resolved
+    /// to its display name when the claim holds an entity id), role,
+    /// then the year of `valid_from`.
+    fn collision_qualifiers(&self, head: &AtomEnvelope) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(org) = head
+            .claim
+            .get("organization")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            out.push(self.display_for_reference(org));
+        }
+        if let Some(role) = head
+            .claim
+            .get("role")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            out.push(role.to_string());
+        }
+        if let Some(year) = head.valid_from.as_str().get(0..4)
+            && year.chars().all(|c| c.is_ascii_digit())
+        {
+            out.push(year.to_string());
+        }
+        out
+    }
+
+    /// If `value` is the entity id of a head atom in any family, return
+    /// that atom's display name; otherwise return `value` unchanged.
+    fn display_for_reference(&self, value: &str) -> String {
+        let candidate = EntityId::new(value);
+        for family in self.renderer.family_table().all() {
+            if let Ok(Some(head)) = self
+                .store
+                .head_of_chain(&candidate, &family.predicate, None)
+                && let Some(name) = head.claim.get(&family.name_field).and_then(|v| v.as_str())
+                && !name.trim().is_empty()
+            {
+                return name.trim().to_string();
+            }
+        }
+        value.to_string()
+    }
+
+    /// Leave `Moved to [[<new>|<display>]]` at the old basename so
+    /// existing wikilinks keep resolving (Wikipedia's redirect-on-move,
+    /// ADR-030). The stub is recorded in the suppression registry like
+    /// any other daemon write; the fast-path watcher ignores its shape.
+    fn write_redirect_stub(
+        &self,
+        family: &PathFamily,
+        old_basename: &str,
+        new_basename: &str,
+        display: &str,
+    ) -> Result<(), MaterializeError> {
+        let Some(old_rel) = path_for_basename(family, old_basename) else {
+            return Ok(());
+        };
+        let stub = format!("{REDIRECT_STUB_PREFIX}[[{new_basename}|{display}]]\n");
+        let abs = self.data_dir.join(&old_rel);
+        self.suppression.record(&abs, stub.as_bytes());
+        atomic_write(&abs, stub.as_bytes())
+            .map_err(|e| MaterializeError::Io(old_rel.clone(), e))?;
+        debug!(from = %old_rel, to = new_basename, "wrote redirect stub");
+        Ok(())
+    }
+
     /// Dispatch one parsed `event.atom.committed` notification.
     /// Surfaces any rendering / IO error but treats unmapped
-    /// predicates as a benign skip.
+    /// predicates as a benign skip. The family table is snapshotted
+    /// from the registry per call so hot-reloaded specs take effect.
     pub async fn handle_commit(
         &self,
         entity: &EntityId,
         predicate: &PredicateName,
     ) -> Result<Option<Materialized>, MaterializeError> {
-        let Some(family) = family_for_predicate(predicate) else {
+        let table = self.renderer.family_table();
+        let Some(family) = family_for_predicate(&table, predicate) else {
             return Ok(None);
         };
-        self.materialize_entity(family, entity).await
+        self.materialize_entity(&family, entity).await
     }
 
     /// Spawn a tokio task that subscribes to `publisher`'s broadcast
@@ -237,12 +373,19 @@ impl WorkingSetMaterializer {
     }
 }
 
+/// First line of a redirect stub left at an entity's old basename.
+pub const REDIRECT_STUB_PREFIX: &str = "Moved to ";
+
 #[derive(Debug, thiserror::Error)]
 pub enum MaterializeError {
     #[error("render error: {0}")]
     Render(Box<RenderError>),
     #[error("io {0}: {1}")]
     Io(String, std::io::Error),
+    #[error("store error: {0}")]
+    Store(String),
+    #[error("path index error: {0}")]
+    Index(String),
 }
 
 /// Atomic file write: write to a sibling temp file, then rename
@@ -290,6 +433,14 @@ mod tests {
     fn owner_key() -> SigningKey {
         SigningKey::from_bytes(&[7u8; 32])
     }
+
+    /// `PathFamily::Contacts` from before ADR-028, now looked up from
+    /// the starter specs: same folder, predicate, and name field.
+    fn contacts() -> PathFamily {
+        ffs_core::projection::FamilyTable::starter_three()
+            .for_folder("contacts")
+            .unwrap()
+    }
     fn owner_pk() -> PublicKey {
         PublicKey::from_verifying(&owner_key().verifying_key())
     }
@@ -328,6 +479,7 @@ mod tests {
         let suppression = Arc::new(SuppressionRegistry::new());
         let mat = Arc::new(WorkingSetMaterializer::new(
             renderer,
+            store.clone() as Arc<dyn AtomStore>,
             ws,
             suppression,
             data_dir,
@@ -365,7 +517,7 @@ mod tests {
             .unwrap();
 
         let result = mat
-            .materialize_entity(PathFamily::Contacts, &EntityId::new("Sara_Chen"))
+            .materialize_entity(&contacts(), &EntityId::new("Sara_Chen"))
             .await
             .expect("materialize");
         let m = result.expect("materialization should produce a write");
@@ -386,7 +538,7 @@ mod tests {
             .unwrap();
 
         let first = mat
-            .materialize_entity(PathFamily::Contacts, &EntityId::new("Alex_Kim"))
+            .materialize_entity(&contacts(), &EntityId::new("Alex_Kim"))
             .await
             .unwrap()
             .expect("first materialization writes");
@@ -394,7 +546,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
         let second = mat
-            .materialize_entity(PathFamily::Contacts, &EntityId::new("Alex_Kim"))
+            .materialize_entity(&contacts(), &EntityId::new("Alex_Kim"))
             .await
             .unwrap();
         assert!(second.is_none(), "second materialization should be a no-op");
@@ -411,7 +563,7 @@ mod tests {
         let (_store, mat) = build_mat(tmp.path().to_path_buf()).await;
         // No atoms in the store, so this should be a benign no-op.
         let r = mat
-            .materialize_entity(PathFamily::Contacts, &EntityId::new("Ghost"))
+            .materialize_entity(&contacts(), &EntityId::new("Ghost"))
             .await
             .unwrap();
         assert!(r.is_none());
@@ -442,6 +594,7 @@ mod tests {
         let suppression = Arc::new(SuppressionRegistry::new());
         let mat = Arc::new(WorkingSetMaterializer::new(
             renderer,
+            store.clone() as Arc<dyn AtomStore>,
             ws,
             suppression.clone(),
             tmp.path().to_path_buf(),
@@ -452,7 +605,7 @@ mod tests {
             .unwrap();
 
         let result = mat
-            .materialize_entity(PathFamily::Contacts, &EntityId::new("Wes_F"))
+            .materialize_entity(&contacts(), &EntityId::new("Wes_F"))
             .await
             .unwrap()
             .expect("write");

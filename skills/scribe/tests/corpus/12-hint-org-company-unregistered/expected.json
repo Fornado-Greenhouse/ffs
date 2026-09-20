@@ -2,20 +2,19 @@
   "filename": "harbor-and-pine.md",
   "proposals": [
     {
-      "predicate": "note",
-      "claim": {
-        "title": "Harbor & Pine Coffee"
-      }
-    }
-  ],
-  "notes": "A non-starter predicate. Today it falls back to note; when task_38 registers org.company the expectation flips to expected_when_registered with no scribe code change.",
-  "awaits": "predicate hint 36.4",
-  "expected_when_registered": [
-    {
       "predicate": "org.company",
       "claim": {
         "display_name": "Harbor & Pine Coffee",
         "industry": "Food service"
+      }
+    }
+  ],
+  "notes": "Flipped 2026-09-20: task_38 registered org.company, so the hint targets it and the claim is built from the frontmatter keys the schema declares (no scribe code change). expected_before_task_38 records the pre-38 note fallback.",
+  "expected_before_task_38": [
+    {
+      "predicate": "note",
+      "claim": {
+        "title": "Harbor & Pine Coffee"
       }
     }
   ]

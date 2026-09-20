@@ -1,13 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   isProjectionFile,
   isProjectionPath,
   normalizeProjectionPath,
   parseProjectionPath,
+  setFamilies,
 } from "../src/paths.js";
 
+const MVP_FAMILIES = [
+  { family: "contacts", predicate: "contact.person", name_field: "display_name" },
+  { family: "people", predicate: "person.generic", name_field: "display_name" },
+  { family: "notes", predicate: "note", name_field: "title" },
+];
+
 describe("paths", () => {
+  // The table is runtime state now (ADR-028); seed the three MVP
+  // families so every assertion below reads exactly as it did when
+  // they were a constant.
+  beforeEach(() => setFamilies(MVP_FAMILIES));
+
   it("isProjectionPath matches the three MVP families", () => {
     expect(isProjectionPath("contacts/by-name/S/Sara.md")).toBe(true);
     expect(isProjectionPath("people/recent/")).toBe(true);

@@ -26,6 +26,7 @@ use crate::atom::{AtomEnvelope, EntityId, Iso8601, PredicateName, PublicKey};
 use crate::multihash::Multihash;
 
 use super::{AtomStore, StoreError, migrations};
+use crate::working_set::{PathIndex, WorkingSetError, basename_candidates, slugify_display};
 
 /// Production atom store. SQLCipher-encrypted, file-backed.
 pub struct SqliteAtomStore {
@@ -348,3 +349,143 @@ impl AtomStore for SqliteAtomStore {
 // arrive with task 07's dispatcher if needed).
 #[allow(dead_code)]
 fn _author_query_marker(_: &PublicKey) {}
+
+// --------------------------------------------------------------------
+// Path-to-entity index (task_38, ADR-030), persisted in `path_index`.
+// --------------------------------------------------------------------
+
+fn idx_err(e: rusqlite::Error) -> WorkingSetError {
+    WorkingSetError::Index(e.to_string())
+}
+
+impl SqliteAtomStore {
+    fn basename_for_locked(
+        conn: &Connection,
+        family: &str,
+        entity: &EntityId,
+    ) -> Result<Option<String>, WorkingSetError> {
+        conn.query_row(
+            "SELECT basename FROM path_index WHERE family = ?1 AND entity = ?2",
+            params![family, entity.as_str()],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(idx_err(other)),
+        })
+    }
+
+    fn owner_of_locked(
+        conn: &Connection,
+        family: &str,
+        basename: &str,
+    ) -> Result<Option<String>, WorkingSetError> {
+        conn.query_row(
+            "SELECT entity FROM path_index WHERE family = ?1 AND basename = ?2",
+            params![family, basename],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(idx_err(other)),
+        })
+    }
+
+    fn assign_locked(
+        conn: &Connection,
+        family: &str,
+        entity: &EntityId,
+        display: &str,
+        qualifiers: &[String],
+    ) -> Result<String, WorkingSetError> {
+        let mut candidates = basename_candidates(display, qualifiers);
+        let base = slugify_display(display);
+        let mut n = 2u32;
+        loop {
+            let candidate = if candidates.is_empty() {
+                let c = format!("{base}_({n})");
+                n += 1;
+                c
+            } else {
+                candidates.remove(0)
+            };
+            match Self::owner_of_locked(conn, family, &candidate)? {
+                None => {
+                    conn.execute(
+                        "INSERT INTO path_index(family, basename, entity, display) VALUES (?1, ?2, ?3, ?4)",
+                        params![family, candidate, entity.as_str(), display],
+                    )
+                    .map_err(idx_err)?;
+                    return Ok(candidate);
+                }
+                Some(owner) if owner == entity.as_str() => return Ok(candidate),
+                Some(_) => continue,
+            }
+        }
+    }
+}
+
+impl PathIndex for SqliteAtomStore {
+    fn assign(
+        &self,
+        family: &str,
+        entity: &EntityId,
+        display: &str,
+        qualifiers: &[String],
+    ) -> Result<String, WorkingSetError> {
+        let conn = self.conn.lock().unwrap();
+        if let Some(existing) = Self::basename_for_locked(&conn, family, entity)? {
+            return Ok(existing);
+        }
+        Self::assign_locked(&conn, family, entity, display, qualifiers)
+    }
+
+    fn basename_for(
+        &self,
+        family: &str,
+        entity: &EntityId,
+    ) -> Result<Option<String>, WorkingSetError> {
+        let conn = self.conn.lock().unwrap();
+        Self::basename_for_locked(&conn, family, entity)
+    }
+
+    fn resolve(&self, family: &str, basename: &str) -> Result<Option<EntityId>, WorkingSetError> {
+        let conn = self.conn.lock().unwrap();
+        Ok(Self::owner_of_locked(&conn, family, basename)?.map(EntityId::new))
+    }
+
+    fn rename(
+        &self,
+        family: &str,
+        entity: &EntityId,
+        new_display: &str,
+        qualifiers: &[String],
+    ) -> Result<Option<String>, WorkingSetError> {
+        let conn = self.conn.lock().unwrap();
+        let old = Self::basename_for_locked(&conn, family, entity)?;
+        if old.is_some() {
+            conn.execute(
+                "DELETE FROM path_index WHERE family = ?1 AND entity = ?2",
+                params![family, entity.as_str()],
+            )
+            .map_err(idx_err)?;
+        }
+        let new_basename = Self::assign_locked(&conn, family, entity, new_display, qualifiers)?;
+        Ok(match old {
+            Some(o) if o != new_basename => Some(o),
+            _ => None,
+        })
+    }
+
+    fn remove(&self, family: &str, entity: &EntityId) -> Result<(), WorkingSetError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM path_index WHERE family = ?1 AND entity = ?2",
+            params![family, entity.as_str()],
+        )
+        .map_err(idx_err)?;
+        Ok(())
+    }
+}

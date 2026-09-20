@@ -82,6 +82,7 @@ async fn published_atom_committed_event_materializes_a_projection_file() {
 
     let materializer = Arc::new(WorkingSetMaterializer::new(
         renderer,
+        store.clone() as Arc<dyn AtomStore>,
         working_set,
         suppression,
         data_dir.clone(),

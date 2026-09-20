@@ -2,7 +2,9 @@
 //! `~/.ffs/<family>/...` into a structured `ParsedPath` that the renderer
 //! turns into store queries.
 //!
-//! MVP shapes supported (per ADR-011 — three families):
+//! Families are not hardcoded: the predicate registry declares them
+//! through each spec's `[path]` table (ADR-028) and callers pass a
+//! [`FamilyTable`] snapshot. Shapes supported (per ADR-011, generalized):
 //!
 //! - `<family>/recent/`                          → recency listing
 //! - `<family>/by-name/<letter>/`                → alphabetical listing
@@ -15,7 +17,8 @@
 
 use std::borrow::Cow;
 
-use crate::atom::{EntityId, PredicateName};
+use crate::atom::PredicateName;
+use crate::predicate::{FamilyEntry, SpecRegistry};
 
 /// Normalize OS-native path separators in a projection-path string to
 /// the substrate-canonical forward slash. The substrate's contract is
@@ -45,77 +48,130 @@ pub fn normalize_separators(path: &str) -> Cow<'_, str> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PathFamily {
-    Contacts,
-    People,
-    Notes,
+/// A projection-path family: the folder root under `$FFS_DATA_DIR`,
+/// the predicate whose entities live there, and the claim field that
+/// carries the human-readable name. Families are declared by predicate
+/// specs (`[path]` table, ADR-028) and read from the registry through a
+/// [`FamilyTable`] snapshot; nothing in the substrate hardcodes them.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct PathFamily {
+    pub folder: String,
+    pub predicate: PredicateName,
+    pub name_field: String,
 }
 
 impl PathFamily {
-    /// Parse a family token from the leading path segment. Named
-    /// `try_parse` rather than `from_str` to avoid colliding with the
-    /// `std::str::FromStr` trait (which would require `Err` typing).
-    pub fn try_parse(s: &str) -> Option<Self> {
-        match s {
-            "contacts" => Some(Self::Contacts),
-            "people" => Some(Self::People),
-            "notes" => Some(Self::Notes),
-            _ => None,
+    pub fn from_entry(e: &FamilyEntry) -> Self {
+        Self {
+            folder: e.family.clone(),
+            predicate: PredicateName::new(e.predicate.clone()),
+            name_field: e.name_field.clone(),
         }
+    }
+
+    /// Parse a family token from the leading path segment against a
+    /// family table. Thin wrapper over [`FamilyTable::for_folder`].
+    pub fn try_parse(s: &str, table: &FamilyTable) -> Option<Self> {
+        table.for_folder(s)
     }
 
     /// The primary predicate name for this path family. Atoms with this
     /// predicate appear in the family's listings; a single-entity render
     /// for this family reads the head atom for `(entity, primary_predicate)`.
     pub fn primary_predicate(&self) -> PredicateName {
-        match self {
-            Self::Contacts => PredicateName::new("contact.person"),
-            Self::People => PredicateName::new("person.generic"),
-            Self::Notes => PredicateName::new("note"),
-        }
+        self.predicate.clone()
     }
 
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Contacts => "contacts",
-            Self::People => "people",
-            Self::Notes => "notes",
-        }
+    pub fn as_str(&self) -> &str {
+        &self.folder
     }
 }
 
-/// Reverse map a predicate name to its path-library family. Returns
-/// `None` for predicates outside the MVP three-family library
-/// (e.g., `capability.grant`, `auditor.daily_summary`); those atoms
-/// are inspectable via `atom.get` but have no projection-path home
-/// in MVP.
-pub fn family_for_predicate(predicate: &PredicateName) -> Option<PathFamily> {
-    match predicate.as_str() {
-        "contact.person" => Some(PathFamily::Contacts),
-        "person.generic" => Some(PathFamily::People),
-        "note" => Some(PathFamily::Notes),
-        _ => None,
+/// Snapshot of the registry's family table. Cheap to build (a handful
+/// of rows at personal scale) and rebuilt per operation so predicate
+/// hot-reload is observed without a separate watcher.
+#[derive(Clone, Debug, Default)]
+pub struct FamilyTable {
+    families: Vec<PathFamily>,
+}
+
+impl FamilyTable {
+    pub fn from_registry(reg: &SpecRegistry) -> Self {
+        Self::from_entries(reg.families())
+    }
+
+    pub fn from_entries(entries: Vec<FamilyEntry>) -> Self {
+        let mut families: Vec<PathFamily> = entries.iter().map(PathFamily::from_entry).collect();
+        families.sort_by(|a, b| a.folder.cmp(&b.folder));
+        Self { families }
+    }
+
+    pub fn for_folder(&self, folder: &str) -> Option<PathFamily> {
+        self.families.iter().find(|f| f.folder == folder).cloned()
+    }
+
+    pub fn for_predicate(&self, predicate: &PredicateName) -> Option<PathFamily> {
+        self.families
+            .iter()
+            .find(|f| &f.predicate == predicate)
+            .cloned()
+    }
+
+    pub fn all(&self) -> Vec<PathFamily> {
+        self.families.clone()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.families.is_empty()
+    }
+
+    /// Test helper: the three MVP families exactly as the starter specs
+    /// declare them (`contacts`/`contact.person`/`display_name`,
+    /// `people`/`person.generic`/`display_name`, `notes`/`note`/`title`).
+    pub fn starter_three() -> Self {
+        Self::from_entries(vec![
+            FamilyEntry {
+                family: "contacts".into(),
+                predicate: "contact.person".into(),
+                name_field: "display_name".into(),
+            },
+            FamilyEntry {
+                family: "people".into(),
+                predicate: "person.generic".into(),
+                name_field: "display_name".into(),
+            },
+            FamilyEntry {
+                family: "notes".into(),
+                predicate: "note".into(),
+                name_field: "title".into(),
+            },
+        ])
     }
 }
 
-/// Produce the canonical projection path for `(family, entity)` in
-/// the form `<family>/by-name/<letter>/<entity>.md`. Returns `None`
-/// when the entity id starts with a character that has no
-/// uppercased form (e.g., an empty entity, or one whose first
-/// codepoint already has no alphabetic mapping — the path library
-/// has no destination for those at MVP).
-pub fn path_for_entity(family: PathFamily, entity: &EntityId) -> Option<String> {
-    let first = entity.as_str().chars().next()?;
+/// Reverse map a predicate name to its path-library family through the
+/// table. Returns `None` for predicates whose spec declares no `[path]`
+/// (e.g., `capability.grant`, `auditor.daily_summary`, `affiliation`);
+/// those atoms are inspectable via `atom.get` but have no projection-path
+/// home.
+pub fn family_for_predicate(table: &FamilyTable, predicate: &PredicateName) -> Option<PathFamily> {
+    table.for_predicate(predicate)
+}
+
+/// Produce the canonical projection path for `(family, basename)` in
+/// the form `<folder>/by-name/<letter>/<basename>.md`. Returns `None`
+/// when the basename starts with a character that has no uppercased
+/// alphabetic form (e.g., an empty basename or a leading digit; the
+/// path library has no destination for those at MVP).
+pub fn path_for_basename(family: &PathFamily, basename: &str) -> Option<String> {
+    let first = basename.chars().next()?;
     let letter = first.to_uppercase().next()?;
     if !letter.is_alphabetic() {
         return None;
     }
     Some(format!(
         "{}/by-name/{}/{}.md",
-        family.as_str(),
-        letter,
-        entity.as_str()
+        family.folder, letter, basename
     ))
 }
 
@@ -125,10 +181,13 @@ pub enum ParsedPath {
     Recent { family: PathFamily },
     /// `<family>/by-name/<letter>/`
     AlphabeticalLetter { family: PathFamily, letter: String },
-    /// `<family>/by-name/<letter>/<entity>.md`
+    /// `<family>/by-name/<letter>/<basename>.md`. `basename` is the file
+    /// stem, not the entity id: the path-to-entity index (ADR-030)
+    /// resolves it, and a basename with no index row resolves to the
+    /// slug-form entity id of the same spelling.
     SingleEntity {
         family: PathFamily,
-        entity: EntityId,
+        basename: String,
     },
     /// Recognized family, unknown sub-path shape. Parser still returns
     /// the family so callers can produce a useful error.
@@ -151,15 +210,15 @@ pub enum PathError {
 /// slashes via [`normalize_separators`] so a path lifted from
 /// `Path::to_string_lossy()` on Windows parses identically to the
 /// canonical `/`-shaped form.
-pub fn parse(path: &str) -> Result<ParsedPath, PathError> {
+pub fn parse(path: &str, table: &FamilyTable) -> Result<ParsedPath, PathError> {
     let canonical = normalize_separators(path);
     let trimmed = canonical.trim_start_matches('/').trim_end_matches('/');
     if trimmed.is_empty() {
         return Err(PathError::Empty);
     }
     let parts: Vec<&str> = trimmed.split('/').collect();
-    let family =
-        PathFamily::try_parse(parts[0]).ok_or_else(|| PathError::UnknownFamily(parts[0].into()))?;
+    let family = PathFamily::try_parse(parts[0], table)
+        .ok_or_else(|| PathError::UnknownFamily(parts[0].into()))?;
 
     match parts.as_slice() {
         [_] => Ok(ParsedPath::Unsupported {
@@ -180,11 +239,12 @@ pub fn parse(path: &str) -> Result<ParsedPath, PathError> {
             if letter.chars().count() != 1 {
                 return Err(PathError::BadLetter((*letter).into()));
             }
-            // Filename without trailing `.md` becomes the entity id.
-            let entity_name = file.strip_suffix(".md").unwrap_or(file);
+            // Filename without trailing `.md` is the basename; the
+            // renderer resolves it to an entity id through the index.
+            let basename = file.strip_suffix(".md").unwrap_or(file);
             Ok(ParsedPath::SingleEntity {
                 family,
-                entity: EntityId::new(entity_name),
+                basename: basename.to_string(),
             })
         }
         _ => Ok(ParsedPath::Unsupported {
@@ -196,15 +256,36 @@ pub fn parse(path: &str) -> Result<ParsedPath, PathError> {
 
 #[cfg(test)]
 mod tests {
+    // Construction mapping for the registry-backed refactor (task_38):
+    // `PathFamily::Contacts` became `contacts()` (the starter table's
+    // row), and a `SingleEntity { entity: EntityId::new("X") }`
+    // assertion became `SingleEntity { basename: "X".into() }`. Every
+    // assertion keeps its meaning; only how the expected value is
+    // built changed.
     use super::*;
+    use crate::atom::EntityId;
+
+    fn table() -> FamilyTable {
+        FamilyTable::starter_three()
+    }
+    fn contacts() -> PathFamily {
+        table().for_folder("contacts").unwrap()
+    }
+    fn people() -> PathFamily {
+        table().for_folder("people").unwrap()
+    }
+    fn notes() -> PathFamily {
+        table().for_folder("notes").unwrap()
+    }
+    fn parse(path: &str) -> Result<ParsedPath, PathError> {
+        super::parse(path, &table())
+    }
 
     #[test]
     fn parse_recent() {
         assert_eq!(
             parse("contacts/recent/").unwrap(),
-            ParsedPath::Recent {
-                family: PathFamily::Contacts
-            }
+            ParsedPath::Recent { family: contacts() }
         );
     }
 
@@ -214,7 +295,7 @@ mod tests {
         assert_eq!(
             p,
             ParsedPath::AlphabeticalLetter {
-                family: PathFamily::Contacts,
+                family: contacts(),
                 letter: "S".into()
             }
         );
@@ -232,8 +313,8 @@ mod tests {
         assert_eq!(
             p,
             ParsedPath::SingleEntity {
-                family: PathFamily::Contacts,
-                entity: EntityId::new("Sarah_Chen")
+                family: contacts(),
+                basename: "Sarah_Chen".into()
             }
         );
     }
@@ -241,12 +322,7 @@ mod tests {
     #[test]
     fn parse_leading_slash_tolerated() {
         let p = parse("/contacts/recent").unwrap();
-        assert_eq!(
-            p,
-            ParsedPath::Recent {
-                family: PathFamily::Contacts
-            }
-        );
+        assert_eq!(p, ParsedPath::Recent { family: contacts() });
     }
 
     #[test]
@@ -277,55 +353,49 @@ mod tests {
 
     #[test]
     fn primary_predicates_match_adr_011() {
-        assert_eq!(
-            PathFamily::Contacts.primary_predicate().as_str(),
-            "contact.person"
-        );
-        assert_eq!(
-            PathFamily::People.primary_predicate().as_str(),
-            "person.generic"
-        );
-        assert_eq!(PathFamily::Notes.primary_predicate().as_str(), "note");
+        assert_eq!(contacts().primary_predicate().as_str(), "contact.person");
+        assert_eq!(people().primary_predicate().as_str(), "person.generic");
+        assert_eq!(notes().primary_predicate().as_str(), "note");
     }
 
     #[test]
     fn family_for_predicate_handles_the_three_mvp_predicates() {
         assert_eq!(
-            family_for_predicate(&PredicateName::new("contact.person")),
-            Some(PathFamily::Contacts)
+            family_for_predicate(&table(), &PredicateName::new("contact.person")),
+            Some(contacts())
         );
         assert_eq!(
-            family_for_predicate(&PredicateName::new("person.generic")),
-            Some(PathFamily::People)
+            family_for_predicate(&table(), &PredicateName::new("person.generic")),
+            Some(people())
         );
         assert_eq!(
-            family_for_predicate(&PredicateName::new("note")),
-            Some(PathFamily::Notes)
+            family_for_predicate(&table(), &PredicateName::new("note")),
+            Some(notes())
         );
     }
 
     #[test]
     fn family_for_predicate_returns_none_for_unmapped_predicates() {
         assert_eq!(
-            family_for_predicate(&PredicateName::new("capability.grant")),
+            family_for_predicate(&table(), &PredicateName::new("capability.grant")),
             None
         );
         assert_eq!(
-            family_for_predicate(&PredicateName::new("auditor.daily_summary")),
+            family_for_predicate(&table(), &PredicateName::new("auditor.daily_summary")),
             None
         );
     }
 
     #[test]
     fn path_for_entity_produces_canonical_form() {
-        let p = path_for_entity(PathFamily::Contacts, &EntityId::new("Sara_Chen"))
+        let p = path_for_basename(&contacts(), EntityId::new("Sara_Chen").as_str())
             .expect("alpha entity has a path");
         assert_eq!(p, "contacts/by-name/S/Sara_Chen.md");
     }
 
     #[test]
     fn path_for_entity_uppercases_first_letter() {
-        let p = path_for_entity(PathFamily::Notes, &EntityId::new("tuesday_standup"))
+        let p = path_for_basename(&notes(), EntityId::new("tuesday_standup").as_str())
             .expect("alpha entity has a path");
         assert_eq!(p, "notes/by-name/T/tuesday_standup.md");
     }
@@ -366,8 +436,8 @@ mod tests {
         assert_eq!(
             p,
             ParsedPath::SingleEntity {
-                family: PathFamily::Contacts,
-                entity: EntityId::new("Sarah_Chen"),
+                family: contacts(),
+                basename: "Sarah_Chen".into(),
             }
         );
     }
@@ -386,12 +456,75 @@ mod tests {
     #[test]
     fn path_for_entity_returns_none_for_non_alphabetic_first_char() {
         assert_eq!(
-            path_for_entity(PathFamily::Contacts, &EntityId::new("123_numeric")),
+            path_for_basename(&contacts(), EntityId::new("123_numeric").as_str()),
             None
         );
         assert_eq!(
-            path_for_entity(PathFamily::Contacts, &EntityId::new("")),
+            path_for_basename(&contacts(), EntityId::new("").as_str()),
             None
         );
+    }
+
+    // ---- Registry-backed families (task_38, ADR-028) ----
+
+    #[test]
+    fn unknown_folder_is_rejected_by_the_table() {
+        assert!(table().for_folder("orgs").is_none());
+        assert!(matches!(
+            parse("orgs/recent/").unwrap_err(),
+            PathError::UnknownFamily(f) if f == "orgs"
+        ));
+    }
+
+    #[test]
+    fn a_widgets_family_from_a_fixture_entry_parses_without_code_changes() {
+        let mut entries = table().all();
+        entries.push(PathFamily {
+            folder: "widgets".into(),
+            predicate: PredicateName::new("widget.thing"),
+            name_field: "display_name".into(),
+        });
+        let t = FamilyTable::from_entries(
+            entries
+                .into_iter()
+                .map(|f| FamilyEntry {
+                    family: f.folder,
+                    predicate: f.predicate.as_str().to_string(),
+                    name_field: f.name_field,
+                })
+                .collect(),
+        );
+        let p = super::parse("widgets/by-name/W/Widget.md", &t).unwrap();
+        assert_eq!(
+            p,
+            ParsedPath::SingleEntity {
+                family: t.for_folder("widgets").unwrap(),
+                basename: "Widget".into(),
+            }
+        );
+        assert_eq!(
+            path_for_basename(&t.for_folder("widgets").unwrap(), "Widget").unwrap(),
+            "widgets/by-name/W/Widget.md"
+        );
+        assert_eq!(
+            t.for_predicate(&PredicateName::new("widget.thing"))
+                .unwrap()
+                .folder,
+            "widgets"
+        );
+    }
+
+    #[test]
+    fn family_table_from_registry_reflects_declared_path_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let starter =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../starter/predicates");
+        for name in ["contact.person.toml", "person.generic.toml", "note.toml"] {
+            std::fs::copy(starter.join(name), dir.path().join(name)).unwrap();
+        }
+        let reg = SpecRegistry::new();
+        reg.load_dir(dir.path()).unwrap();
+        let t = FamilyTable::from_registry(&reg);
+        assert_eq!(t.all(), table().all());
     }
 }

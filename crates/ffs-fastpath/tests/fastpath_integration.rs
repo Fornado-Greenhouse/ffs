@@ -49,6 +49,10 @@ edit_kind = "frontmatter_value"
 output = "section.Notes.list_item"
 atom_field = "claim.notes[]"
 edit_kind = "additive_section"
+
+[path]
+family = "contacts"
+name_field = "display_name"
 "#;
 
 fn owner_key() -> SigningKey {
@@ -108,6 +112,7 @@ fn setup() -> Harness {
     let suppression = Arc::new(SuppressionRegistry::new());
     let ctx = FastPathContext {
         store: store.clone(),
+        path_index: ffs_core::InMemoryPathIndex::new_arc(),
         registry,
         notifier: notifier.clone(),
         signing_key: Arc::new(owner_key()),

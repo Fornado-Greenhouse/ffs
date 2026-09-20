@@ -44,6 +44,24 @@ pub enum SpecError {
     UnknownParent { predicate: String, parent: String },
     #[error("watcher error: {0}")]
     Watcher(String),
+    #[error(
+        "predicate '{predicate}': [path] name_field '{name_field}' disagrees with [pagination] group_field '{group_field}'"
+    )]
+    PathNameFieldMismatch {
+        predicate: String,
+        name_field: String,
+        group_field: String,
+    },
+}
+
+/// One row of the registry's family table: a projection folder, the
+/// predicate whose entities live there, and the claim field that
+/// carries the display name (ADR-028).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FamilyEntry {
+    pub family: String,
+    pub predicate: String,
+    pub name_field: String,
 }
 
 #[derive(Debug, Error)]
@@ -169,6 +187,38 @@ impl SpecRegistry {
         let mut names: Vec<String> = g.specs.keys().cloned().collect();
         names.sort();
         names
+    }
+
+    /// The family table: every loaded spec that declares `[path]`,
+    /// sorted by folder name. Hot-reload keeps this current because it
+    /// is derived from the live spec map on each call.
+    pub fn families(&self) -> Vec<FamilyEntry> {
+        let g = self.inner.read().unwrap();
+        let mut out: Vec<FamilyEntry> = g
+            .specs
+            .values()
+            .filter_map(|s| {
+                s.path.as_ref().map(|p| FamilyEntry {
+                    family: p.family.clone(),
+                    predicate: s.name.clone(),
+                    name_field: p.name_field.clone(),
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.family.cmp(&b.family).then(a.predicate.cmp(&b.predicate)));
+        out
+    }
+
+    /// Family entry for a folder token (`"orgs"`), if any spec declares it.
+    pub fn family_for_folder(&self, folder: &str) -> Option<FamilyEntry> {
+        self.families().into_iter().find(|f| f.family == folder)
+    }
+
+    /// Family entry for a predicate name, if its spec declares `[path]`.
+    pub fn family_for_predicate(&self, predicate: &str) -> Option<FamilyEntry> {
+        self.families()
+            .into_iter()
+            .find(|f| f.predicate == predicate)
     }
 
     pub fn validate_claim(

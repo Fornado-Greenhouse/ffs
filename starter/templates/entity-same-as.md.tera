@@ -1,0 +1,11 @@
+---
+{%- if claim.target %}
+target: {{ claim.target }}
+{%- endif -%}
+{%- if claim.reason %}
+reason: {{ claim.reason }}
+{%- endif -%}
+{%- if claim.criterion %}
+criterion: {{ claim.criterion }}
+{%- endif %}
+---

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 mod registry;
 mod reverse_map;
 
-pub use registry::{SpecError, SpecRegistry, ValidationError, WatchHandle};
+pub use registry::{FamilyEntry, SpecError, SpecRegistry, ValidationError, WatchHandle};
 pub use reverse_map::{EditKind, OutputRef, ReverseMapRule};
 
 /// In-memory representation of a parsed predicate spec.
@@ -29,6 +29,39 @@ pub struct PredicateSpec {
     pub rendering: RenderingConvention,
     pub reverse_map: Vec<ReverseMapRule>,
     pub pagination: Option<Pagination>,
+    /// Projection-path family declaration (ADR-028). `None` means the
+    /// predicate has no folder: its atoms are inspectable via `atom.get`
+    /// but never materialize as files.
+    pub path: Option<PathSpec>,
+    /// Informative ontology alignment (ADR-031). Never validated beyond
+    /// shape; nothing in the daemon branches on it.
+    pub ontology: Option<OntologySpec>,
+}
+
+/// `[path]` table: which projection folder a predicate's entities live
+/// under and which claim field carries the human-readable name that
+/// becomes the file basename (ADR-028, ADR-030).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PathSpec {
+    /// Folder root, e.g. `contacts`, `orgs`, `articles`.
+    pub family: String,
+    /// Claim field holding the display name (`display_name`, `title`).
+    pub name_field: String,
+}
+
+/// `[ontology]` table: BFO / CCO / IAO alignment annotations (ADR-031).
+/// Every field is a free string; unknown or empty values load fine.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OntologySpec {
+    #[serde(default)]
+    pub bfo: String,
+    #[serde(default)]
+    pub cco: String,
+    #[serde(default)]
+    pub iao: String,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -80,6 +113,10 @@ pub(crate) mod mod_helpers {
         pub reverse_map: Vec<ReverseMapRule>,
         #[serde(default)]
         pub pagination: Option<Pagination>,
+        #[serde(default)]
+        pub path: Option<PathSpec>,
+        #[serde(default)]
+        pub ontology: Option<OntologySpec>,
     }
 
     /// Parse a TOML predicate-spec string, converting the claim_schema
@@ -90,6 +127,16 @@ pub(crate) mod mod_helpers {
             source: e,
         })?;
         let claim_schema = toml_to_json(raw.claim_schema);
+        if let (Some(path), Some(pagination)) = (&raw.path, &raw.pagination)
+            && let Some(group_field) = &pagination.group_field
+            && group_field != &path.name_field
+        {
+            return Err(SpecError::PathNameFieldMismatch {
+                predicate: raw.name.clone(),
+                name_field: path.name_field.clone(),
+                group_field: group_field.clone(),
+            });
+        }
         Ok(PredicateSpec {
             name: raw.name,
             version: raw.version,
@@ -98,6 +145,8 @@ pub(crate) mod mod_helpers {
             rendering: raw.rendering,
             reverse_map: raw.reverse_map,
             pagination: raw.pagination,
+            path: raw.path,
+            ontology: raw.ontology,
         })
     }
 
@@ -377,5 +426,127 @@ template = "x.md.tera"
         registry.load_dir(dir.path()).unwrap();
         let names = registry.names();
         assert_eq!(names, vec!["contact.person".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod path_and_ontology_tests {
+    use super::*;
+    use std::path::Path;
+
+    const BASE: &str = r#"
+name = "widget.thing"
+version = 1
+
+[claim_schema]
+type = "object"
+required = ["display_name"]
+
+[claim_schema.properties]
+display_name = { type = "string" }
+
+[rendering]
+template = "widget.md.tera"
+frontmatter_fields = ["display_name"]
+"#;
+
+    fn parse(extra: &str) -> Result<PredicateSpec, SpecError> {
+        mod_helpers::parse_spec_str(&format!("{BASE}\n{extra}"), Path::new("widget.thing.toml"))
+    }
+
+    #[test]
+    fn spec_without_path_table_loads_and_has_no_family() {
+        let spec = parse("").expect("loads");
+        assert!(spec.path.is_none());
+        assert!(spec.ontology.is_none());
+    }
+
+    #[test]
+    fn path_table_is_parsed() {
+        let spec =
+            parse("[path]\nfamily = \"widgets\"\nname_field = \"display_name\"\n").expect("loads");
+        let path = spec.path.expect("path present");
+        assert_eq!(path.family, "widgets");
+        assert_eq!(path.name_field, "display_name");
+    }
+
+    #[test]
+    fn path_name_field_must_agree_with_pagination_group_field() {
+        let err = parse(
+            "[pagination]\nstrategy = \"alphabetical_first_letter\"\ngroup_field = \"title\"\n\n[path]\nfamily = \"widgets\"\nname_field = \"display_name\"\n",
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, SpecError::PathNameFieldMismatch { .. }),
+            "{err}"
+        );
+        assert!(err.to_string().contains("display_name") && err.to_string().contains("title"));
+    }
+
+    #[test]
+    fn path_with_agreeing_group_field_loads() {
+        let spec = parse(
+            "[pagination]\nstrategy = \"alphabetical_first_letter\"\ngroup_field = \"display_name\"\n\n[path]\nfamily = \"widgets\"\nname_field = \"display_name\"\n",
+        )
+        .expect("loads");
+        assert_eq!(spec.path.unwrap().family, "widgets");
+    }
+
+    #[test]
+    fn unknown_or_empty_ontology_values_load_without_error() {
+        let spec = parse("[ontology]\nbfo = \"not a real class\"\ncco = \"\"\n").expect("loads");
+        let ont = spec.ontology.expect("ontology present");
+        assert_eq!(ont.bfo, "not a real class");
+        assert_eq!(ont.cco, "");
+        assert_eq!(ont.iao, "");
+        assert_eq!(ont.note, "");
+    }
+
+    #[test]
+    fn registry_family_table_lists_declared_families_and_picks_up_a_fixture_spec() {
+        let dir = tempfile::tempdir().unwrap();
+        let starter = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../starter/predicates");
+        for name in ["contact.person.toml", "person.generic.toml", "note.toml"] {
+            std::fs::copy(starter.join(name), dir.path().join(name)).unwrap();
+        }
+        std::fs::write(
+            dir.path().join("widget.thing.toml"),
+            format!("{BASE}\n[path]\nfamily = \"widgets\"\nname_field = \"display_name\"\n"),
+        )
+        .unwrap();
+        let reg = SpecRegistry::new();
+        reg.load_dir(dir.path()).expect("registry loads");
+        let families: Vec<(String, String, String)> = reg
+            .families()
+            .into_iter()
+            .map(|f| (f.family, f.predicate, f.name_field))
+            .collect();
+        assert_eq!(
+            families,
+            vec![
+                (
+                    "contacts".into(),
+                    "contact.person".into(),
+                    "display_name".into()
+                ),
+                ("notes".into(), "note".into(), "title".into()),
+                (
+                    "people".into(),
+                    "person.generic".into(),
+                    "display_name".into()
+                ),
+                (
+                    "widgets".into(),
+                    "widget.thing".into(),
+                    "display_name".into()
+                ),
+            ]
+        );
+        assert_eq!(
+            reg.family_for_folder("widgets").unwrap().predicate,
+            "widget.thing"
+        );
+        assert_eq!(reg.family_for_predicate("note").unwrap().family, "notes");
+        assert!(reg.family_for_folder("nope").is_none());
     }
 }

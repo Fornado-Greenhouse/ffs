@@ -2,6 +2,22 @@
   "filename": "riverside-mill.md",
   "proposals": [
     {
+      "predicate": "source.article",
+      "claim": {
+        "title": "Riverside Mill to reopen as maker space",
+        "url": "https://example.com/news/riverside-mill-maker-space",
+        "publication": "Example Ledger",
+        "published_at": "2026-09-10",
+        "summary": {
+          "$contains": "convert the vacant Riverside Mill"
+        }
+      }
+    }
+  ],
+  "notes": "Courier-shaped article drop. Flipped 2026-09-20: task_38 registered source.article, so the hint targets it and the claim is built from the frontmatter keys the schema declares, with the body landing in summary. REQUIRED. expected_before_task_38 records the pre-38 note fallback.",
+  "required": true,
+  "expected_before_task_38": [
+    {
       "predicate": "note",
       "claim": {
         "title": "Riverside Mill to reopen as maker space",
@@ -14,20 +30,6 @@
         "body": {
           "$contains": "convert the vacant Riverside Mill"
         }
-      }
-    }
-  ],
-  "notes": "Courier-shaped article drop. source.article is not registered until task_38, so it must land as a readable note with the title, the url in references, and the summary in the body. REQUIRED.",
-  "required": true,
-  "awaits": "predicate hint 36.4 (source.article fallback)",
-  "expected_when_registered": [
-    {
-      "predicate": "source.article",
-      "claim": {
-        "title": "Riverside Mill to reopen as maker space",
-        "url": "https://example.com/news/riverside-mill-maker-space",
-        "publication": "Example Ledger",
-        "published_at": "2026-09-10"
       }
     }
   ]

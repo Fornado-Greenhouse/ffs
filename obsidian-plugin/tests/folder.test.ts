@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   decorateProjectionFile,
@@ -6,6 +6,7 @@ import {
   parseFolderMarkdown,
   DEFAULT_PAGE_SIZE,
 } from "../src/folder.js";
+import { setFamilies } from "../src/paths.js";
 
 function fakeClient(response: unknown) {
   return {
@@ -14,6 +15,13 @@ function fakeClient(response: unknown) {
 }
 
 describe("folder", () => {
+  beforeEach(() =>
+    setFamilies([
+      { family: "contacts", predicate: "contact.person", name_field: "display_name" },
+      { family: "people", predicate: "person.generic", name_field: "display_name" },
+      { family: "notes", predicate: "note", name_field: "title" },
+    ]),
+  );
   it("enumerateFolder calls path.list with a normalized path", async () => {
     const client = fakeClient({
       markdown: "- [Sara](contacts/by-name/S/Sara.md)\n",

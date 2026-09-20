@@ -1,0 +1,8 @@
+---
+{%- if claim.other %}
+other: {{ claim.other }}
+{%- endif -%}
+{%- if claim.criterion %}
+criterion: {{ claim.criterion }}
+{%- endif %}
+---

@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 
 import { DaemonClient } from "./client.js";
 import { enumerateFolder, decorateProjectionFile } from "./folder.js";
+import { hitCandidatePaths, loadFamilies, setFamilies } from "./paths.js";
 import { ProjectionSubscription, renderProjection } from "./projection.js";
 import { applyOptimistically, routeEdit } from "./editing.js";
 import { EntitySearch, type EntityHit } from "./search.js";
@@ -91,6 +92,16 @@ export default class FfsPlugin extends Plugin {
     this.statusEl = this.addStatusBarItem();
     this.renderStatus("disconnected");
     this.client.onStateChange((state) => this.renderStatus(state));
+
+    // Projection families are registry-declared (ADR-028). Restore
+    // the last-known table so folders enumerate even if the daemon is
+    // down, then refresh from `path.families` every time we (re)connect.
+    setFamilies(this.settings.knownFamilies);
+    this.client.onStateChange((state) => {
+      if (state === "connected" || state === "fallback") {
+        void this.refreshFamilies();
+      }
+    });
     this.client.start();
 
     // Live-update wiring: when the daemon publishes a projection
@@ -225,6 +236,17 @@ export default class FfsPlugin extends Plugin {
     } catch (err) {
       console.warn("[ffs] re-render failed:", err);
     }
+  }
+
+  /**
+   * Pull the family table from the daemon and persist it. Failures
+   * are silent (debug log only) and leave the last-known table alone.
+   */
+  async refreshFamilies(): Promise<void> {
+    await loadFamilies(this.client, async (entries) => {
+      this.settings.knownFamilies = entries;
+      await this.saveSettings();
+    });
   }
 
   async loadSettings(): Promise<void> {
@@ -563,23 +585,17 @@ class EntitySearchModal extends SuggestModal<EntityHit> {
 
   /**
    * Resolve a search hit to a projection path, prefer an existing
-   * on-disk file, else fall back to a render-on-demand. The
-   * resolution heuristic mirrors the materializer's path-library
-   * convention (`<family>/by-name/<letter>/<slug>.md`). The
-   * family is picked from the hit's predicate; the slug from the
-   * display name with spaces replaced by underscores.
+   * on-disk file, else fall back to a render-on-demand. The path
+   * follows the materializer's convention
+   * (`<family>/by-name/<letter>/<basename>.md`); the family comes
+   * from the runtime family table and the basename from the daemon
+   * when it supplies one.
    */
   private async openHit(hit: EntityHit): Promise<void> {
-    const first = hit.displayName.slice(0, 1).toUpperCase();
-    const slug = hit.displayName.replace(/\s+/g, "_");
-    const family = familyForPredicate(hit.predicate);
-    const candidates = family
-      ? [`${family}/by-name/${first}/${slug}.md`]
-      : [
-          `contacts/by-name/${first}/${slug}.md`,
-          `people/by-name/${first}/${slug}.md`,
-          `notes/by-name/${first}/${slug}.md`,
-        ];
+    // Candidates come from the runtime family table (ADR-028) and the
+    // daemon-supplied basename when present (ADR-030); see
+    // `hitCandidatePaths` for the fallback rules and the task_40 note.
+    const candidates = hitCandidatePaths(hit);
 
     for (const path of candidates) {
       const file = this.app.vault.getAbstractFileByPath(path);
@@ -616,24 +632,6 @@ class EntitySearchModal extends SuggestModal<EntityHit> {
       }
     }
     new Notice(`FFS: no projection found for ${hit.displayName} (${hit.predicate})`);
-  }
-}
-
-/**
- * Map the three MVP predicate names to their path-library family
- * directories. Returns `null` for predicates outside the library so
- * the caller falls back to brute-force-checking all three.
- */
-function familyForPredicate(predicate: string): string | null {
-  switch (predicate) {
-    case "contact.person":
-      return "contacts";
-    case "person.generic":
-      return "people";
-    case "note":
-      return "notes";
-    default:
-      return null;
   }
 }
 

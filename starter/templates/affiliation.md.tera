@@ -1,0 +1,23 @@
+---
+{%- if claim.person %}
+person: {{ claim.person }}
+{%- endif -%}
+{%- if claim.organization %}
+organization: {{ claim.organization }}
+{%- endif -%}
+{%- if claim.title %}
+title: {{ claim.title }}
+{%- endif -%}
+{%- if claim.kind %}
+kind: {{ claim.kind }}
+{%- endif -%}
+{%- if claim.source %}
+source: {{ claim.source }}
+{%- endif %}
+---
+{% if claim.notes and claim.notes | length > 0 %}
+## Notes
+{% for note in claim.notes -%}
+- {{ note }}
+{% endfor -%}
+{% endif -%}

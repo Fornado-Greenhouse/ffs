@@ -1,0 +1,33 @@
+---
+{%- if claim.title %}
+title: {{ claim.title }}
+{%- endif -%}
+{%- if claim.kind %}
+kind: {{ claim.kind }}
+{%- endif -%}
+{%- if claim.date %}
+date: {{ claim.date }}
+{%- endif -%}
+{%- if claim.amount %}
+amount: {{ claim.amount }}
+{%- endif -%}
+{%- if claim.source %}
+source: {{ claim.source }}
+{%- endif %}
+---
+{% if claim.summary %}
+## Summary
+{{ claim.summary }}
+{% endif -%}
+{% if participants_resolved %}{% if participants_resolved | length > 0 %}
+## Participants
+{% for p in participants_resolved -%}
+- {% if p.basename %}[[{{ p.basename }}|{{ p.display }}]]{% else %}{{ p.display }}{% endif %}{% if p.role %} ({{ p.role }}){% endif %}
+{% endfor -%}
+{% endif %}{% endif -%}
+{% if claim.tags and claim.tags | length > 0 %}
+## Tags
+{% for tag in claim.tags -%}
+- {{ tag }}
+{% endfor -%}
+{% endif -%}

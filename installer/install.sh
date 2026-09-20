@@ -67,7 +67,7 @@ Options:
 
 The installer writes to:
   $PREFIX/bin              # ffs, ffs-daemon, ffs-mcp
-  $HOME/.ffs/config/       # predicates + templates (seeded if missing)
+  $HOME/.ffs/config/       # predicates + templates + resolution.toml (seeded if missing)
   $HOME/.ffs/skills/       # auditor, librarian, scribe Python bundles
   $HOME/.ffs/run/          # daemon socket (mode 700)
   $HOME/.ffs/log/          # daemon stderr captures
@@ -321,6 +321,11 @@ install_starter_library() {
         [ -e "$f" ] || continue
         install_seed_file "$f" "$DATA_DIR/config/templates/$(basename "$f")"
     done
+    # Entity-resolution weights and thresholds (ADR-030); consumed by
+    # the scribe's resolver (task_45). Seeded once, owner-edited after.
+    if [ -e "$starter_root/config/resolution.toml" ]; then
+        install_seed_file "$starter_root/config/resolution.toml" "$DATA_DIR/config/resolution.toml"
+    fi
 }
 
 # -------- skill bundles --------

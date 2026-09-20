@@ -182,3 +182,47 @@ def test_flow_list_tags_string_is_split_without_brackets(monkeypatch):
     out = handle({"source_uri": "file:///ingest/a.md", "content": content})
     note = next(p for p in out["proposals"] if p["predicate"] == "note")
     assert note["claim"]["tags"] == ["manufacturing", "jobs", "source-article"]
+
+
+def test_registered_hint_builds_claim_from_frontmatter_when_engine_has_nothing(monkeypatch):
+    """Schema-driven, predicate-agnostic: a hinted note whose frontmatter
+    supplies the schema's required fields becomes a proposal of that
+    predicate even when the engine produced none (a hand-written org note
+    before any engine knows orgs)."""
+    _install_fake_query(monkeypatch)
+    schemas = dict(SCHEMAS)
+    schemas["widget.thing"] = {
+        "type": "object",
+        "required": ["display_name"],
+        "properties": {
+            "display_name": {"type": "string"},
+            "industry": {"type": "string"},
+            "description": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    registry = PredicateRegistry.from_specs({k: {"claim_schema": v} for k, v in schemas.items()})
+    sub = Submission.from_input(
+        {
+            "source_uri": "file:///ingest/acme.md",
+            "content": "---\npredicate: widget.thing\ndisplay_name: Acme Widgets\nindustry: manufacturing\ncolor: blue\n---\nMakes widgets in Gastonia.\n",
+        }
+    )
+    out = apply_hint(sub, EngineResult(proposals=[], warnings=[]), registry, "heuristic", "")
+    assert [p["predicate"] for p in out.proposals] == ["widget.thing"]
+    claim = out.proposals[0]["claim"]
+    assert claim["display_name"] == "Acme Widgets"
+    assert claim["industry"] == "manufacturing"
+    assert "color" not in claim, "keys outside the schema are not copied"
+    assert claim["description"].startswith("Makes widgets"), "body lands in the first free string field named description/body/summary"
+    assert "frontmatter" in out.proposals[0]["rationale"]
+
+
+def test_registered_hint_without_required_fields_keeps_engine_output_and_warns(monkeypatch):
+    _install_fake_query(monkeypatch)
+    sub = Submission.from_input(
+        {"source_uri": "file:///ingest/x.md", "content": "---\npredicate: contact.person\n---\njust prose\n"}
+    )
+    out = apply_hint(sub, EngineResult(proposals=[], warnings=[]), _registry(), "heuristic", "")
+    assert out.proposals == []
+    assert any("produced no contact.person proposal" in w for w in out.warnings)

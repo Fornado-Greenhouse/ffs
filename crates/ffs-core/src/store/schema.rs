@@ -144,3 +144,19 @@ pub const V3_DDL: &str = r#"
 ALTER TABLE quarantine_proposals ADD COLUMN engine TEXT;
 ALTER TABLE quarantine_proposals ADD COLUMN model  TEXT;
 "#;
+
+/// V4 (task_38, ADR-030): the path-to-entity index. Entity ids are
+/// opaque; this table owns the mapping from a projection family and
+/// file basename to the entity, plus the display name the basename was
+/// derived from. `UNIQUE(family, entity)` makes `basename_for` a
+/// point lookup and forbids two basenames for one entity in a family.
+pub const V4_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS path_index (
+    family   TEXT NOT NULL,
+    basename TEXT NOT NULL,
+    entity   TEXT NOT NULL,
+    display  TEXT NOT NULL,
+    PRIMARY KEY (family, basename),
+    UNIQUE (family, entity)
+);
+"#;

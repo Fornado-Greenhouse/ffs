@@ -15,6 +15,7 @@ pub mod predicate;
 pub mod projection;
 pub mod quarantine;
 pub mod quarantine_sqlite;
+pub mod resolution;
 pub mod store;
 pub mod suppress;
 pub mod working_set;
@@ -37,9 +38,13 @@ pub use quarantine::{
     InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError, Submission, SubmissionStatus,
 };
 pub use quarantine_sqlite::SqliteQuarantine;
+pub use resolution::{FieldWeight, ResolutionConfig, ResolutionConfigError, Thresholds};
 pub use store::{AtomStore, MemAtomStore, SCHEMA_VERSION, SqliteAtomStore, StoreError};
 pub use suppress::SuppressionRegistry;
-pub use working_set::{InMemoryWorkingSet, WorkingSetEntry, WorkingSetError, WorkingSetStore};
+pub use working_set::{
+    InMemoryPathIndex, InMemoryWorkingSet, PathIndex, WorkingSetEntry, WorkingSetError,
+    WorkingSetStore, slugify_display,
+};
 
 /// Workspace marker exposed so smoke tests can confirm the crate links.
 pub const CRATE_NAME: &str = "ffs-core";

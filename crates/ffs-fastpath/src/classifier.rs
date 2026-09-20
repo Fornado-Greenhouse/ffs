@@ -322,6 +322,8 @@ mod tests {
             },
             reverse_map: rules,
             pagination: None,
+            path: None,
+            ontology: None,
         }
     }
 

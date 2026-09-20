@@ -4,7 +4,7 @@
 
 use rusqlite::{Connection, params};
 
-use super::schema::{V1_DDL, V2_DDL, V3_DDL};
+use super::schema::{V1_DDL, V2_DDL, V3_DDL, V4_DDL};
 use super::{SCHEMA_VERSION, StoreError};
 
 /// Apply schema migrations idempotently.
@@ -47,6 +47,7 @@ pub fn apply(conn: &Connection) -> Result<(), StoreError> {
             1 => V1_DDL,
             2 => V2_DDL,
             3 => V3_DDL,
+            4 => V4_DDL,
             other => {
                 return Err(StoreError::UnsupportedSchemaVersion {
                     found: other,
@@ -231,5 +232,39 @@ mod tests {
                 supported: SCHEMA_VERSION
             }
         ));
+    }
+
+    /// A v3 database (task_36 shape) must step to v4 and gain the
+    /// path-to-entity index table (task_38, ADR-030).
+    #[test]
+    fn applying_v4_on_top_of_existing_v3_db_adds_the_path_index_table() {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+        )
+        .unwrap();
+        conn.execute_batch("BEGIN;").unwrap();
+        conn.execute_batch(V1_DDL).unwrap();
+        conn.execute_batch(V2_DDL).unwrap();
+        conn.execute_batch(V3_DDL).unwrap();
+        for v in 1..=3u32 {
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at) VALUES (?1, ?2)",
+                params![v, now_iso()],
+            )
+            .unwrap();
+        }
+        conn.execute_batch("COMMIT;").unwrap();
+
+        apply(&conn).expect("step to v4");
+
+        conn.execute_batch("SELECT family, basename, entity, display FROM path_index LIMIT 0")
+            .expect("v4 path_index table exists");
+        let version: u32 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
     }
 }

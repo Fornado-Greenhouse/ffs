@@ -191,10 +191,13 @@ async fn run() -> Result<(), StartupError> {
     // DEK against an existing database surfaces here as a startup
     // error and a non-zero exit, surfacing key drift loudly instead
     // of silently masking it.
-    let store: Arc<dyn AtomStore> = Arc::new(
+    let sqlite_store: Arc<SqliteAtomStore> = Arc::new(
         SqliteAtomStore::open_with_key(&db_path, &dek)
             .map_err(|e| StartupError::Store(db_path.clone(), Box::new(e)))?,
     );
+    let store: Arc<dyn AtomStore> = sqlite_store.clone();
+    // The same SQLite store is the path-to-entity index (ADR-030).
+    let path_index: Arc<dyn ffs_core::PathIndex> = sqlite_store.clone();
 
     // Self-grant bootstrap: a brand-new substrate has zero
     // capability atoms for the owner, which means every RPC that
@@ -205,10 +208,31 @@ async fn run() -> Result<(), StartupError> {
     // yet.
     bootstrap_owner_self_capability(&*store, &signing_key, &owner_pubkey)?;
 
+    // The SQLite store doubles as the path-to-entity index (ADR-030):
+    // file basenames are derived from display names and persisted in
+    // the `path_index` table, shared by the renderer, the materializer,
+    // and `entity.search`.
     let renderer = Arc::new(
         ProjectionRenderer::new(store.clone(), registry.clone(), &templates_dir)
-            .map_err(|e| StartupError::Renderer(Box::new(e)))?,
+            .map_err(|e| StartupError::Renderer(Box::new(e)))?
+            .with_path_index(path_index.clone()),
     );
+
+    // config/resolution.toml (ADR-030): entity-resolution weights and
+    // thresholds. Shipped by the installer from starter/config; nothing
+    // consumes it until the resolver lands (task_45), so a missing or
+    // invalid file is a warning, not a startup failure.
+    match ffs_core::ResolutionConfig::load(&data_dir.join("config").join("resolution.toml")) {
+        Ok(cfg) => tracing::info!(
+            auto_link = cfg.thresholds.auto_link,
+            review_floor = cfg.thresholds.review_floor,
+            weights = cfg.weights.len(),
+            "resolution config loaded (not yet consumed; task_45)"
+        ),
+        Err(e) => {
+            tracing::warn!(error = %e, "resolution config missing or invalid; the resolver (task_45) will need it")
+        }
+    }
 
     // Shared singletons: the event publisher (broadcast for
     // notifications), the working-set state, and the suppression
@@ -311,6 +335,7 @@ async fn run() -> Result<(), StartupError> {
     // emitted during binding gets observed.
     let materializer = Arc::new(WorkingSetMaterializer::new(
         renderer.clone(),
+        store.clone(),
         working_set.clone(),
         suppression.clone(),
         data_dir.clone(),

@@ -1,0 +1,43 @@
+# entity.different_from — the human override that blocks a merge
+# (ADR-030; Wikidata's P1889).
+#
+# Symmetric: the atom's entity and `other` are asserted to be
+# different particulars. The resolver treats it as a hard block and
+# the review UI never re-suggests the pair. Written only on the
+# owner's explicit click, never inferred from a candidate pick.
+
+name = "entity.different_from"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["other"]
+
+[claim_schema.properties]
+other = { type = "string" }
+criterion = { type = "string" }
+
+[rendering]
+template = "entity-different-from.md.tera"
+frontmatter_fields = ["other", "criterion"]
+
+# -------- reverse-map rules (2) --------
+
+[[reverse_map]]
+output = "frontmatter.other"
+atom_field = "claim.other"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.criterion"
+atom_field = "claim.criterion"
+edit_kind = "frontmatter_value"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "information content entity"
+cco = ""
+iao = "iao:IAO_0000030"
+note = "An owner-signed assertion that two ids designate distinct particulars; a hard block for the resolver."

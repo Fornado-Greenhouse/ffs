@@ -23,8 +23,12 @@ use serde::{Deserialize, Serialize};
 pub mod path;
 pub mod render;
 
-pub use path::{ParsedPath, PathError, PathFamily};
-pub use render::ProjectionRenderer;
+pub use path::{
+    FamilyTable, ParsedPath, PathError, PathFamily, family_for_predicate, path_for_basename,
+};
+pub use render::{
+    AFFILIATION_PREDICATE, AffiliationRow, Link, ProjectionRenderer, SAME_AS_PREDICATE,
+};
 
 use crate::atom::{Iso8601, PublicKey};
 use crate::capability::{DenyReason, EvalError};
@@ -84,4 +88,6 @@ pub enum RenderError {
     Serialization(String),
     #[error("unsupported sub-path for MVP: {0}")]
     UnsupportedSubpath(String),
+    #[error("path index error: {0}")]
+    Index(String),
 }

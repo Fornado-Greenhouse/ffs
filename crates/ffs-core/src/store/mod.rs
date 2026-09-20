@@ -49,7 +49,10 @@ use crate::multihash::Multihash;
 ///   working_set, and a placeholder `ingest_quarantine` table.
 /// - v2 (task_29): real `quarantine_submissions` + `quarantine_proposals`
 ///   tables that match the runtime `IngestQuarantine` trait shape.
-pub const SCHEMA_VERSION: u32 = 3;
+/// - v3 (task_36): `engine` and `model` columns on `quarantine_proposals`.
+/// - v4 (task_38, ADR-030): `path_index` table (family, basename ->
+///   entity, display) so entity ids can be opaque.
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Error)]
 pub enum StoreError {

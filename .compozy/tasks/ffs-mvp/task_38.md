@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Filing cabinet — registry-declared path families + business-graph predicates and wikilinked templates (ADR-028, amended by ADR-030/031)
 type: backend
 complexity: high
@@ -54,18 +54,28 @@ Ordered after task_36 on purpose (2026-09-14): the tracer bullet's real extracti
 - SHOULD add the four new families to `ffs_list_path`'s tool description examples in `crates/ffs-mcp/src/tools.rs` (description text only; signature unchanged).
 </requirements>
 
+## Result (2026-09-20)
+
+Implemented in four concurrent slices over a foundation laid first: `[path]` and `[ontology]` tables in the spec loader with the `name_field` versus `group_field` check; `SpecRegistry::families()`; `EntityId::mint()` (16 random bytes, base58btc); `ffs_core::resolution::ResolutionConfig` loading `starter/config/resolution.toml`. Then: `PathFamily` became a registry-backed struct with a `FamilyTable` snapshot per operation; a `PathIndex` (in-memory, working set, and the `path_index` SQLite table at schema v4) assigns basenames from the head atom's name field with the parenthetical qualifier order organization, role, year; the renderer resolves links through the index, renders `## Affiliations` and `## People` by reverse lookup, and renders the merged stub for `entity.same_as` heads; the materializer writes redirect stubs on rename and never a full file for merged entities; the fast-path watcher ignores stubs and resolves basenames through the index; `entity_search` reads each family's `name_field` with no predicate name in code and hits carry `basename`; `path.families` RPC; the plugin loads its family table from it, persists the last-known table, and enumerates nothing when empty. Nine starter specs (six new, `person.generic` v2 additive, `contact.person` gains aliases), six new templates plus reverse-lookup sections, `docs/ontology-alignment.md`, starter READMEs, ARCHITECTURE prose, `ffs_list_path` examples, installers copy `resolution.toml`.
+
+One scribe change rode along because the live check needed it and it is generic: a registered `predicate:` hint whose frontmatter supplies the schema's required fields builds the claim from the frontmatter keys the schema declares (no predicate named in code). Registering `source.article` and `org.company` flipped two corpus fixtures from note fallback to real proposals with no other scribe change, which is the task's extensibility criterion demonstrated. Two fixes from the live check: the organization wikilink in frontmatter is quoted (strict YAML otherwise reads `[[..]]` as a nested list) and `person.generic` carries no reverse-map rule for `organization`, so an edit there routes to ingest (55 rules total).
+
+Verification: cargo nextest 482 passed; fmt clean; clippy 0 warnings; pytest 144 passed; vitest 71 passed; byte-identity gate for contacts, people, notes held with assertions unchanged in meaning. Live check on a scratch substrate: an org note accepted became `orgs/by-name/A/Acme_Widgets.md` with entity id `zUnEK...`; a person note naming that org rendered `organization: "[[Acme_Widgets|Acme Widgets]]"` under `people/`; `path.families` listed six families; the search hit carried `basename`. The e2e org-note test runs through the dispatcher with a stub scribe rather than `ingest_pipeline_e2e.rs`, since the heuristic engine cannot emit `org.company` from prose; the frontmatter-hint path covers the hand-written case live.
+
+Follow-ups: `entity.search` and the affiliation reverse lookup scan `list_by_predicate` per family (fine at personal scale; index later); search hits carry `basename` only after materialization; folding a merged entity's atoms into the winner's render is task_39.
+
 ## Subtasks
-- [ ] 38.1 Loader: `[path]` and `[ontology]` tables on `RawSpec`/`PredicateSpec`; `name_field` vs `group_field` consistency check; unit tests for present, absent, conflicting `[path]`, and an unknown `[ontology]` value that loads without error.
-- [ ] 38.2 Registry family table: accessor returning `(family, predicate, name_field)` triples; hot-reload keeps the table current; test that a fixture TOML with `[path] family = "widgets"` yields a `widgets/` family.
-- [ ] 38.3 Opaque ids: `EntityId::mint()` in `ffs-core`; `dispatch.rs::ingest_accept` uses it for new entities and the `from-<submission-id>` fallback is removed; tests that minted ids are unique, multibase-valid, and that slug-form ids still round-trip through the store.
-- [ ] 38.4 Path-to-entity index in `working_set.rs` and its SQLite table: basename derived from the head atom's name field; parenthetical collision qualifier (organization, role, year); rename moves the file and writes a redirect stub; `parse` resolves basenames through the index; tests for the two-Sara-Chen case, a rename, and determinism.
-- [ ] 38.5 `path.rs` registry-backed: `PathFamily` resolved by lookup; `parse`, `path_for_entity`, `family_for_predicate` take the family table and the index; all existing `path.rs` tests green with assertions unmodified against the three starter specs.
-- [ ] 38.6 Consumers: `render.rs` (including the affiliation reverse lookup and the merged-entity stub), `materializer.rs` (redirect stubs, no full file for merged entities), `watcher.rs` (ignore redirect stubs), `dispatch.rs::entity_search` (name field from spec, hardcoded `"note"` removed); existing tests green; materializer test writes `orgs/by-name/A/Acme.md` for an `org.company` atom.
-- [ ] 38.7 `path.families` RPC + plugin: runtime family table replaces `PROJECTION_FAMILIES` and `familyForPredicate`; `openHit` resolves through the same index (basename, not display name); vitest for enumeration from a mocked `path.families` response and for the unreachable-daemon fallback.
-- [ ] 38.8 Starter specs: `org.company`, `source.article`, `event.business`, `affiliation`, `entity.same_as`, `entity.different_from`, `person.generic` v2, each with `[ontology]`; `starter/config/resolution.toml` and its loader test; spec-loader tests; v1 `person.generic` claim validates under v2.
-- [ ] 38.9 Templates: four `.md.tera` files plus the two reverse-lookup sections in `contact-person.md.tera`; `[[target|display]]` links, `aliases:` frontmatter, plain-text fallback for unresolved mentions and participants; render tests assert the exact link text, the Affiliations section, empty-section suppression, and render-hash stability.
-- [ ] 38.10 Fast-path: classifier fixture per new spec (additive sections) and route-to-ingest for the reverse-lookup sections; installer copies `config/resolution.toml`.
-- [ ] 38.11 Docs: `docs/ontology-alignment.md`, starter READMEs, ARCHITECTURE.md path-library, stability, and entity-id prose, `ffs_list_path` description examples; live check: drop a hand-written org note and a person note naming that org into `ingest/`, accept both, confirm `orgs/by-name/…` exists, the person file's `[[Org|Org Name]]` link resolves in Obsidian, and its Affiliations section is empty until an affiliation atom exists.
+- [x] 38.1 Loader: `[path]` and `[ontology]` tables on `RawSpec`/`PredicateSpec`; `name_field` vs `group_field` consistency check; unit tests for present, absent, conflicting `[path]`, and an unknown `[ontology]` value that loads without error.
+- [x] 38.2 Registry family table: accessor returning `(family, predicate, name_field)` triples; hot-reload keeps the table current; test that a fixture TOML with `[path] family = "widgets"` yields a `widgets/` family.
+- [x] 38.3 Opaque ids: `EntityId::mint()` in `ffs-core`; `dispatch.rs::ingest_accept` uses it for new entities and the `from-<submission-id>` fallback is removed; tests that minted ids are unique, multibase-valid, and that slug-form ids still round-trip through the store.
+- [x] 38.4 Path-to-entity index in `working_set.rs` and its SQLite table: basename derived from the head atom's name field; parenthetical collision qualifier (organization, role, year); rename moves the file and writes a redirect stub; `parse` resolves basenames through the index; tests for the two-Sara-Chen case, a rename, and determinism.
+- [x] 38.5 `path.rs` registry-backed: `PathFamily` resolved by lookup; `parse`, `path_for_entity`, `family_for_predicate` take the family table and the index; all existing `path.rs` tests green with assertions unmodified against the three starter specs.
+- [x] 38.6 Consumers: `render.rs` (including the affiliation reverse lookup and the merged-entity stub), `materializer.rs` (redirect stubs, no full file for merged entities), `watcher.rs` (ignore redirect stubs), `dispatch.rs::entity_search` (name field from spec, hardcoded `"note"` removed); existing tests green; materializer test writes `orgs/by-name/A/Acme.md` for an `org.company` atom.
+- [x] 38.7 `path.families` RPC + plugin: runtime family table replaces `PROJECTION_FAMILIES` and `familyForPredicate`; `openHit` resolves through the same index (basename, not display name); vitest for enumeration from a mocked `path.families` response and for the unreachable-daemon fallback.
+- [x] 38.8 Starter specs: `org.company`, `source.article`, `event.business`, `affiliation`, `entity.same_as`, `entity.different_from`, `person.generic` v2, each with `[ontology]`; `starter/config/resolution.toml` and its loader test; spec-loader tests; v1 `person.generic` claim validates under v2.
+- [x] 38.9 Templates: four `.md.tera` files plus the two reverse-lookup sections in `contact-person.md.tera`; `[[target|display]]` links, `aliases:` frontmatter, plain-text fallback for unresolved mentions and participants; render tests assert the exact link text, the Affiliations section, empty-section suppression, and render-hash stability.
+- [x] 38.10 Fast-path: classifier fixture per new spec (additive sections) and route-to-ingest for the reverse-lookup sections; installer copies `config/resolution.toml`.
+- [x] 38.11 Docs: `docs/ontology-alignment.md`, starter READMEs, ARCHITECTURE.md path-library, stability, and entity-id prose, `ffs_list_path` description examples; live check: drop a hand-written org note and a person note naming that org into `ingest/`, accept both, confirm `orgs/by-name/…` exists, the person file's `[[Org|Org Name]]` link resolves in Obsidian, and its Affiliations section is empty until an affiliation atom exists.
 
 ## Implementation Details
 Current structure: `PathFamily` (closed enum, `path.rs`) → `ParsedPath` → `render.rs` (`primary_predicate()` picks the store query; the Tera context is `entity`, `claim`, `classification`) and `materializer.rs` (`family_for_predicate` → `path_for_entity`). The plugin mirrors the enum in `paths.ts` and `main.ts`. The spec loader (`predicate/mod.rs`) already parses `[pagination] group_field`; the `[path]` and `[ontology]` tables sit beside it. Entity ids today are `slug_for_proposal` in `dispatch.rs` (task_32), which is the Wikipedia-title anti-pattern ADR-030 retires.
@@ -128,23 +138,23 @@ Redirect stubs: a stub is a projection file whose whole body is one line; the ma
 
 ## Tests
 - Unit tests:
-  - [ ] Loader accepts `[path]`, rejects `name_field` ≠ `group_field`, loads specs without `[path]` as family-less, and loads a spec with an unknown `[ontology] bfo` value without error.
-  - [ ] Fixture TOML with `[path] family = "widgets"` produces a `widgets/` family from the registry.
-  - [ ] Every pre-existing `path.rs` test passes unmodified against the three starter specs.
-  - [ ] `EntityId::mint()` yields unique, multibase-valid ids; a slug-form id round-trips through `list_by_entity` and `head_of_chain`.
-  - [ ] Two people named Sara Chen at different orgs materialize as `Sara_Chen_(Acme).md` and `Sara_Chen_(City_Council).md`; the qualifier order (organization, role, year) is exercised.
-  - [ ] Renaming an entity moves the file and leaves a redirect stub whose only line is `Moved to [[<new>|<display>]]`; the stub is ignored by the watcher.
-  - [ ] `entity_search` picks `title` for `note` and `display_name` for the others from the spec, with no predicate-name match in code.
-  - [ ] `person.generic` v1 claim validates under the v2 spec.
-  - [ ] A person file renders its `## Affiliations` section from `affiliation` atoms (two current, one ended) with the exact `[[target|display]]: title (from to to)` lines; an org file renders `## People` the same way; the affiliation hashes appear in `source_atoms`.
-  - [ ] An entity with an `entity.same_as` head renders as the merged stub.
-  - [ ] Each new template renders the expected link text, plain `display` for an unresolved mention or participant, `aliases:` only when present, suppresses empty sections, and is render-hash stable.
-  - [ ] `starter/config/resolution.toml` loads and its thresholds satisfy `review_floor < auto_link`.
+  - [x] Loader accepts `[path]`, rejects `name_field` ≠ `group_field`, loads specs without `[path]` as family-less, and loads a spec with an unknown `[ontology] bfo` value without error.
+  - [x] Fixture TOML with `[path] family = "widgets"` produces a `widgets/` family from the registry.
+  - [x] Every pre-existing `path.rs` test passes unmodified against the three starter specs.
+  - [x] `EntityId::mint()` yields unique, multibase-valid ids; a slug-form id round-trips through `list_by_entity` and `head_of_chain`.
+  - [x] Two people named Sara Chen at different orgs materialize as `Sara_Chen_(Acme).md` and `Sara_Chen_(City_Council).md`; the qualifier order (organization, role, year) is exercised.
+  - [x] Renaming an entity moves the file and leaves a redirect stub whose only line is `Moved to [[<new>|<display>]]`; the stub is ignored by the watcher.
+  - [x] `entity_search` picks `title` for `note` and `display_name` for the others from the spec, with no predicate-name match in code.
+  - [x] `person.generic` v1 claim validates under the v2 spec.
+  - [x] A person file renders its `## Affiliations` section from `affiliation` atoms (two current, one ended) with the exact `[[target|display]]: title (from to to)` lines; an org file renders `## People` the same way; the affiliation hashes appear in `source_atoms`.
+  - [x] An entity with an `entity.same_as` head renders as the merged stub.
+  - [x] Each new template renders the expected link text, plain `display` for an unresolved mention or participant, `aliases:` only when present, suppresses empty sections, and is render-hash stable.
+  - [x] `starter/config/resolution.toml` loads and its thresholds satisfy `review_floor < auto_link`.
 - Integration tests:
-  - [ ] Materializer writes `orgs/by-name/A/Acme.md` for an `org.company` atom and the recency listing for an `event.business` atom; writes no full file for a merged entity.
-  - [ ] Fast-path classifier fixture per new spec: an added bullet under `## Mentions` / `## Notes` classifies as `additive_section` with no classifier code change; an edit under `## Affiliations` or `## People` routes to ingest.
-  - [ ] `ingest_pipeline_e2e`: an org note dropped in `ingest/` and accepted lands under `orgs/` with an opaque entity id.
-  - [ ] Plugin vitest: family enumeration from a mocked `path.families`; `isProjectionPath("orgs/by-name/A/")` true after load; `openHit` opens `Sara_Chen_(Acme).md` for the qualified basename; unreachable daemon yields no crash.
+  - [x] Materializer writes `orgs/by-name/A/Acme.md` for an `org.company` atom and the recency listing for an `event.business` atom; writes no full file for a merged entity.
+  - [x] Fast-path classifier fixture per new spec: an added bullet under `## Mentions` / `## Notes` classifies as `additive_section` with no classifier code change; an edit under `## Affiliations` or `## People` routes to ingest.
+  - [x] `ingest_pipeline_e2e`: an org note dropped in `ingest/` and accepted lands under `orgs/` with an opaque entity id.
+  - [x] Plugin vitest: family enumeration from a mocked `path.families`; `isProjectionPath("orgs/by-name/A/")` true after load; `openHit` opens `Sara_Chen_(Acme).md` for the qualified basename; unreachable daemon yields no crash.
 - Test coverage target: >=80% on new code
 - All tests must pass
 

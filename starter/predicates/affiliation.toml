@@ -1,0 +1,70 @@
+# affiliation — a role a person holds at an organization (ADR-031).
+#
+# The atom's entity is the role particular itself, not the person.
+# `person` and `organization` are entity ids. The atom's own
+# `valid_from` / `valid_to` are the role's temporal region: a change
+# of title is a supersession, and an ending sets `valid_to`. Under
+# ADR-029, a new affiliation is additive ("joined") and auto-files;
+# a supersession ("left", retitled) routes to review.
+#
+# No `[path]`: affiliations have no folder. They render inside the
+# person's `## Affiliations` and the org's `## People` sections by
+# reverse lookup; the standalone template exists only so the loader
+# has one and for `atom.get` inspection.
+
+name = "affiliation"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["person", "organization"]
+
+[claim_schema.properties]
+person = { type = "string" }
+organization = { type = "string" }
+title = { type = "string" }
+kind = { type = "string", enum = ["employee", "executive", "board", "founder", "investor", "advisor", "member", "other"] }
+source = { type = "string" }
+notes = { type = "array", items = { type = "string" } }
+
+[rendering]
+template = "affiliation.md.tera"
+frontmatter_fields = ["person", "organization", "title", "kind", "source"]
+body_sections = ["Notes"]
+additive_sections = ["Notes"]
+
+# -------- reverse-map rules (5) --------
+
+[[reverse_map]]
+output = "frontmatter.person"
+atom_field = "claim.person"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.organization"
+atom_field = "claim.organization"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.title"
+atom_field = "claim.title"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.kind"
+atom_field = "claim.kind"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "section.Notes.list_item"
+atom_field = "claim.notes[]"
+edit_kind = "additive_section"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "role"
+cco = "cco:OccupationRole"
+iao = ""
+note = "bearer = claim.person, context = claim.organization, temporal region = the atom's valid_from..valid_to"

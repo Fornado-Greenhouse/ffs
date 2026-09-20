@@ -1,0 +1,50 @@
+# entity.same_as — a merge assertion (ADR-030).
+#
+# The atom's entity is the LOSING id; `target` is the id it redirects
+# to. Readers, the materializer, and the resolver follow same_as
+# chains; the losing entity's atoms stay in place and render under
+# the target. Undo is supersession with `valid_to = now`. Never
+# deleted, never a folder: the losing projection becomes a one-line
+# `Merged into [[target|display]]` stub.
+
+name = "entity.same_as"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["target"]
+
+[claim_schema.properties]
+target = { type = "string" }
+reason = { type = "string" }
+criterion = { type = "string" }
+
+[rendering]
+template = "entity-same-as.md.tera"
+frontmatter_fields = ["target", "reason", "criterion"]
+
+# -------- reverse-map rules (3) --------
+
+[[reverse_map]]
+output = "frontmatter.target"
+atom_field = "claim.target"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.reason"
+atom_field = "claim.reason"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.criterion"
+atom_field = "claim.criterion"
+edit_kind = "frontmatter_value"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "information content entity"
+cco = ""
+iao = "iao:IAO_0000030"
+note = "An owner-signed assertion that two ids designate one particular; the redirect, never a deletion."

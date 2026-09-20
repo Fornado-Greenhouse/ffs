@@ -2,6 +2,12 @@
 {%- if claim.display_name %}
 display_name: {{ claim.display_name }}
 {%- endif -%}
+{%- if claim.aliases %}{%- if claim.aliases | length > 0 %}
+aliases: [{{ claim.aliases | join(sep=", ") }}]
+{%- endif -%}{%- endif -%}
+{%- if claim.organization %}
+organization: {% if organization_link %}"[[{{ organization_link.basename }}|{{ organization_link.display }}]]"{% else %}{{ claim.organization }}{% endif %}
+{%- endif -%}
 {%- if claim.role %}
 role: {{ claim.role }}
 {%- endif -%}
@@ -21,3 +27,15 @@ pronouns: {{ claim.pronouns }}
 - {{ line }}
 {% endfor -%}
 {% endif -%}
+{% if claim.mentions and claim.mentions | length > 0 %}
+## Mentions
+{% for m in claim.mentions -%}
+- {{ m }}
+{% endfor -%}
+{% endif -%}
+{% if affiliations %}{% if affiliations | length > 0 %}
+## Affiliations
+{% for a in affiliations -%}
+- {% if a.basename %}[[{{ a.basename }}|{{ a.display }}]]{% else %}{{ a.display }}{% endif %}: {{ a.title | default(value="affiliated") }} ({{ a.valid_from }} to {% if a.valid_to %}{{ a.valid_to }}{% else %}present{% endif %})
+{% endfor -%}
+{% endif %}{% endif -%}

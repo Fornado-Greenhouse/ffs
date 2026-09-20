@@ -67,6 +67,10 @@ frontmatter_fields = ["display_name", "work_email"]
 output = "frontmatter.display_name"
 atom_field = "claim.display_name"
 edit_kind = "single_line_text"
+
+[path]
+family = "contacts"
+name_field = "display_name"
 "#;
 
 const CONTACT_TEMPLATE: &str = r#"---

@@ -68,8 +68,8 @@ The primary technical trade-off is heterogeneity for predictability: three toolc
 **Three folder spaces, three semantics:**
 
 - `~/.ffs/ingest/` is a write-anything firehose. Humans, AI agents, and CLI tools all write here. The scribe absorbs.
-- `~/.ffs/contacts/`, `~/.ffs/people/`, `~/.ffs/notes/` are *projections* — virtual paths backed by the substrate, materialized to disk on demand for the working set.
-- `~/.ffs/config/` holds predicate specs, templates, and capability templates. Edited by humans, git-versioned, hot-reloaded by the daemon.
+- Projection families are *projections* — virtual paths backed by the substrate, materialized to disk on demand for the working set. Each family is declared by its predicate spec's `[path]` table (ADR-028), so the registry, not a constant in code, is the source of truth. The starter set is `contacts/` (`contact.person`), `people/` (`person.generic`), `notes/` (`note`), `orgs/` (`org.company`), `articles/` (`source.article`), and `events/` (`event.business`). Predicates without a `[path]` table (`affiliation`, `entity.same_as`, `entity.different_from`, `capability.grant`) have no folder; they render inside other files or are inspected via `atom.get`. File basenames come from the head atom's name field, not from the entity id (ADR-030); a name collision gets a parenthetical qualifier, and a rename or merge leaves a one-line redirect stub.
+- `~/.ffs/config/` holds predicate specs, templates, `resolution.toml`, and capability templates. Edited by humans, git-versioned, hot-reloaded by the daemon.
 
 The seven Rust crates and their responsibilities are documented in [TechSpec § System Architecture](.compozy/tasks/ffs-mvp/_techspec.md) and [ADR-015](.compozy/tasks/ffs-mvp/adrs/adr-015.md).
 
@@ -84,7 +84,7 @@ An *atom* is a signed, content-addressed record about an entity. It carries a pr
 ```rust
 pub struct AtomEnvelope {
     pub v: u32,                         // schema version, currently 1
-    pub entity: EntityId,               // multibase-encoded
+    pub entity: EntityId,               // opaque, permanent; base58btc multibase (ADR-030)
     pub predicate: PredicateName,       // e.g. "contact.person"
     pub claim: serde_json::Value,       // validated against predicate's claim_schema
     pub author: PublicKey,              // Ed25519 multibase
@@ -97,6 +97,8 @@ pub struct AtomEnvelope {
     pub signature: Signature,           // Ed25519 over JCS bytes (sig field elided)
 }
 ```
+
+The entity id is opaque and permanent: 16 random bytes, base58btc multibase, minted by the daemon when a proposal resolves to a new entity (ADR-030). It is never derived from a name. The human-readable name is claim data on the head atom (`display_name`, `title`), and the projection file name is derived from it at render time. Slug-form ids from before ADR-030 remain valid; an id is an arbitrary string.
 
 The envelope is serialized as canonical JSON ([RFC 8785 JCS](https://datatracker.ietf.org/doc/html/rfc8785)). The signature covers the JCS bytes with the `signature` field elided. The content address is `multihash(blake3(jcs_bytes))` with codec `0x1e`. All public keys, signatures, and hashes are encoded as base58btc multibase strings (prefix `z`).
 
@@ -260,7 +262,7 @@ Pre-1.0, breaking changes are possible everywhere with notice. Post-1.0, this su
 - The atom envelope shape (the `v` field is the migration knob).
 - The JSON-RPC method set used by the CLI, Obsidian plugin, and MCP server.
 - The MCP tool signatures (six MVP tools per ADR-013, plus `ffs_search` and `ffs_list_path` per ADR-027).
-- The TOML predicate-spec format.
+- The TOML predicate-spec format, including the `[path]` table that declares a predicate's projection family (ADR-028). The `[ontology]` table is informative and may grow without notice.
 
 **Internal (free to change):**
 - The SQLite schema.

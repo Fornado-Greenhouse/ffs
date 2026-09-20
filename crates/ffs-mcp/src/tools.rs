@@ -72,15 +72,17 @@ pub fn tool_catalog() -> Vec<Tool> {
         Tool {
             name: "ffs_list_path".into(),
             description: "Progressive disclosure: enumerate a projection listing (e.g. \
-                          contacts/by-name/S/ or notes/recent/) instead of scanning the \
-                          substrate. Read the listing, then drill into individual entries \
-                          with ffs_render_projection."
+                          contacts/by-name/S/, notes/recent/, orgs/by-name/A/, \
+                          articles/recent/, events/recent/) instead of scanning the \
+                          substrate. Families are declared by predicate specs (ADR-028). \
+                          Read the listing, then drill into individual entries with \
+                          ffs_render_projection."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "required": ["path"],
                 "properties": {
-                    "path": {"type": "string", "description": "Projection listing path (e.g. contacts/by-name/S/ or notes/recent/)."},
+                    "path": {"type": "string", "description": "Projection listing path (e.g. contacts/by-name/S/, notes/recent/, orgs/by-name/A/, articles/recent/, events/recent/)."},
                     "page": {"type": "integer", "description": "Optional page number for paginated listings."}
                 }
             }),

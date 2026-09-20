@@ -1,0 +1,36 @@
+---
+{%- if claim.title %}
+title: {{ claim.title }}
+{%- endif -%}
+{%- if claim.url %}
+url: {{ claim.url }}
+{%- endif -%}
+{%- if claim.publication %}
+publication: {{ claim.publication }}
+{%- endif -%}
+{%- if claim.byline %}
+byline: {{ claim.byline }}
+{%- endif -%}
+{%- if claim.published_at %}
+published_at: {{ claim.published_at }}
+{%- endif -%}
+{%- if claim.content_hash %}
+content_hash: {{ claim.content_hash }}
+{%- endif %}
+---
+{% if claim.summary %}
+## Summary
+{{ claim.summary }}
+{% endif -%}
+{% if mentions_resolved %}{% if mentions_resolved | length > 0 %}
+## Mentions
+{% for m in mentions_resolved -%}
+- {% if m.basename %}[[{{ m.basename }}|{{ m.display }}]]{% else %}{{ m.display }}{% endif %}{% if m.context %}: {{ m.context }}{% endif %}
+{% endfor -%}
+{% endif %}{% endif -%}
+{% if claim.tags and claim.tags | length > 0 %}
+## Tags
+{% for tag in claim.tags -%}
+- {{ tag }}
+{% endfor -%}
+{% endif -%}

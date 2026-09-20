@@ -1,0 +1,95 @@
+# event.business — something that happened: a hire, a funding round,
+# an acquisition, an opening, a closing, an award.
+#
+# An event is a BFO occurrent (ADR-031): its temporal region is
+# `date`, and `participants[]` are entity references with a role in
+# the event, not bare names. `title` is a short headline and is the
+# name field for the file basename. Object-valued `participants[]`
+# have no reverse-map rule; edits under `## Participants` route to
+# ingest as corrections (ADR-014).
+
+name = "event.business"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["title", "kind"]
+
+[claim_schema.properties]
+title = { type = "string" }
+kind = { type = "string", enum = ["funding", "acquisition", "hire", "departure", "expansion", "opening", "closing", "award", "partnership", "other"] }
+date = { type = "string" }
+amount = { type = "string" }
+summary = { type = "string" }
+source = { type = "string" }
+tags = { type = "array", items = { type = "string" } }
+
+[claim_schema.properties.participants]
+type = "array"
+
+[claim_schema.properties.participants.items]
+type = "object"
+required = ["display"]
+
+[claim_schema.properties.participants.items.properties]
+entity = { type = "string" }
+display = { type = "string" }
+role = { type = "string", enum = ["acquirer", "target", "investor", "investee", "hire", "employer", "departing", "landlord", "tenant", "developer", "winner", "partner", "other"] }
+
+[rendering]
+template = "event-business.md.tera"
+frontmatter_fields = ["title", "kind", "date", "amount", "source"]
+body_sections = ["Summary", "Participants", "Tags"]
+additive_sections = ["Tags"]
+
+# -------- reverse-map rules (6) --------
+
+[[reverse_map]]
+output = "frontmatter.title"
+atom_field = "claim.title"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.kind"
+atom_field = "claim.kind"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.date"
+atom_field = "claim.date"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.amount"
+atom_field = "claim.amount"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.source"
+atom_field = "claim.source"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "section.Tags.list_item"
+atom_field = "claim.tags[]"
+edit_kind = "additive_section"
+
+# -------- pagination --------
+
+[pagination]
+strategy = "recency"
+
+# -------- projection family (ADR-028) --------
+
+[path]
+family = "events"
+name_field = "title"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "process"
+cco = "cco:Act"
+iao = ""
+note = "An occurrent with participants; date is its temporal region; kind names the process type; participants carry a role in the event."

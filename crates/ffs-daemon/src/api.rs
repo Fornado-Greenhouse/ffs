@@ -208,6 +208,11 @@ pub struct EntitySearchHit {
     pub entity: EntityId,
     pub predicate: PredicateName,
     pub display_name: String,
+    /// File basename in the entity's projection family (ADR-030), when
+    /// the path index has a row for it. Lets the plugin open
+    /// `Sara_Chen_(Acme).md` rather than guessing from the display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basename: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

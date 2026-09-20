@@ -43,6 +43,10 @@ display_name = { type = "string" }
 [rendering]
 template = "contact-person.md.tera"
 frontmatter_fields = ["display_name"]
+
+[path]
+family = "contacts"
+name_field = "display_name"
 "#;
 
 const CONTACT_TEMPLATE: &str = "---\ndisplay_name: {{ claim.display_name }}\n---\n";

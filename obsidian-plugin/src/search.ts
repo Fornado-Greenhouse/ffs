@@ -22,6 +22,9 @@ export interface EntityHit {
   entity: string;
   predicate: string;
   displayName: string;
+  /** File stem from the daemon's path-to-entity index (ADR-030), when
+   * the daemon supplies it; absent on MVP daemons. */
+  basename?: string;
 }
 
 export interface EntitySearchOptions {
@@ -87,12 +90,18 @@ export class EntitySearch {
       const response = (await this.client.call("entity.search", {
         query: trimmed,
         limit: this.opts.limit ?? DEFAULT_RESULT_LIMIT,
-      })) as { results?: Array<{ entity: string; predicate: string; display_name: string }> };
-      const hits: EntityHit[] = (response?.results ?? []).map((r) => ({
-        entity: String(r.entity ?? ""),
-        predicate: String(r.predicate ?? ""),
-        displayName: String(r.display_name ?? ""),
-      }));
+      })) as {
+        results?: Array<{ entity: string; predicate: string; display_name: string; basename?: string }>;
+      };
+      const hits: EntityHit[] = (response?.results ?? []).map((r) => {
+        const hit: EntityHit = {
+          entity: String(r.entity ?? ""),
+          predicate: String(r.predicate ?? ""),
+          displayName: String(r.display_name ?? ""),
+        };
+        if (typeof r.basename === "string" && r.basename.length > 0) hit.basename = r.basename;
+        return hit;
+      });
       this.deliver(hits, trimmed, generation);
     } catch (err) {
       console.warn("[ffs] entity.search failed:", err);

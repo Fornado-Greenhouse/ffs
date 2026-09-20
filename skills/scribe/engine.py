@@ -232,6 +232,58 @@ def _article_note_claim(submission: Submission, hint: str) -> Dict[str, Any]:
     return claim
 
 
+
+def _claim_from_frontmatter(submission: Submission, predicate: str, registry: Any) -> Optional[Dict[str, Any]]:
+    """Schema-driven claim from frontmatter for a hinted, registered
+    predicate. Copies only keys the claim_schema declares as properties,
+    requires every schema-required key to be present, and drops the body
+    text into the first declared string property named ``description``,
+    ``body``, or ``summary`` when that key is absent. No predicate is
+    named here; the schema is the contract. Returns None when the
+    frontmatter cannot satisfy the schema.
+    """
+    try:
+        schema = registry.schema(predicate)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(schema, dict):
+        return None
+    props = schema.get("properties")
+    if not isinstance(props, dict) or not props:
+        return None
+    fm = submission.frontmatter or {}
+    claim: Dict[str, Any] = {}
+    for key, spec in props.items():
+        if key == "predicate" or key not in fm:
+            continue
+        value = fm[key]
+        expected = spec.get("type") if isinstance(spec, dict) else None
+        if expected == "array":
+            if isinstance(value, list):
+                claim[key] = [str(v).strip() for v in value if str(v).strip()]
+            elif isinstance(value, str) and value.strip():
+                cleaned = value.strip().strip("[]")
+                claim[key] = [t.strip() for t in re.split(r"[,]+", cleaned) if t.strip()]
+        elif expected in (None, "string"):
+            claim[key] = str(value).strip()
+        else:
+            claim[key] = value
+    for required in schema.get("required", []):
+        if required not in claim:
+            return None
+    body = submission.body_text().strip() if hasattr(submission, "body_text") else ""
+    if body:
+        for candidate in ("description", "body", "summary"):
+            spec = props.get(candidate)
+            if isinstance(spec, dict) and spec.get("type") == "string" and candidate not in claim:
+                claim[candidate] = body
+                break
+    from validate import validate_claim  # local import keeps module load order simple
+
+    if validate_claim(claim, schema) is not None:
+        return None
+    return claim
+
 def apply_hint(
     submission: Submission,
     result: EngineResult,
@@ -252,6 +304,18 @@ def apply_hint(
         kept = [p for p in result.proposals if p.get("predicate") == hint]
         if kept:
             return EngineResult(proposals=kept, warnings=list(result.warnings))
+        built = _claim_from_frontmatter(submission, hint, registry)
+        if built is not None:
+            proposal = make_proposal(
+                hint,
+                built,
+                submission,
+                f"predicate hint {hint!r}: frontmatter supplied the schema's required fields; "
+                "claim built from the frontmatter keys the schema declares",
+                engine_name,
+                model,
+            )
+            return EngineResult(proposals=[proposal], warnings=list(result.warnings))
         return EngineResult(
             proposals=list(result.proposals),
             warnings=list(result.warnings)

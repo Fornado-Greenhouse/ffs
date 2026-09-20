@@ -51,6 +51,10 @@ edit_kind = "single_line_text"
 output = "section.Notes.list_item"
 atom_field = "claim.notes[]"
 edit_kind = "additive_section"
+
+[path]
+family = "contacts"
+name_field = "display_name"
 "#;
 
 const NOTE_TOML: &str = r#"
@@ -68,6 +72,10 @@ body = { type = "string" }
 [rendering]
 template = "note.md.tera"
 frontmatter_fields = ["title"]
+
+[path]
+family = "notes"
+name_field = "title"
 "#;
 
 const CONTACT_TEMPLATE: &str = r#"---
@@ -598,5 +606,12 @@ fn missing_predicate_in_registry_returns_unknown_predicate() {
         agent: agent_pk(),
     };
     let err = renderer.render(&req).unwrap_err();
-    assert!(matches!(err, RenderError::UnknownPredicate(_)));
+    // task_38: families are declared by predicate specs (ADR-028), so a
+    // registry with no specs has no `contacts` family and the path itself
+    // is rejected. UnknownPredicate is unreachable from a parsed path now;
+    // the meaning of the test (no spec, typed error, no panic) is kept.
+    assert!(
+        matches!(err, RenderError::Path(ffs_core::projection::PathError::UnknownFamily(ref f)) if f == "contacts"),
+        "got {err:?}"
+    );
 }

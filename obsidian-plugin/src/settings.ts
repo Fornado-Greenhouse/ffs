@@ -14,10 +14,17 @@
 
 import type { App, Plugin, PluginSettingTab } from "obsidian";
 
+import type { FamilyEntry } from "./paths.js";
+
 export interface FfsPluginSettings {
   socketPath: string;
   cliPath: string;
   identityKeyPath: string;
+  /** Last-known projection family table from `path.families`
+   * (ADR-028). Not user-edited: restored at load so folders still
+   * enumerate when the daemon is down, replaced on each successful
+   * load. Empty until the daemon has answered once. */
+  knownFamilies: FamilyEntry[];
 }
 
 export const DEFAULT_SETTINGS: FfsPluginSettings = {
@@ -27,6 +34,7 @@ export const DEFAULT_SETTINGS: FfsPluginSettings = {
   socketPath: "~/.ffs/run/ffs.sock",
   cliPath: "ffs",
   identityKeyPath: "",
+  knownFamilies: [],
 };
 
 /**

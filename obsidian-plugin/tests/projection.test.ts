@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ProjectionSubscription,
   renderProjection,
 } from "../src/projection.js";
 import { FfsEventEmitter, NotificationFrame } from "../src/events.js";
+import { setFamilies } from "../src/paths.js";
+
+const MVP_FAMILIES = [
+  { family: "contacts", predicate: "contact.person", name_field: "display_name" },
+  { family: "people", predicate: "person.generic", name_field: "display_name" },
+  { family: "notes", predicate: "note", name_field: "title" },
+];
 
 function fakeClient(response: unknown) {
   return {
@@ -13,6 +20,9 @@ function fakeClient(response: unknown) {
 }
 
 describe("projection", () => {
+  // Family table is runtime state (ADR-028); seed the MVP three.
+  beforeEach(() => setFamilies(MVP_FAMILIES));
+
   it("renderProjection calls projection.render and surfaces the markdown + render hash", async () => {
     const client = fakeClient({
       markdown: "---\ndisplay_name: Sara\n---\n",

@@ -35,6 +35,16 @@ impl EntityId {
         Self(s.into())
     }
 
+    /// Mint a fresh opaque, permanent entity id: 16 random bytes,
+    /// base58btc multibase with the `z` prefix (ADR-030). Ids are never
+    /// derived from a name; the human-readable name is claim data and
+    /// the file name is a projection concern. Existing slug-form ids
+    /// remain valid: an id is an arbitrary string.
+    pub fn mint() -> Self {
+        let bytes: [u8; 16] = rand::random();
+        Self(encode_base58btc(&bytes))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -559,5 +569,33 @@ mod tests {
         let env2: AtomEnvelope = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(env1, env2);
         env2.verify().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod entity_id_mint_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn minted_ids_are_unique_multibase_base58btc_of_sixteen_bytes() {
+        let mut seen = HashSet::new();
+        for _ in 0..1000 {
+            let id = EntityId::mint();
+            assert!(id.as_str().starts_with('z'), "{id:?}");
+            let bytes = decode_base58btc(id.as_str()).expect("valid multibase");
+            assert_eq!(bytes.len(), 16);
+            assert!(seen.insert(id.as_str().to_string()), "duplicate id {id:?}");
+        }
+    }
+
+    #[test]
+    fn slug_form_ids_remain_ordinary_strings() {
+        let slug = EntityId::new("Sara_Chen");
+        assert_eq!(slug.as_str(), "Sara_Chen");
+        assert!(
+            decode_base58btc(slug.as_str()).is_err(),
+            "slugs are not multibase and need not be"
+        );
     }
 }

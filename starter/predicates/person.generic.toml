@@ -10,9 +10,19 @@
 # Promoting a person.generic to a contact.person is a separate
 # user action — the auditor surfaces candidates in the daily
 # health summary. See PRD § Open Questions for the promotion flow.
+#
+# Version 2 (task_38, ADR-028/ADR-031) is additive: `organization` is
+# the CURRENT primary affiliation, a rendering convenience the scribe
+# writes and the briefing may correct; roles over time live in
+# `affiliation` atoms, rendered into `## Affiliations` by reverse
+# lookup (no reverse-map rule; edits there route to ingest).
+# `aliases` feeds the resolver (task_45) and renders as a frontmatter
+# flow list with no reverse-map rule. `mentions` is a dated log of
+# press mentions ("YYYY-MM-DD: what (article title)"). A v1 claim
+# validates unchanged under v2.
 
 name = "person.generic"
-version = 1
+version = 2
 
 [claim_schema]
 "$schema" = "https://json-schema.org/draft/2020-12/schema"
@@ -21,19 +31,26 @@ required = ["display_name"]
 
 [claim_schema.properties]
 display_name = { type = "string" }
+organization = { type = "string" }
 role = { type = "string" }
 team = { type = "string" }
 location = { type = "string" }
 pronouns = { type = "string" }
+aliases = { type = "array", items = { type = "string" } }
 bio = { type = "array", items = { type = "string" } }
+mentions = { type = "array", items = { type = "string" } }
 
 [rendering]
 template = "person-generic.md.tera"
-frontmatter_fields = ["display_name", "role", "team", "location", "pronouns"]
-body_sections = ["Bio"]
-additive_sections = ["Bio"]
+frontmatter_fields = ["display_name", "aliases", "organization", "role", "team", "location", "pronouns"]
+body_sections = ["Bio", "Mentions", "Affiliations"]
+additive_sections = ["Bio", "Mentions"]
 
-# -------- reverse-map rules (6) --------
+# -------- reverse-map rules (7) --------
+
+# `organization` carries an entity id rendered as a quoted wikilink; it has
+# no reverse-map rule on purpose (ADR-031: a rendering convenience, roles
+# live in affiliation atoms). Editing it in the file routes to ingest.
 
 [[reverse_map]]
 output = "frontmatter.display_name"
@@ -65,8 +82,31 @@ output = "section.Bio.list_item"
 atom_field = "claim.bio[]"
 edit_kind = "additive_section"
 
+[[reverse_map]]
+output = "section.Mentions.list_item"
+atom_field = "claim.mentions[]"
+edit_kind = "additive_section"
+
 # -------- pagination --------
 
 [pagination]
 strategy = "alphabetical_first_letter"
 group_field = "display_name"
+
+# -------- projection family (ADR-028) --------
+#
+# `family` is the folder root under $FFS_DATA_DIR; `name_field` is the
+# claim field that becomes the file basename (must agree with
+# `pagination.group_field` when both are present).
+
+[path]
+family = "people"
+name_field = "display_name"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "object"
+cco = "cco:Person"
+iao = ""
+note = "A person referenced in narrative content; roles live in affiliation atoms (ADR-031)."

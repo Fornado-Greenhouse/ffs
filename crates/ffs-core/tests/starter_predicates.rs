@@ -10,7 +10,23 @@ use std::path::PathBuf;
 
 use ffs_core::predicate::{EditKind, SpecRegistry};
 
-const EXPECTED_PREDICATES: &[&str] = &["contact.person", "person.generic", "note"];
+/// The original three MVP predicates (ADR-011). Every one covers all
+/// three fast-path edit kinds and their rules sum inside the ADR-014
+/// envelope.
+const MVP_THREE: &[&str] = &["contact.person", "person.generic", "note"];
+
+/// The full starter set after task_38 (ADR-028, ADR-030, ADR-031).
+const EXPECTED_PREDICATES: &[&str] = &[
+    "affiliation",
+    "contact.person",
+    "entity.different_from",
+    "entity.same_as",
+    "event.business",
+    "note",
+    "org.company",
+    "person.generic",
+    "source.article",
+];
 
 fn starter_dir() -> PathBuf {
     // Tests live at crates/ffs-core/tests; starter/predicates is two
@@ -32,19 +48,82 @@ fn load_starter() -> SpecRegistry {
 }
 
 #[test]
-fn all_three_starter_specs_load_cleanly() {
+fn all_starter_specs_load_cleanly() {
     let registry = load_starter();
     let mut names = registry.names();
     names.sort();
     let mut expected: Vec<String> = EXPECTED_PREDICATES.iter().map(|s| s.to_string()).collect();
     expected.sort();
-    assert_eq!(names, expected, "expected the three MVP predicates");
+    assert_eq!(names, expected, "expected the nine starter predicates");
 }
 
 #[test]
-fn each_starter_spec_covers_all_three_edit_kinds() {
+fn family_table_declares_the_folders_and_only_the_folders() {
     let registry = load_starter();
-    for predicate in EXPECTED_PREDICATES {
+    let table: Vec<(String, String, String)> = registry
+        .families()
+        .into_iter()
+        .map(|f| (f.family, f.predicate, f.name_field))
+        .collect();
+    assert_eq!(
+        table,
+        vec![
+            ("articles".into(), "source.article".into(), "title".into()),
+            (
+                "contacts".into(),
+                "contact.person".into(),
+                "display_name".into()
+            ),
+            ("events".into(), "event.business".into(), "title".into()),
+            ("notes".into(), "note".into(), "title".into()),
+            ("orgs".into(), "org.company".into(), "display_name".into()),
+            (
+                "people".into(),
+                "person.generic".into(),
+                "display_name".into()
+            ),
+        ]
+    );
+    for folderless in ["affiliation", "entity.same_as", "entity.different_from"] {
+        assert!(
+            registry.get(folderless).unwrap().path.is_none(),
+            "{folderless} has no folder"
+        );
+    }
+}
+
+#[test]
+fn every_starter_spec_carries_an_ontology_row() {
+    let registry = load_starter();
+    for name in EXPECTED_PREDICATES {
+        let spec = registry.get(name).unwrap();
+        let ont = spec
+            .ontology
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} lacks [ontology]"));
+        assert!(!ont.bfo.trim().is_empty(), "{name} has an empty bfo value");
+    }
+}
+
+#[test]
+fn person_generic_v1_claim_validates_under_v2_spec() {
+    let registry = load_starter();
+    assert_eq!(registry.get("person.generic").unwrap().version, 2);
+    let v1_claim = serde_json::json!({
+        "display_name": "Alex Kim",
+        "role": "engineer",
+        "team": "platform",
+        "bio": ["joined 2024"],
+    });
+    registry
+        .validate_claim("person.generic", &v1_claim)
+        .expect("a v1 person.generic claim must validate under v2 (additive change)");
+}
+
+#[test]
+fn each_mvp_spec_covers_all_three_edit_kinds() {
+    let registry = load_starter();
+    for predicate in MVP_THREE {
         let spec = registry
             .get(predicate)
             .unwrap_or_else(|| panic!("predicate {predicate} should load"));
@@ -69,15 +148,30 @@ fn each_starter_spec_covers_all_three_edit_kinds() {
 }
 
 #[test]
-fn total_reverse_map_rule_count_is_within_adr_014_envelope() {
+fn mvp_three_reverse_map_rule_count_is_within_adr_014_envelope() {
     let registry = load_starter();
-    let total: usize = EXPECTED_PREDICATES
+    let total: usize = MVP_THREE
         .iter()
         .map(|name| registry.get(name).unwrap().reverse_map.len())
         .sum();
     assert!(
         (15..=25).contains(&total),
-        "starter library has {total} reverse-map rules; ADR-014 envelopes the count at 15-25"
+        "the original three specs have {total} reverse-map rules; ADR-014 envelopes the count at 15-25"
+    );
+}
+
+#[test]
+fn full_starter_reverse_map_rule_count_is_recorded() {
+    // task_38 added six specs; the total is tracked here so a spec
+    // edit that silently drops rules is noticed in review.
+    let registry = load_starter();
+    let total: usize = EXPECTED_PREDICATES
+        .iter()
+        .map(|name| registry.get(name).unwrap().reverse_map.len())
+        .sum();
+    assert_eq!(
+        total, 55,
+        "expected 55 reverse-map rules across the nine starter specs"
     );
 }
 
@@ -157,11 +251,18 @@ fn every_reverse_map_output_resolves_to_a_defined_rendering_element() {
             let resolves = if let Some(field) = rule.output.strip_prefix("frontmatter.") {
                 spec.rendering.frontmatter_fields.iter().any(|f| f == field)
             } else if let Some(rest) = rule.output.strip_prefix("section.") {
-                let section = rest.trim_end_matches(".list_item");
-                spec.rendering
-                    .additive_sections
-                    .iter()
-                    .any(|s| s == section)
+                // `section.X.list_item` must be an additive section;
+                // `section.X` (a whole-section edit) may be any body
+                // section, matching the loader's own rule.
+                if let Some(section) = rest.strip_suffix(".list_item") {
+                    spec.rendering
+                        .additive_sections
+                        .iter()
+                        .any(|s| s == section)
+                } else {
+                    spec.rendering.body_sections.iter().any(|s| s == rest)
+                        || spec.rendering.additive_sections.iter().any(|s| s == rest)
+                }
             } else {
                 false
             };
@@ -179,9 +280,15 @@ fn pagination_is_set_for_every_starter_predicate() {
     // The Obsidian plugin's listing UX depends on each predicate
     // exposing a pagination strategy — missing it falls back to
     // "no listing" which is a regression.
+    // Only predicates with a projection folder have listings; the
+    // folderless identity and role predicates (affiliation,
+    // entity.same_as, entity.different_from) render inside other files.
     let registry = load_starter();
     for predicate in EXPECTED_PREDICATES {
         let spec = registry.get(predicate).unwrap();
+        if spec.path.is_none() {
+            continue;
+        }
         assert!(
             spec.pagination.is_some(),
             "{predicate} should declare a pagination strategy"

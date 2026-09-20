@@ -143,6 +143,12 @@ foreach ($f in Get-ChildItem -Path (Join-Path $StarterRoot 'predicates') -Filter
 foreach ($f in Get-ChildItem -Path (Join-Path $StarterRoot 'templates') -Filter '*.tera') {
     Install-Seed $f.FullName (Join-Path $DataDir "config\templates\$($f.Name)")
 }
+# Entity-resolution weights and thresholds (ADR-030); consumed by the
+# scribe's resolver (task_45). Seeded once, owner-edited after.
+$ResolutionSeed = Join-Path $StarterRoot 'config\resolution.toml'
+if (Test-Path $ResolutionSeed) {
+    Install-Seed $ResolutionSeed (Join-Path $DataDir 'config\resolution.toml')
+}
 
 # -------- skill bundles --------
 

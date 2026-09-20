@@ -14,6 +14,7 @@ use tracing::{debug, warn};
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::path as projection_path;
 use ffs_core::store::AtomStore;
+use ffs_core::working_set::PathIndex;
 use ffs_daemon::notify::EventPublisher;
 
 use crate::classifier::{classify, is_federated_path};
@@ -75,6 +76,10 @@ impl PollingFastPathWatcher {
 pub struct FastPathContext {
     pub store: Arc<dyn AtomStore>,
     pub registry: Arc<SpecRegistry>,
+    /// Path-to-entity index (ADR-030): resolves a file basename to the
+    /// entity id before classification. The daemon passes its SQLite
+    /// store; tests pass an `InMemoryPathIndex`.
+    pub path_index: Arc<dyn PathIndex>,
     pub notifier: Arc<EventPublisher>,
     pub signing_key: Arc<SigningKey>,
     pub working_set_dir: PathBuf,
@@ -205,9 +210,19 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
         return Ok(());
     }
 
-    // Parse path into (family, entity); listings + unsupported subpaths
-    // route to ingest.
-    let parsed = match projection_path::parse(&rel_str) {
+    // Redirect and merged stubs (ADR-030) are projection bookkeeping
+    // the materializer writes, never user edits; a file whose whole
+    // content is one such line is ignored.
+    if is_projection_stub(&new_content) {
+        return Ok(());
+    }
+
+    // Parse path into (family, basename); listings + unsupported
+    // subpaths route to ingest. Families come from the registry's
+    // `[path]` tables (ADR-028), snapshotted per event so hot-reloaded
+    // specs take effect.
+    let table = projection_path::FamilyTable::from_registry(&ctx.registry);
+    let parsed = match projection_path::parse(&rel_str, &table) {
         Ok(p) => p,
         Err(_) => {
             let _ = crate::dispatch::route_to_ingest(
@@ -220,9 +235,25 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
             return Ok(());
         }
     };
-    let (family, entity) = match parsed {
-        projection_path::ParsedPath::SingleEntity { family, entity } => (family, entity),
+    let (family, basename) = match parsed {
+        projection_path::ParsedPath::SingleEntity { family, basename } => (family, basename),
         _ => {
+            let _ = crate::dispatch::route_to_ingest(
+                &ctx.notifier,
+                &ctx.ingest_dir,
+                &rel_str,
+                &new_content,
+                &crate::classifier::SlowPathReason::PathOrHeadUnavailable,
+            );
+            return Ok(());
+        }
+    };
+    // Basename to entity id through the index; a basename with no row
+    // is a pre-ADR-030 slug-form id and resolves to itself.
+    let entity = match ctx.path_index.resolve(family.as_str(), &basename) {
+        Ok(Some(e)) => e,
+        Ok(None) => ffs_core::EntityId::new(basename.as_str()),
+        Err(_) => {
             let _ = crate::dispatch::route_to_ingest(
                 &ctx.notifier,
                 &ctx.ingest_dir,
@@ -342,4 +373,52 @@ fn render_via_template(
     }
     out.push('\n');
     out
+}
+
+/// True when `content` is exactly a redirect stub (`Moved to [[..]]`)
+/// or a merged-entity stub (`Merged into [[..]]`), optionally followed
+/// by one newline (ADR-030). Such files are written by the
+/// materializer and are never user edits.
+pub fn is_projection_stub(content: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(content) else {
+        return false;
+    };
+    let line = text.strip_suffix('\n').unwrap_or(text);
+    if line.contains('\n') {
+        return false;
+    }
+    let rest = if let Some(r) = line.strip_prefix("Moved to ") {
+        r
+    } else if let Some(r) = line.strip_prefix("Merged into ") {
+        r
+    } else {
+        return false;
+    };
+    rest.starts_with("[[") && rest.ends_with("]]") && rest.len() > 4
+}
+
+#[cfg(test)]
+mod stub_tests {
+    use super::is_projection_stub;
+
+    #[test]
+    fn redirect_and_merged_stubs_are_recognized() {
+        assert!(is_projection_stub(
+            b"Moved to [[Sara_Chen_(Acme)|Sara Chen]]\n"
+        ));
+        assert!(is_projection_stub(
+            b"Moved to [[Sara_Chen_(Acme)|Sara Chen]]"
+        ));
+        assert!(is_projection_stub(b"Merged into [[Acme|Acme Corp]]\n"));
+    }
+
+    #[test]
+    fn ordinary_projections_and_edits_are_not_stubs() {
+        assert!(!is_projection_stub(b"---\ndisplay_name: Sara Chen\n---\n"));
+        assert!(!is_projection_stub(
+            b"Moved to [[X|Y]]\n\n## Notes\n- extra line\n"
+        ));
+        assert!(!is_projection_stub(b"Moved to nowhere"));
+        assert!(!is_projection_stub(b""));
+    }
 }

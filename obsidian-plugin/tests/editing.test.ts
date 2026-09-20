@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyOptimistically,
   classifyEdit,
   routeEdit,
 } from "../src/editing.js";
+import { setFamilies } from "../src/paths.js";
+
+const MVP_FAMILIES = [
+  { family: "contacts", predicate: "contact.person", name_field: "display_name" },
+  { family: "people", predicate: "person.generic", name_field: "display_name" },
+  { family: "notes", predicate: "note", name_field: "title" },
+];
 
 function fakeClient(responses: Record<string, unknown>, errors: string[] = []) {
   return {
@@ -32,6 +39,9 @@ const AMBIGUOUS_OLD = "---\ndisplay_name: Sara\n---\nLine A\nLine B\n";
 const AMBIGUOUS_NEW = "---\ndisplay_name: Sarah\n---\nLine A different\nLine B different\n";
 
 describe("classifyEdit", () => {
+  // Family table is runtime state (ADR-028); seed the MVP three.
+  beforeEach(() => setFamilies(MVP_FAMILIES));
+
   it("classifies a single-frontmatter-value change as fast-path eligible", () => {
     const c = classifyEdit(FRONTMATTER_OLD, FRONTMATTER_NEW);
     expect(c).toEqual({ shape: "single-line-text", fastPathEligible: true });

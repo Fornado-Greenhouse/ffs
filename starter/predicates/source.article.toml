@@ -1,0 +1,105 @@
+# source.article — a published piece the owner read or was pointed at.
+#
+# The record is metadata plus the owner's or courier's summary; it is
+# never the article body (publisher terms and ADR-035). `url`,
+# normalized, is the dedup key across submissions and peers (task_40,
+# ADR-034); `content_hash` is the hash of the fetched page when a
+# courier had one. `mentions[]` are is-about links (IAO): objects with
+# the printed `display`, an optional resolved `entity` id, and a
+# one-line `context`. Object-valued lists have no reverse-map rule, so
+# edits under `## Mentions` route to ingest as corrections (ADR-014).
+
+name = "source.article"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["title", "url"]
+
+[claim_schema.properties]
+title = { type = "string" }
+url = { type = "string" }
+publication = { type = "string" }
+byline = { type = "string" }
+published_at = { type = "string" }
+summary = { type = "string" }
+content_hash = { type = "string" }
+tags = { type = "array", items = { type = "string" } }
+
+[claim_schema.properties.mentions]
+type = "array"
+
+[claim_schema.properties.mentions.items]
+type = "object"
+required = ["display"]
+
+[claim_schema.properties.mentions.items.properties]
+entity = { type = "string" }
+display = { type = "string" }
+context = { type = "string" }
+
+[rendering]
+template = "source-article.md.tera"
+frontmatter_fields = ["title", "url", "publication", "byline", "published_at", "content_hash"]
+body_sections = ["Summary", "Mentions", "Tags"]
+additive_sections = ["Tags"]
+
+# -------- reverse-map rules (7) --------
+
+[[reverse_map]]
+output = "frontmatter.title"
+atom_field = "claim.title"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.url"
+atom_field = "claim.url"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.publication"
+atom_field = "claim.publication"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.byline"
+atom_field = "claim.byline"
+edit_kind = "single_line_text"
+
+[[reverse_map]]
+output = "frontmatter.published_at"
+atom_field = "claim.published_at"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "frontmatter.content_hash"
+atom_field = "claim.content_hash"
+edit_kind = "frontmatter_value"
+
+[[reverse_map]]
+output = "section.Tags.list_item"
+atom_field = "claim.tags[]"
+edit_kind = "additive_section"
+
+# -------- pagination --------
+#
+# Articles are read by recency: `articles/recent/` is the primary
+# surface; `articles/by-name/<letter>/` groups on title.
+
+[pagination]
+strategy = "recency"
+
+# -------- projection family (ADR-028) --------
+
+[path]
+family = "articles"
+name_field = "title"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "information content entity"
+cco = ""
+iao = "iao:IAO_0000310"
+note = "A document about entities; mentions are is-about links; the url and content_hash identify the bearer; the summary is a derived information content entity."

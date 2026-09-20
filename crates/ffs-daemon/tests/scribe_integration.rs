@@ -58,6 +58,10 @@ additive_sections = ["Notes"]
 output = "frontmatter.display_name"
 atom_field = "claim.display_name"
 edit_kind = "single_line_text"
+
+[path]
+family = "contacts"
+name_field = "display_name"
 "#;
 
 const NOTE_TOML: &str = r#"
@@ -78,6 +82,10 @@ template = "note.md.tera"
 frontmatter_fields = ["title", "tags"]
 body_sections = ["Body"]
 additive_sections = []
+
+[path]
+family = "notes"
+name_field = "title"
 "#;
 
 fn python_available() -> bool {
