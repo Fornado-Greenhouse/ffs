@@ -1,0 +1,377 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M30AGACKXZ8DCD8ETWZ9JA3N",
+  "session_id": "af7c00f1-b4ce-4505-8d35-b5ec4e0c9341",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T21:10:46.601998Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/ffs-core/src/attestation.rs",
+    "skills/auditor/audit.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "292be4f495f1",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6934,
+    "cache_creation_tokens": 6541411,
+    "cache_read_tokens": 145131064,
+    "output_tokens": 384186,
+    "api_call_count": 288
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-goal-2026-09-14T01:32:22.806698Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "3a0c281baba0",
+      "timestamp": "2026-09-14T01:32:22.806698Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01W1FjK8eYw6scz7kqwtatCt",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30,
+        "end": 31,
+        "entry_ids": [
+          "e9ee3f4f-b247-46e0-b362-d7be417895b7"
+        ],
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JEz9snmjRR7fayyfWwfKTf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1428,
+        "end": 1429,
+        "entry_ids": [
+          "acc22cd1-0f7a-48b2-b339-32a26fa9ce71"
+        ],
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01AtFqmqtwyuW5QTAY3MianU",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1826,
+        "end": 1827,
+        "entry_ids": [
+          "d6ba85b3-ffab-4cf8-a7ce-f82b1cec09f0"
+        ],
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Y6DyeARd37HStrSeobkJFp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2105,
+        "end": 2106,
+        "entry_ids": [
+          "4e89967d-eadf-41b9-9e14-0515d6140bb4"
+        ],
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015LpifjMCeA5NktGSdFvFGx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2236,
+        "end": 2237,
+        "entry_ids": [
+          "58076d69-e469-49c3-bdb7-658440bdbf1b"
+        ],
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_017chWquExT7jptaMoL2mh93",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2625,
+        "end": 2626,
+        "entry_ids": [
+          "60aa3ac9-48af-45eb-a421-07b96f7359e3"
+        ],
+        "tool_use_id": "toolu_017chWquExT7jptaMoL2mh93"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017chWquExT7jptaMoL2mh93"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015A4bY9vY15kwh7Jtt5n1sX",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "292be4f495f1",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2813,
+        "end": 2814,
+        "entry_ids": [
+          "8513de21-58b7-49d4-9220-630af466139d"
+        ],
+        "tool_use_id": "toolu_015A4bY9vY15kwh7Jtt5n1sX"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015A4bY9vY15kwh7Jtt5n1sX"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 65
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T21:10:46.207699Z",
+    "agent_lines": 288,
+    "agent_removed": 0,
+    "human_added": 2116,
+    "human_modified": 57,
+    "human_removed": 0,
+    "total_committed": 2454,
+    "total_lines_changed": 2504,
+    "agent_percentage": 11.501597444089457,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 3845,
+      "user_lines_removed": 50,
+      "agent_lines_added": 4514,
+      "agent_lines_removed": 1,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        ".compozy/tasks/ffs-mvp/_tasks.md": 1,
+        ".compozy/tasks/ffs-mvp/task_46.md": 40,
+        "crates/ffs-cli/src/commands.rs": 53,
+        "crates/ffs-cli/src/lib.rs": 24,
+        "crates/ffs-cli/tests/attest_task46.rs": 19,
+        "crates/ffs-core/src/atom.rs": 7,
+        "crates/ffs-core/src/attestation.rs": 93,
+        "crates/ffs-core/src/lib.rs": 7,
+        "crates/ffs-core/src/predicate/mod.rs": 33,
+        "crates/ffs-core/src/projection/render.rs": 111,
+        "crates/ffs-core/src/store/mem.rs": 3,
+        "crates/ffs-core/src/store/sqlite.rs": 9,
+        "crates/ffs-core/tests/attestation_task46.rs": 310,
+        "crates/ffs-core/tests/starter_predicates.rs": 3,
+        "crates/ffs-daemon/src/api.rs": 59,
+        "crates/ffs-daemon/src/dispatch.rs": 285,
+        "crates/ffs-daemon/src/inbox.rs": 50,
+        "crates/ffs-daemon/src/main.rs": 12,
+        "crates/ffs-daemon/tests/autofile_task39.rs": 381,
+        "crates/ffs-fastpath/src/classifier.rs": 1,
+        "crates/ffs-fastpath/src/inbox.rs": 60,
+        "crates/ffs-fastpath/tests/inbox_attest_task46.rs": 97,
+        "docs/agent-memory/CONVENTION.md": 2,
+        "docs/onboarding/first-use-guide.md": 29,
+        "skills/auditor/audit.py": 61,
+        "skills/auditor/briefing.py": 32,
+        "skills/auditor/tests/test_audit.py": 52,
+        "skills/auditor/tests/test_briefing.py": 1,
+        "starter/config/attestation.toml": 11,
+        "starter/predicates/affiliation.toml": 11,
+        "starter/predicates/attestation.toml": 51,
+        "starter/predicates/auditor.briefing.toml": 5,
+        "starter/predicates/org.company.toml": 11,
+        "starter/predicates/person.generic.toml": 11,
+        "starter/templates/attestation.md.tera": 10,
+        "starter/templates/auditor-briefing.md.tera": 11,
+        "starter/templates/contact-person.md.tera": 16,
+        "starter/templates/note.md.tera": 15,
+        "starter/templates/org-company.md.tera": 16,
+        "starter/templates/person-generic.md.tera": 16
+      },
+      "user_removed_per_file": {
+        ".compozy/tasks/ffs-mvp/_tasks.md": 1,
+        ".compozy/tasks/ffs-mvp/task_46.md": 21,
+        "crates/ffs-core/src/attestation.rs": 7,
+        "crates/ffs-core/src/lib.rs": 1,
+        "crates/ffs-core/src/store/sqlite.rs": 2,
+        "crates/ffs-core/tests/starter_predicates.rs": 2,
+        "crates/ffs-daemon/src/dispatch.rs": 2,
+        "crates/ffs-daemon/src/main.rs": 1,
+        "crates/ffs-fastpath/src/inbox.rs": 5,
+        "skills/auditor/tests/test_briefing.py": 1,
+        "starter/templates/contact-person.md.tera": 2,
+        "starter/templates/note.md.tera": 1,
+        "starter/templates/org-company.md.tera": 2,
+        "starter/templates/person-generic.md.tera": 2
+      }
+    }
+  ]
+}
