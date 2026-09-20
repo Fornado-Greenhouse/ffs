@@ -1663,3 +1663,19 @@ docs/onboarding/first-use-guide.md
 Cargo.lock, .agents/, .claude/, and .entire/ remain untracked as before. Next in the owner's build order is task_48, the morning read skill.</result>
 <usage><subagent_tokens>88521</subagent_tokens><tool_uses>102</tool_uses><duration_ms>1560468</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a815efd2c0d321054</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a815efd2c0d321054.output</output-file>
+<status>failed</status>
+<summary>Agent "task_48: morning read skill + clip tier" failed: Agent terminated early due to an API error: You've hit your monthly spend limit. Run /usage-credits to manage your limit and keep using Fable 5.1 or switch models to continue this chat. (error type rate_limit, HTTP 429, request id req_011CfFQmwHchTSKPpKAVKXAK, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Restating: I own task_48 end to end (morning-read skill, `ffs_accept_proposal` tool, morning_read/session provenance, clip tier, session log, docs and tests), no commit.</result>
+</task-notification>
+
+---
+
+Please continue… we just spent $50 with Fable and only got 13 lines of code, so please incorporate anything you find valuable.  Please continue our plan.
