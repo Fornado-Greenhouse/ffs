@@ -956,16 +956,19 @@ mod tests {
                     family: "people".into(),
                     predicate: "person.generic".into(),
                     name_field: "display_name".into(),
+                    layout: Default::default(),
                 }),
                 "org.company" => Some(FamilyEntry {
                     family: "orgs".into(),
                     predicate: "org.company".into(),
                     name_field: "display_name".into(),
+                    layout: Default::default(),
                 }),
                 "source.article" => Some(FamilyEntry {
                     family: "articles".into(),
                     predicate: "source.article".into(),
                     name_field: "title".into(),
+                    layout: Default::default(),
                 }),
                 _ => None,
             }
@@ -1606,6 +1609,7 @@ mod tests {
                         family: "notes".into(),
                         predicate: "note".into(),
                         name_field: "title".into(),
+                        layout: Default::default(),
                     })
                 } else {
                     self.0.family_for_predicate(predicate)

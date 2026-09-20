@@ -22,6 +22,10 @@ The auditor tolerates partial substrate access: a host that refuses
 one query (e.g., `atom.list` capability denial) yields a summary with
 zeros for that field plus a warning, rather than failing the entire
 tick.
+
+A second op, `{"op": "briefing"}` (task_41), publishes the morning
+briefing (`auditor.briefing`) computed from the atoms since the
+previous briefing; see `briefing.py`.
 """
 
 from __future__ import annotations
@@ -37,6 +41,11 @@ if _LIB not in sys.path:
     sys.path.insert(0, _LIB)
 
 from ffs_skill import FfsSkillError, log, query, run  # noqa: E402
+
+# task_41: the morning briefing lives in its own module so this file
+# stays the daily-health tick. `briefing.query` is what tests patch
+# for the briefing op; `audit.query` for the tick.
+from briefing import briefing as run_briefing  # noqa: E402
 
 
 # Threshold constants (per TechSpec § Monitoring and Observability §
@@ -330,6 +339,8 @@ def handle(inp: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     `inp` shape::
 
         {"op": "tick", "window_hours": 24}
+        {"op": "briefing"}                     # task_41
+        {"op": "briefing", "window_days": 14}  # manual run over a fixed window
 
     Defaults to a 24h tick when fields are missing.
     """
@@ -339,6 +350,8 @@ def handle(inp: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     window = int(inp.get("window_hours") or 24)
     if op == "tick":
         return tick(window)
+    if op == "briefing":
+        return run_briefing(inp)
     log("warn", f"unknown op: {op!r}; defaulting to tick")
     return tick(window)
 

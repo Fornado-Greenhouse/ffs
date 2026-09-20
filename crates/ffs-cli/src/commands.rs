@@ -208,6 +208,55 @@ pub async fn health(socket: &Path, json: bool) -> Outcome {
     }
 }
 
+/// `ffs health --briefing` — print the latest morning briefing (task_41):
+/// the narrative and the section counts, or the whole claim as JSON.
+pub async fn health_briefing(socket: &Path, json: bool) -> Outcome {
+    let params = serde_json::json!({"kind": "briefing"});
+    match client::call(socket, "audit.query", params).await {
+        Ok(resp) => Outcome::ok(format_result(&resp, json, |v| {
+            let latest = v.as_array().and_then(|a| a.first())?;
+            Some(format_briefing(latest))
+        })),
+        Err(e) => map_client_err(e),
+    }
+}
+
+fn format_briefing(atom: &serde_json::Value) -> String {
+    let claim = atom.get("claim").cloned().unwrap_or_default();
+    let mut out = String::new();
+    if let Some(date) = claim.get("date").and_then(|d| d.as_str()) {
+        out.push_str(&format!("briefing: {date} (briefings/{date}.md)\n"));
+    }
+    if let Some(w) = claim.get("window") {
+        out.push_str(&format!(
+            "window: {} to {}\n",
+            w.get("from").and_then(|x| x.as_str()).unwrap_or("?"),
+            w.get("to").and_then(|x| x.as_str()).unwrap_or("?")
+        ));
+    }
+    if let Some(n) = claim.get("narrative").and_then(|n| n.as_str()) {
+        out.push_str(&format!("\n{n}\n\n"));
+    }
+    for key in [
+        "needs_your_eye",
+        "new_people",
+        "changes",
+        "trending_orgs",
+        "events",
+        "promotion_candidates",
+        "follow_ups",
+        "possible_duplicates",
+    ] {
+        let n = claim
+            .get(key)
+            .and_then(|x| x.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        out.push_str(&format!("{key}: {n}\n"));
+    }
+    out
+}
+
 /// `ffs courier run [--dry-run]` — one courier tick through the daemon.
 /// Prints the files a dry run would submit (or wrote), the counters,
 /// and exits non-zero when the tick reported `last_error`.

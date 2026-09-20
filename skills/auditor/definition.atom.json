@@ -12,15 +12,22 @@
           "predicates": [
             "contact.person",
             "person.generic",
+            "org.company",
+            "source.article",
+            "event.business",
+            "affiliation",
+            "entity.same_as",
+            "entity.different_from",
             "note",
-            "auditor.daily_summary"
+            "auditor.daily_summary",
+            "auditor.briefing"
           ]
         }
       },
       {
         "action": "write",
         "scope": {
-          "predicates": ["auditor.daily_summary"]
+          "predicates": ["auditor.daily_summary", "auditor.briefing"]
         }
       }
     ],

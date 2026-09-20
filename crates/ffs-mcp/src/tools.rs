@@ -158,13 +158,21 @@ pub fn tool_catalog() -> Vec<Tool> {
         },
         Tool {
             name: "ffs_audit_query".into(),
-            description: "Return the most-recent auditor.daily_summary atoms, newest first. \
-                          Optional `since` filter limits to atoms after a tx_time watermark."
+            description: "Return the most-recent auditor atoms, newest first: the daily \
+                          health summary by default, or the morning briefing with \
+                          `kind: \"briefing\"` (who is new, who moved, trending \
+                          organizations, promotion candidates, follow-ups). Optional \
+                          `since` filter limits to atoms after a tx_time watermark."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "since": {"type": "string", "description": "Optional ISO 8601 lower bound."}
+                    "since": {"type": "string", "description": "Optional ISO 8601 lower bound."},
+                    "kind": {
+                        "type": "string",
+                        "enum": ["daily_summary", "briefing"],
+                        "description": "Which auditor atoms to read; default daily_summary."
+                    }
                 }
             }),
         },
@@ -327,6 +335,9 @@ async fn translate_audit_query(args: Value, daemon: &dyn DaemonClient) -> ToolCa
     let mut params = serde_json::Map::new();
     if let Some(s) = args.get("since").and_then(|v| v.as_str()) {
         params.insert("since".into(), serde_json::json!(s));
+    }
+    if let Some(k) = args.get("kind").and_then(|v| v.as_str()) {
+        params.insert("kind".into(), serde_json::json!(k));
     }
     forward(daemon, "audit.query", Value::Object(params)).await
 }

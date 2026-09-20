@@ -31,6 +31,7 @@ fn every_starter_family_and_inbox_are_watched() {
         "orgs/by-name/A/Acme_Widgets.md",
         "articles/by-date/2026/Widget_maker.md",
         "events/by-date/2026/Groundbreaking.md",
+        "briefings/2026-09-20.md",
         "inbox/2026-09-20.md",
     ] {
         assert!(is_watched_root(rel, &table), "{rel} is watched");

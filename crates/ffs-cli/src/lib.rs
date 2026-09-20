@@ -38,7 +38,11 @@ pub enum Command {
     /// Fetch the raw atom envelope for an atom or entity URL.
     Get { url: String },
     /// Print the daemon's daily health summary.
-    Health,
+    Health {
+        /// Print the latest morning briefing instead (task_41).
+        #[arg(long)]
+        briefing: bool,
+    },
     /// Inspect a predicate spec.
     Predicate {
         #[command(subcommand)]
@@ -159,7 +163,8 @@ pub async fn run(args: Args) -> Outcome {
         Command::Cat { url } => commands::cat(socket_ref, &url, json).await,
         Command::Ls { url } => commands::ls(socket_ref, &url, json).await,
         Command::Get { url } => commands::get(socket_ref, &url).await,
-        Command::Health => commands::health(socket_ref, json).await,
+        Command::Health { briefing: false } => commands::health(socket_ref, json).await,
+        Command::Health { briefing: true } => commands::health_briefing(socket_ref, json).await,
         Command::Predicate {
             command: PredicateCommand::Inspect { name },
         } => commands::predicate_inspect(socket_ref, &name).await,

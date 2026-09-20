@@ -180,7 +180,15 @@ async fn path_families_rpc_lists_the_starter_folders() {
     let folders: Vec<&str> = rows.iter().map(|r| r["family"].as_str().unwrap()).collect();
     assert_eq!(
         folders,
-        vec!["articles", "contacts", "events", "notes", "orgs", "people"]
+        vec![
+            "articles",
+            "briefings",
+            "contacts",
+            "events",
+            "notes",
+            "orgs",
+            "people"
+        ]
     );
     let notes = rows.iter().find(|r| r["family"] == "notes").unwrap();
     assert_eq!(notes["predicate"], "note");

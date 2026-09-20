@@ -46,6 +46,17 @@ import {
   candidateLines,
   type PanelItem,
 } from "./summary.js";
+import {
+  BriefingPanelModel,
+  changeLine,
+  eyeCandidateLabel,
+  type BriefingState,
+  type EntityRef,
+  type MergeRecord,
+  type NeedsYourEyeItem,
+  type PossibleDuplicate,
+  type PromotionCandidate,
+} from "./briefing.js";
 
 export const SUMMARY_VIEW_TYPE = "ffs-daily-summary";
 
@@ -57,6 +68,8 @@ export default class FfsPlugin extends Plugin {
   private projectionSub: ProjectionSubscription | null = null;
   /** Daily-health-summary panel model (task_19). */
   summary!: SummaryPanelModel;
+  /** Briefing section model (task_41) — the latest `auditor.briefing`. */
+  briefing!: BriefingPanelModel;
   /** Entity-name search backing the suggester modal (task_19). */
   search!: EntitySearch;
   /** Latest results from the entity-search model — drained by the modal. */
@@ -121,6 +134,16 @@ export default class FfsPlugin extends Plugin {
     // and refreshes on `event.atom.committed` for auditor atoms.
     this.summary = new SummaryPanelModel(this.client);
 
+    // Briefing model — `audit.query {kind: "briefing"}`, refreshes on
+    // `auditor.briefing` commits. Dismissals persist as plugin data.
+    this.briefing = new BriefingPanelModel(this.client, {
+      local: this.settings.briefing,
+      persist: async (local) => {
+        this.settings.briefing = local;
+        await this.saveSettings();
+      },
+    });
+
     // Entity-name search backing the suggester. The callback both
     // updates the in-flight modal (if any) and stores the latest
     // results for next-modal-open.
@@ -154,6 +177,9 @@ export default class FfsPlugin extends Plugin {
       callback: () => {
         void this.summary
           .refresh()
+          .then(() => this.briefing.refresh().catch((err) => {
+            console.warn("[ffs] briefing refresh failed:", err);
+          }))
           .then(() => this.activateSummaryView())
           .catch((err) => {
             console.warn("[ffs] summary refresh failed:", err);
@@ -187,6 +213,7 @@ export default class FfsPlugin extends Plugin {
   async onunload(): Promise<void> {
     this.search?.cancel();
     this.summary?.dispose();
+    this.briefing?.dispose();
     this.projectionSub?.dispose();
     this.projectionSub = null;
     this.client?.close();
@@ -293,6 +320,7 @@ class SummaryView extends ItemView {
    * are invoked from `onClose` so listeners don't accumulate across
    * view open/close cycles (task_28). */
   private offSummaryChange: (() => void) | null = null;
+  private offBriefingChange: (() => void) | null = null;
   private offStateChange: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: FfsPlugin) {
@@ -312,6 +340,9 @@ class SummaryView extends ItemView {
   async onOpen(): Promise<void> {
     this.offSummaryChange = this.plugin.summary.onChange((state) =>
       this.render(state),
+    );
+    this.offBriefingChange = this.plugin.briefing.onChange(() =>
+      this.render(this.plugin.summary.state),
     );
 
     // Track the client's connection state. The first time we land
@@ -342,6 +373,8 @@ class SummaryView extends ItemView {
   async onClose(): Promise<void> {
     this.offSummaryChange?.();
     this.offSummaryChange = null;
+    this.offBriefingChange?.();
+    this.offBriefingChange = null;
     this.offStateChange?.();
     this.offStateChange = null;
   }
@@ -349,12 +382,25 @@ class SummaryView extends ItemView {
   /** Open today's inbox file in the main area; a Notice when the daemon
    * has not written one yet. */
   private async openInbox(path: string): Promise<void> {
+    if (await this.openVaultFile(path)) return;
+    new Notice(`FFS: no inbox file at ${path} yet (the daemon writes it when proposals are pending).`);
+  }
+
+  /** Open the rendered briefing page; fall back to Obsidian's link
+   * resolution when the materializer has not written it yet. */
+  private async openBriefingPage(path: string): Promise<void> {
+    if (await this.openVaultFile(path)) return;
+    await this.app.workspace.openLinkText(path, "", false);
+  }
+
+  /** Open a vault file in the main area. False when it does not exist. */
+  private async openVaultFile(path: string): Promise<boolean> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
-      return;
+      return true;
     }
-    new Notice(`FFS: no inbox file at ${path} yet (the daemon writes it when proposals are pending).`);
+    return false;
   }
 
   private async triggerRefresh(): Promise<void> {
@@ -369,6 +415,20 @@ class SummaryView extends ItemView {
       new Notice(`FFS summary refresh failed: ${describeError(err)}`);
       this.render(this.plugin.summary.state);
     }
+    // The briefing is a separate atom with its own query; a daemon
+    // that predates `kind` must not take the daily summary down.
+    try {
+      await this.plugin.briefing.refresh();
+    } catch (err) {
+      console.warn("[ffs] briefing refresh failed:", err);
+    }
+  }
+
+  /** Run a briefing action, surfacing failures as a Notice. */
+  private briefingAction(label: string, action: () => Promise<unknown>): void {
+    void action().catch((err) => {
+      new Notice(`FFS ${label} failed: ${describeError(err)}`);
+    });
   }
 
   private render(state: PanelState): void {
@@ -421,6 +481,7 @@ class SummaryView extends ItemView {
       empty.createEl("p", {
         text: "Nothing to review yet. Capture a contact or note in ingest/ to start.",
       });
+      this.renderBriefing(root, this.plugin.briefing.state);
       return;
     }
 
@@ -462,6 +523,246 @@ class SummaryView extends ItemView {
       for (const item of state.items) {
         this.renderFlag(flags, item);
       }
+    }
+
+    this.renderBriefing(root, this.plugin.briefing.state);
+  }
+
+  /**
+   * The Briefing section (task_41): the latest `auditor.briefing`
+   * atom — narrative, window, per-section counts, the lists, and the
+   * owner actions (promote / dismiss, the reconciliation picker,
+   * merge / keep separate / undo merge). Rendered below the daily
+   * summary; the five-item panel above is unchanged.
+   */
+  private renderBriefing(root: HTMLElement, b: BriefingState): void {
+    const section = root.createDiv({ cls: "ffs-briefing" });
+    const header = section.createDiv({ cls: "ffs-briefing-header" });
+    header.createEl("h4", { text: b.empty ? "Briefing" : `Briefing · ${b.date}` });
+    if (b.empty) {
+      section.createEl("p", { text: b.narrative, cls: "ffs-briefing-empty" });
+      this.renderSessionMerges(section, b);
+      return;
+    }
+    if (b.pagePath) {
+      const open = header.createEl("a", {
+        text: `open ${b.pagePath}`,
+        cls: "ffs-briefing-page-link",
+      });
+      open.setAttr("href", "#");
+      open.onclick = (ev: MouseEvent) => {
+        ev.preventDefault();
+        void this.openBriefingPage(b.pagePath);
+      };
+    }
+
+    const meta = section.createDiv({ cls: "ffs-briefing-window" });
+    meta.setText(
+      `${b.window.from.slice(0, 10)} → ${b.window.to.slice(0, 10)}` +
+        (b.cadence ? ` · every ${b.cadence}` : "") +
+        ` · ${b.filing.autoFiledCount} auto-filed, ${b.filing.reviewedCount} reviewed`,
+    );
+    if (b.narrative) {
+      section.createEl("p", { text: b.narrative, cls: "ffs-briefing-narrative" });
+    }
+    if (b.truncated) {
+      section.createEl("p", {
+        text: `Lists were truncated to the top ${b.ceiling} items.`,
+        cls: "ffs-briefing-truncated",
+      });
+    }
+
+    // Needs your eye — the reconciliation picker.
+    if (b.needsYourEye.length > 0) {
+      section.createEl("h5", { text: `Needs your eye · ${b.counts.needsYourEye}` });
+      const list = section.createDiv({ cls: "ffs-briefing-list" });
+      for (const item of b.needsYourEye) this.renderNeedsYourEye(list, item);
+    }
+
+    // New people.
+    if (b.newPeople.length > 0) {
+      section.createEl("h5", { text: `New people · ${b.counts.newPeople}` });
+      const ul = section.createEl("ul", { cls: "ffs-briefing-ul" });
+      for (const p of b.newPeople) {
+        const li = ul.createEl("li");
+        li.appendText(p.display);
+        if (p.organization?.display) li.appendText(` · ${p.organization.display}`);
+        if (p.firstSeenArticle?.display) {
+          li.createSpan({ text: ` — ${p.firstSeenArticle.display}`, cls: "ffs-briefing-muted" });
+        }
+      }
+    }
+
+    // Changes (affiliation activity, ADR-031).
+    if (b.changes.length > 0) {
+      section.createEl("h5", { text: `Changes · ${b.counts.changes}` });
+      const ul = section.createEl("ul", { cls: "ffs-briefing-ul" });
+      for (const c of b.changes) {
+        const li = ul.createEl("li");
+        li.createSpan({ text: `[${c.kind}] `, cls: "ffs-flag-kind" });
+        li.appendText(changeLine(c));
+      }
+    }
+
+    // Trending organizations.
+    if (b.trendingOrgs.length > 0) {
+      section.createEl("h5", { text: `Trending organizations · ${b.counts.trendingOrgs}` });
+      const ul = section.createEl("ul", { cls: "ffs-briefing-ul" });
+      for (const o of b.trendingOrgs) {
+        ul.createEl("li", {
+          text: `${o.display} · ${o.mentionsThisWindow} mentions (was ${o.mentionsPriorWindow})`,
+        });
+      }
+    }
+
+    // Events by kind.
+    if (b.events.length > 0) {
+      section.createEl("h5", { text: `Events · ${b.counts.events}` });
+      for (const group of b.events) {
+        section.createEl("div", { text: group.kind, cls: "ffs-briefing-event-kind" });
+        const ul = section.createEl("ul", { cls: "ffs-briefing-ul" });
+        for (const ev of group.items) {
+          const li = ul.createEl("li");
+          li.appendText(ev.display);
+          if (ev.date) li.appendText(` · ${ev.date}`);
+          const who = ev.participants
+            .map((p) => (p.role ? `${p.display} (${p.role})` : p.display))
+            .filter((s) => s.length > 0);
+          if (who.length > 0) {
+            li.createSpan({ text: ` — ${who.join(", ")}`, cls: "ffs-briefing-muted" });
+          }
+        }
+      }
+    }
+
+    // Promotion candidates — promote (quarantined) / dismiss (local).
+    if (b.promotionCandidates.length > 0) {
+      section.createEl("h5", { text: `Promotion candidates · ${b.counts.promotionCandidates}` });
+      const list = section.createDiv({ cls: "ffs-briefing-list" });
+      for (const c of b.promotionCandidates) this.renderPromotionCandidate(list, c);
+    }
+
+    // Follow-ups — suggestions in text only.
+    if (b.followUps.length > 0) {
+      section.createEl("h5", { text: `Follow-ups · ${b.counts.followUps}` });
+      const ul = section.createEl("ul", { cls: "ffs-briefing-ul" });
+      for (const f of b.followUps) {
+        const li = ul.createEl("li");
+        li.appendText(f.display);
+        if (f.organization?.display) li.appendText(` · ${f.organization.display}`);
+        if (f.triggeringArticle?.display) {
+          li.createSpan({ text: ` — ${f.triggeringArticle.display}`, cls: "ffs-briefing-muted" });
+        }
+      }
+    }
+
+    // Possible duplicates — merge (either direction) / keep separate.
+    if (b.possibleDuplicates.length > 0) {
+      section.createEl("h5", { text: `Possible duplicates · ${b.counts.possibleDuplicates}` });
+      const list = section.createDiv({ cls: "ffs-briefing-list" });
+      for (const pair of b.possibleDuplicates) this.renderPossibleDuplicate(list, pair);
+    }
+
+    // Merges — the auditor's recent list plus this session's, each undoable.
+    this.renderSessionMerges(section, b);
+  }
+
+  private renderNeedsYourEye(parent: HTMLElement, item: NeedsYourEyeItem): void {
+    const card = parent.createDiv({ cls: "ffs-briefing-card" });
+    const title = card.createDiv({ cls: "ffs-briefing-card-title" });
+    title.appendText(item.display || item.localRef);
+    title.createSpan({ text: ` · ${item.predicate}`, cls: "ffs-briefing-muted" });
+    const actions = card.createDiv({ cls: "ffs-proposal-actions ffs-briefing-actions" });
+    for (const c of item.candidates) {
+      const btn = actions.createEl("button", { text: eyeCandidateLabel(c) });
+      btn.onclick = () =>
+        this.briefingAction("accept", () =>
+          this.plugin.briefing.resolveNeedsYourEye(item.submissionId, c.entity),
+        );
+    }
+    const someoneNew = actions.createEl("button", { text: "Someone new", cls: "mod-cta" });
+    someoneNew.onclick = () =>
+      this.briefingAction("accept", () =>
+        this.plugin.briefing.resolveNeedsYourEye(item.submissionId, "new"),
+      );
+    const reject = actions.createEl("button", { text: "Reject" });
+    reject.onclick = () =>
+      this.briefingAction("reject", () =>
+        this.plugin.briefing.rejectNeedsYourEye(item.submissionId),
+      );
+  }
+
+  private renderPromotionCandidate(parent: HTMLElement, c: PromotionCandidate): void {
+    const card = parent.createDiv({ cls: "ffs-briefing-card" });
+    const title = card.createDiv({ cls: "ffs-briefing-card-title" });
+    title.appendText(c.display);
+    if (c.organization?.display) title.appendText(` · ${c.organization.display}`);
+    card.createDiv({
+      text: `${c.mentionCount} mentions in ${c.articleCount} articles` + (c.reason ? ` — ${c.reason}` : ""),
+      cls: "ffs-briefing-muted",
+    });
+    const actions = card.createDiv({ cls: "ffs-proposal-actions ffs-briefing-actions" });
+    const promote = actions.createEl("button", { text: "Promote to contact", cls: "mod-cta" });
+    promote.onclick = () =>
+      this.briefingAction("promote", async () => {
+        await this.plugin.briefing.promote(c.entity);
+        new Notice(`FFS: ${c.display} proposed as a contact — accept it in the queue.`);
+        await this.plugin.summary.refresh();
+      });
+    const dismiss = actions.createEl("button", { text: "Dismiss" });
+    dismiss.onclick = () =>
+      this.briefingAction("dismiss", () => this.plugin.briefing.dismiss(c.entity));
+  }
+
+  private renderPossibleDuplicate(parent: HTMLElement, pair: PossibleDuplicate): void {
+    const card = parent.createDiv({ cls: "ffs-briefing-card" });
+    const title = card.createDiv({ cls: "ffs-briefing-card-title" });
+    title.appendText(`${refText(pair.entityA)} ↔ ${refText(pair.entityB)}`);
+    if (pair.family) title.createSpan({ text: ` · ${pair.family}`, cls: "ffs-briefing-muted" });
+    if (pair.sharedAliases.length > 0) {
+      card.createDiv({
+        text: `shared: ${pair.sharedAliases.join(", ")}`,
+        cls: "ffs-briefing-muted",
+      });
+    }
+    const actions = card.createDiv({ cls: "ffs-proposal-actions ffs-briefing-actions" });
+    const canAct = Boolean(pair.entityA.entity && pair.entityB.entity);
+    const bIntoA = actions.createEl("button", {
+      text: `Merge ${refText(pair.entityB)} into ${refText(pair.entityA)}`,
+      cls: "mod-cta",
+    });
+    bIntoA.disabled = !canAct;
+    bIntoA.onclick = () =>
+      this.briefingAction("merge", () => this.plugin.briefing.merge(pair, "b_into_a"));
+    const aIntoB = actions.createEl("button", {
+      text: `Merge ${refText(pair.entityA)} into ${refText(pair.entityB)}`,
+    });
+    aIntoB.disabled = !canAct;
+    aIntoB.onclick = () =>
+      this.briefingAction("merge", () => this.plugin.briefing.merge(pair, "a_into_b"));
+    const keep = actions.createEl("button", { text: "Keep separate" });
+    keep.disabled = !canAct;
+    keep.onclick = () =>
+      this.briefingAction("keep separate", () => this.plugin.briefing.keepSeparate(pair));
+  }
+
+  private renderSessionMerges(parent: HTMLElement, b: BriefingState): void {
+    const merges: MergeRecord[] = [
+      ...b.sessionMerges,
+      ...b.recentMerges.filter((r) => !b.sessionMerges.some((s) => s.sameAsHash === r.sameAsHash)),
+    ];
+    if (merges.length === 0) return;
+    parent.createEl("h5", { text: `Recent merges · ${merges.length}` });
+    const list = parent.createDiv({ cls: "ffs-briefing-list" });
+    for (const m of merges) {
+      const card = list.createDiv({ cls: "ffs-briefing-card" });
+      const title = card.createDiv({ cls: "ffs-briefing-card-title" });
+      title.appendText(`${refText(m.source)} → ${refText(m.target)}`);
+      if (m.txTime) title.createSpan({ text: ` · ${m.txTime.slice(0, 10)}`, cls: "ffs-briefing-muted" });
+      const actions = card.createDiv({ cls: "ffs-proposal-actions ffs-briefing-actions" });
+      const undo = actions.createEl("button", { text: "Undo merge" });
+      undo.onclick = () =>
+        this.briefingAction("undo merge", () => this.plugin.briefing.undoMerge(m.sameAsHash));
     }
   }
 
@@ -689,6 +990,11 @@ function uriBasename(uri: string): string {
   const stripped = uri.replace(/^file:\/\//, "");
   const idx = stripped.lastIndexOf("/");
   return idx >= 0 ? stripped.slice(idx + 1) : stripped;
+}
+
+/** Display text for an entity reference; the id when there is no display. */
+function refText(r: EntityRef): string {
+  return r.display || r.entity || "?";
 }
 
 /** Pull a human-readable string out of any thrown value. */

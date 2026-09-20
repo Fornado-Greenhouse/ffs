@@ -60,6 +60,23 @@ pub struct PathSpec {
     pub family: String,
     /// Claim field holding the display name (`display_name`, `title`).
     pub name_field: String,
+    /// Folder layout (task_41): `by_name` (default) files entities
+    /// under `<family>/by-name/<letter>/<basename>.md`; `flat` files
+    /// them directly as `<family>/<basename>.md`, for families whose
+    /// name field is not a name (a briefing's date).
+    #[serde(default)]
+    pub layout: PathLayout,
+}
+
+/// How a path family lays its files out on disk (ADR-028, task_41).
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PathLayout {
+    /// `<family>/by-name/<letter>/<basename>.md` plus `recent/`.
+    #[default]
+    ByName,
+    /// `<family>/<basename>.md` plus `recent/`.
+    Flat,
 }
 
 /// `[ontology]` table: BFO / CCO / IAO alignment annotations (ADR-031).

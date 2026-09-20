@@ -241,6 +241,57 @@ impl ProjectionRenderer {
         Ok(out)
     }
 
+    /// Walk a whole claim and resolve every entity reference in it
+    /// (task_41): any JSON object carrying a string `entity` key gains
+    /// `basename` (the target's projection file stem, or null when the
+    /// id is not a known entity) and, when it has no `display`, the
+    /// target's display name. Arrays and nested objects are walked;
+    /// everything else is copied. Templates whose claims nest
+    /// references at arbitrary depth (the auditor's briefing) render
+    /// `[[basename|display]]` wikilinks from the result without the
+    /// renderer naming any claim field.
+    fn resolve_refs_deep(
+        &self,
+        value: &serde_json::Value,
+        as_of: Option<&Iso8601>,
+    ) -> Result<serde_json::Value, RenderError> {
+        match value {
+            serde_json::Value::Array(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items {
+                    out.push(self.resolve_refs_deep(item, as_of)?);
+                }
+                Ok(serde_json::Value::Array(out))
+            }
+            serde_json::Value::Object(map) => {
+                let mut out = serde_json::Map::with_capacity(map.len() + 1);
+                for (k, v) in map {
+                    out.insert(k.clone(), self.resolve_refs_deep(v, as_of)?);
+                }
+                if let Some(id) = map.get("entity").and_then(|v| v.as_str()) {
+                    let link = self.link_for(id, as_of)?;
+                    out.insert(
+                        "basename".into(),
+                        match &link {
+                            Some(l) => serde_json::Value::String(l.basename.clone()),
+                            None => serde_json::Value::Null,
+                        },
+                    );
+                    if out.get("display").and_then(|v| v.as_str()).is_none()
+                        && let Some(l) = &link
+                    {
+                        out.insert(
+                            "display".into(),
+                            serde_json::Value::String(l.display.clone()),
+                        );
+                    }
+                }
+                Ok(serde_json::Value::Object(out))
+            }
+            other => Ok(other.clone()),
+        }
+    }
+
     /// Reverse lookup of `affiliation` atoms naming this entity as the
     /// bearer (`claim.person`) or the context (`claim.organization`).
     /// Returns the rows plus the contributing atom hashes. Empty when
@@ -511,6 +562,7 @@ impl ProjectionRenderer {
             "participants_resolved",
             &self.resolve_refs(head.claim.get("participants"), as_of)?,
         );
+        ctx.insert("claim_resolved", &self.resolve_refs_deep(&claim, as_of)?);
         let (affiliations, affiliation_hashes) =
             self.affiliations_for(entity, &loser_ids, as_of)?;
         ctx.insert("affiliations", &affiliations);

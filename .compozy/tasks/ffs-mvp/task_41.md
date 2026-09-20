@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Morning briefing — movers-and-shakers summary from the auditor (what we do next)
 type: backend
 complexity: medium
@@ -41,16 +41,26 @@ Amended 2026-09-14 (ADR-030, ADR-031). Two research findings reshape the derivat
 </requirements>
 
 ## Subtasks
-- [ ] 41.1 `auditor.briefing` predicate spec + Tera template + `briefings/` path family declaration (ADR-028 mechanism); render test.
-- [ ] 41.2 Auditor `briefing` op: window computation from the previous briefing's `window.to`; new-people from entity ids minted in the window; changes from `affiliation` atom activity (joined / left / retitled) plus `org.company` scalar supersession (org_changed); trending / events / promotion / follow-up derivations keyed by entity id over existing RPCs; documented check on whether a new RPC is needed.
-- [ ] 41.3 Scheduler: daemon drives `tick` and `briefing` on their own intervals; env vars documented; first-run window is 7 days.
-- [ ] 41.4 `audit.query` `kind` parameter (daemon + `api.rs`), `ffs_audit_query` MCP schema/translator update, `ffs health --briefing`.
-- [ ] 41.5 Plugin "Briefing" section: render latest briefing, **Promote to contact** (quarantined `contact.person` proposal with briefing provenance), **Dismiss** (30-day local suppression); "Needs your eye" rendered as the reconciliation picker; "Possible duplicates" with **Merge** (owner-signed `entity.same_as` via `entity.merge` (task_39)), **Keep separate** (owner-signed `entity.different_from`), and **Undo merge** (supersede the same-as atom); vitest coverage.
-- [ ] 41.6 e2e: file two CBJ-shaped articles (task_40 fixtures) mentioning the same new person and an org an existing contact is affiliated with; run the auditor `briefing` op; assert one `auditor.briefing` atom, a `briefings/<date>.md` file with `[[target|display]]` wikilinks, one promotion candidate, one follow-up.
-- [ ] 41.7 Docs: first-use-guide briefing section (including what "Needs your eye" and "Possible duplicates" ask of the owner and that merges are undoable); path-library overview gains `briefings/`; `skills/auditor/SKILL.md` documents the new op and wire shape.
-- [ ] 41.8 Resolver-facing derivations: `needs_your_eye[]` from quarantined proposals with resolver outcome `ambiguous` (via `ingest.list_pending`), `possible_duplicates[]` from alias overlap across live entities in the same family excluding pairs already related by `entity.same_as` or `entity.different_from`; both capped by the documented ceiling and ordered by overlap count.
+- [x] 41.1 `auditor.briefing` predicate spec + Tera template + `briefings/` path family declaration (ADR-028 mechanism); render test.
+- [x] 41.2 Auditor `briefing` op: window computation from the previous briefing's `window.to`; new-people from entity ids minted in the window; changes from `affiliation` atom activity (joined / left / retitled) plus `org.company` scalar supersession (org_changed); trending / events / promotion / follow-up derivations keyed by entity id over existing RPCs; documented check on whether a new RPC is needed.
+- [x] 41.3 Scheduler: daemon drives `tick` and `briefing` on their own intervals; env vars documented; first-run window is 7 days.
+- [x] 41.4 `audit.query` `kind` parameter (daemon + `api.rs`), `ffs_audit_query` MCP schema/translator update, `ffs health --briefing`.
+- [x] 41.5 Plugin "Briefing" section: render latest briefing, **Promote to contact** (quarantined `contact.person` proposal with briefing provenance), **Dismiss** (30-day local suppression); "Needs your eye" rendered as the reconciliation picker; "Possible duplicates" with **Merge** (owner-signed `entity.same_as` via `entity.merge` (task_39)), **Keep separate** (owner-signed `entity.different_from`), and **Undo merge** (supersede the same-as atom); vitest coverage.
+- [x] 41.6 e2e: file two CBJ-shaped articles (task_40 fixtures) mentioning the same new person and an org an existing contact is affiliated with; run the auditor `briefing` op; assert one `auditor.briefing` atom, a `briefings/<date>.md` file with `[[target|display]]` wikilinks, one promotion candidate, one follow-up.
+- [x] 41.7 Docs: first-use-guide briefing section (including what "Needs your eye" and "Possible duplicates" ask of the owner and that merges are undoable); path-library overview gains `briefings/`; `skills/auditor/SKILL.md` documents the new op and wire shape.
+- [x] 41.8 Resolver-facing derivations: `needs_your_eye[]` from quarantined proposals with resolver outcome `ambiguous` (via `ingest.list_pending`), `possible_duplicates[]` from alias overlap across live entities in the same family excluding pairs already related by `entity.same_as` or `entity.different_from`; both capped by the documented ceiling and ordered by overlap count.
 
 ## Implementation Details
+
+**As built (2026-09-20).** Two findings reshaped the work and are recorded here and in ADR-037.
+
+- *RPC check (requirement 1).* A windowed list-by-predicate could not be expressed: `atom.list` demanded an `entity`, `audit.query` lists only the auditor's own atoms, and `entity.search` is ranked and limited. Rather than a new method, `atom.list` gained an entity-less form `{predicate, since?, limit?}` (default 1000, ceiling 5000, newest first, capability-filtered) and every `atom.list` / `audit.query` row now carries its content `hash` (additive). The JSON-RPC method set gained `audit.run {op: tick|briefing, window_days?}` for on-demand runs, mirroring `courier.run`.
+- *Skills could not query the substrate in production.* The daemon installed `RefuseAllProxy` for the skills host, so the auditor's `tick` had never published from the binary either. `ffs_daemon::DispatcherProxy` (ADR-037) routes skill queries through the in-process dispatcher over a fixed allow-list (reads, `audit.publish_summary`, `ingest.submit`, `working_set.*`); accept, merge, retract, grant, and federation stay unreachable from bundles. The scheduler (`crates/ffs-daemon/src/scheduler.rs`) drives `tick` (24h) and `briefing` (7d) from `FFS_AUDITOR_TICK_INTERVAL` / `FFS_AUDITOR_BRIEFING_INTERVAL`; first run one interval after boot; `0`/`off` disables.
+- *Flat path layout.* `briefings/<date>.md` needs a family whose name field is a date, which the `by-name/<letter>/` layout cannot file. `[path]` gained `layout = "by_name" | "flat"` (default `by_name`); `FamilyEntry`, `PathFamily`, `path_for_basename`, and `parse` honor it; `recent/` works for both. The plugin's `paths.ts` still assumes `by-name` for editing classification; a flat page is read-only so this only means an edit to it routes to ingest as a correction (no reverse-map rules), and the plugin's folder view for `briefings/` shows the `recent/` listing.
+- *Wikilinks without field names in code.* The renderer adds `claim_resolved` to every template context: a deep copy of the claim in which every object carrying a string `entity` gains `basename` (from the path index) and a `display` when missing. The briefing template writes `[[basename|display]]` from that, so it survives renames (tested) and the substrate names no briefing field.
+- *Claim contract.* Every entity reference is `{entity, display}`; sections as the requirement lists plus `recent_merges[]` (for Undo merge on the next briefing) and `filing {auto_filed_count, reviewed_count}` computed from provenance kinds over the window's atoms. Documented in `skills/auditor/SKILL.md`.
+- *Deviations, deliberate.* `as_reported` for a departure is the affiliation's `valid_to` date (the requirement's `valid_from` would label the start date as the report date). Duplicate exclusion ignores superseded `same_as` / `different_from` atoms so an undone merge makes the pair a candidate again. The plugin's per-briefing suppression (merged, kept-separate, promoted, resolved) is in memory keyed by briefing hash; only dismissals persist, as required. "Undo merge" is offered in the briefing section (from `recent_merges[]` and session merges), not additionally in the daily summary's auto-filed section.
+
 Current structure: `skills/auditor/audit.py` exposes `handle({"op": "tick", "window_hours": N})` → `aggregate_metrics` (via `health.summary`) → `evaluate_flags` → `build_claim` → `publish` (`audit.publish_summary`). `crates/ffs-daemon/src/dispatch.rs::audit_query` lists atoms for the fixed entity `auditor` and predicate `auditor.daily_summary`, capability-filters, and sorts newest first; `AuditQueryParams` has only `since`. The daemon's `main.rs` currently wires the scribe and the ingest watcher; there is no periodic auditor driver visible in the binary (task_13's tick is invoked by tests and the plugin path) — 41.3 must confirm this and add the driver if absent. The plugin's `SummaryPanelModel` (`obsidian-plugin/src/summary.ts`) owns pending-proposal cards and `accept` / `reject`; the briefing section is a sibling model fed by `audit.query` with `kind: "briefing"`.
 
 "Changes" for people are derived from `affiliation` atoms (ADR-031), not from person scalars: an affiliation atom committed in the window with no `supersedes` is a join; one whose parent had no `valid_to` and whose head sets `valid_to` is a departure; one whose `title` differs from its parent's is a retitle. Organization changes still come from scalar supersession on `org.company` (name, location). Array-field growth on a person (a new `mentions[]` entry) is not a change, it is a mention. This lines up with ADR-029's routing: a join is additive and may auto-file, a departure or retitle supersedes an existing atom and was reviewed by the owner, so the briefing's "Changes" section is by construction the set of things the owner already confirmed plus the joins the policy filed. "New people" is the set of entity ids whose first atom has `tx_time` inside the window, which is well defined only because ADR-030 makes ids opaque and permanent; a renamed person keeps her id and is not "new".
@@ -94,28 +104,28 @@ The briefing publishes through the same `audit.publish_summary` path with `predi
 
 ## Tests
 - Unit tests:
-  - [ ] `test_briefing_new_people_from_first_seen_entity_ids`: fixture atoms: an entity id whose first atom is in-window appears in `new_people` with its first article; a renamed person (superseded `display_name`, same id) does not.
-  - [ ] `test_briefing_detects_joined_from_new_affiliation_atom`: a root `affiliation` atom in-window yields one `changes[]` entry of kind `joined` with the organization and source article.
-  - [ ] `test_briefing_detects_left_from_affiliation_valid_to`: a supersession that sets `valid_to` yields kind `left`.
-  - [ ] `test_briefing_detects_retitle_from_affiliation_title_supersession`: a supersession changing `title` yields kind `retitled` with from/to.
-  - [ ] `test_briefing_person_scalar_supersession_is_not_a_change`: a superseded `location` on a person yields no `changes[]` entry.
-  - [ ] `test_briefing_lists_ambiguous_proposals_as_needs_your_eye`: a pending proposal with resolver outcome `ambiguous` appears with its candidate list; `existing` and `new` proposals do not.
-  - [ ] `test_briefing_lists_alias_overlap_pairs_as_possible_duplicates`: two live people sharing an alias appear once as a pair; a pair already related by `same_as` or `different_from` does not.
-  - [ ] `test_briefing_trending_requires_growth_over_prior_window` — org with 3 mentions vs 1 prior is listed; 1 vs 1 is not.
-  - [ ] `test_briefing_promotion_threshold_by_article_count` — 3 articles → candidate; 2 → not (default threshold).
-  - [ ] `test_briefing_promotion_by_shared_org_with_existing_contact`.
-  - [ ] `test_briefing_follow_ups_for_contacts_whose_org_made_news`.
-  - [ ] `test_briefing_window_starts_at_previous_briefing_end` / `test_first_briefing_window_is_seven_days`.
-  - [ ] `test_briefing_truncates_over_ceiling_and_says_so_in_narrative`.
-  - [ ] Rust: `auditor_briefing_template_renders_all_sections_with_target_display_wikilinks` (every entity link is `[[basename|display]]` resolved from the id); `audit_query_kind_filters_briefing_from_daily_summary`; `audit_publish_summary_rejects_non_auditor_predicate`.
-  - [ ] MCP: `ffs_audit_query_passes_kind_filter`.
-  - [ ] Plugin (vitest): `briefing_section_renders_latest_briefing`; `promote_to_contact_submits_quarantined_proposal_with_briefing_provenance`; `dismiss_suppresses_candidate_for_thirty_days`; `needs_your_eye_picker_resolves_ambiguous_proposal_to_chosen_candidate_or_new`; `merge_possible_duplicate_writes_same_as_and_is_undoable`; `keep_separate_writes_different_from_and_pair_is_not_relisted`.
+  - [x] `test_briefing_new_people_from_first_seen_entity_ids`: fixture atoms: an entity id whose first atom is in-window appears in `new_people` with its first article; a renamed person (superseded `display_name`, same id) does not.
+  - [x] `test_briefing_detects_joined_from_new_affiliation_atom`: a root `affiliation` atom in-window yields one `changes[]` entry of kind `joined` with the organization and source article.
+  - [x] `test_briefing_detects_left_from_affiliation_valid_to`: a supersession that sets `valid_to` yields kind `left`.
+  - [x] `test_briefing_detects_retitle_from_affiliation_title_supersession`: a supersession changing `title` yields kind `retitled` with from/to.
+  - [x] `test_briefing_person_scalar_supersession_is_not_a_change`: a superseded `location` on a person yields no `changes[]` entry.
+  - [x] `test_briefing_lists_ambiguous_proposals_as_needs_your_eye`: a pending proposal with resolver outcome `ambiguous` appears with its candidate list; `existing` and `new` proposals do not.
+  - [x] `test_briefing_lists_alias_overlap_pairs_as_possible_duplicates`: two live people sharing an alias appear once as a pair; a pair already related by `same_as` or `different_from` does not.
+  - [x] `test_briefing_trending_requires_growth_over_prior_window` — org with 3 mentions vs 1 prior is listed; 1 vs 1 is not.
+  - [x] `test_briefing_promotion_threshold_by_article_count` — 3 articles → candidate; 2 → not (default threshold).
+  - [x] `test_briefing_promotion_by_shared_org_with_existing_contact`.
+  - [x] `test_briefing_follow_ups_for_contacts_whose_org_made_news`.
+  - [x] `test_briefing_window_starts_at_previous_briefing_end` / `test_first_briefing_window_is_seven_days`.
+  - [x] `test_briefing_truncates_over_ceiling_and_says_so_in_narrative`.
+  - [x] Rust: `auditor_briefing_template_renders_all_sections_with_target_display_wikilinks` (every entity link is `[[basename|display]]` resolved from the id); `audit_query_kind_filters_briefing_from_daily_summary`; `audit_publish_summary_rejects_non_auditor_predicate`.
+  - [x] MCP: `ffs_audit_query_passes_kind_filter`.
+  - [x] Plugin (vitest): `briefing_section_renders_latest_briefing`; `promote_to_contact_submits_quarantined_proposal_with_briefing_provenance`; `dismiss_suppresses_candidate_for_thirty_days`; `needs_your_eye_picker_resolves_ambiguous_proposal_to_chosen_candidate_or_new`; `merge_possible_duplicate_writes_same_as_and_is_undoable`; `keep_separate_writes_different_from_and_pair_is_not_relisted`.
 - Integration tests:
-  - [ ] `briefing_after_two_articles_yields_atom_file_candidate_and_follow_up` — `auditor_integration`.
-  - [ ] `briefing_after_join_and_departure_lists_both_changes_from_affiliation_atoms`: `auditor_integration`.
-  - [ ] `promote_to_contact_lands_in_quarantine_not_in_store` — `summary_panel_integration`.
-  - [ ] `merge_from_briefing_redirects_losing_entity_and_undo_restores_it`: `summary_panel_integration`; after merge, `entity.search` for the losing alias returns the winner; after undo, both entities are live again with no atoms moved.
-  - [ ] Scheduler smoke: with `FFS_AUDITOR_BRIEFING_INTERVAL=1s` in a test daemon, a briefing atom appears within the test budget.
+  - [x] `briefing_after_two_articles_yields_atom_file_candidate_and_follow_up` — `auditor_integration`.
+  - [x] `briefing_after_join_and_departure_lists_both_changes_from_affiliation_atoms`: `auditor_integration`.
+  - [x] `promote_to_contact_lands_in_quarantine_not_in_store` — `summary_panel_integration`.
+  - [x] `merge_from_briefing_redirects_losing_entity_and_undo_restores_it`: `summary_panel_integration`; after merge, `entity.search` for the losing alias returns the winner; after undo, both entities are live again with no atoms moved.
+  - [x] Scheduler smoke: with `FFS_AUDITOR_BRIEFING_INTERVAL=1s` in a test daemon, a briefing atom appears within the test budget.
 - Test coverage target: >=80%
 - All tests must pass
 
@@ -124,3 +134,12 @@ The briefing publishes through the same `audit.publish_summary` path with `predi
 - Promoting a candidate produces a `contact.person` card in the daily summary panel, not an atom; nothing reaches the store without the owner's accept. Merging a possible duplicate writes one owner-signed `entity.same_as` atom, moves no data, and is undone by one click.
 - An MCP agent can read the latest briefing with `ffs_audit_query {kind: "briefing"}` and the daily summary is unchanged for callers that omit `kind`.
 - The auditor remains stdlib-only and completes a briefing over a 500-atom window inside its timeout.
+
+## Result (2026-09-20)
+
+- Python: `skills/auditor/briefing.py` (pure derivations over dicts; `collect()` is the only RPC layer), 27 tests in `test_briefing.py`; `.venv/bin/python -m pytest skills/` → 258 passed. 500 atoms per predicate compute in 11 ms.
+- Rust: flat layout in `ffs-core` (`projection_task41.rs`), `claim_resolved` deep links, `auditor.briefing` spec + template, `atom.list` windowed form, `audit.query kind`, `audit.publish_summary predicate` (validates briefings against the spec; fresh entity each), `audit.run`, `DispatcherProxy`, scheduler, `ffs health --briefing`, `ffs_audit_query kind`. Tests: `briefing_task41.rs` (7), `briefing_e2e_task41.rs` (real auditor and scribe under a `SkillsHost` over the proxy: one briefing atom, new person, `joined` and `left` from affiliation atoms, trending org, one promotion candidate, one follow-up, the page with `[[basename|display]]` links, promotion lands in quarantine and not the store), `briefing_binary_task41.rs` (the binary with `FFS_AUDITOR_BRIEFING_INTERVAL=2s` publishes and files `briefings/<date>.md`; `audit.run` works), MCP `audit_kind_task41.rs`.
+- Plugin: `obsidian-plugin/src/briefing.ts` (`BriefingPanelModel`), section in `main.ts`, `settings.briefing.dismissed`; 12 tests in `briefing.test.ts`; `npm test` → 86 passed; `npm run build` ok.
+- Docs: first-use guide "The morning briefing" section and `briefings/` rows; ARCHITECTURE starter-set sentence; ADR-037; SKILL.md.
+- Not done, by scope: the plugin's `paths.ts` flat-layout awareness (see Implementation Details); Undo merge in the daily summary's auto-filed section (offered in the briefing section instead).
+

@@ -192,7 +192,7 @@ async fn cli_health_against_spawned_daemon() {
     let args = Args {
         socket: Some(server.socket.clone()),
         json: false,
-        command: Command::Health,
+        command: Command::Health { briefing: false },
     };
     let out = run(args).await;
     assert_eq!(out.code, 0, "expected EXIT_OK; stderr was:\n{}", out.stderr);
@@ -513,7 +513,7 @@ async fn courier_status_reads_health_summary() {
     let health = run(Args {
         socket: Some(server.socket.clone()),
         json: true,
-        command: Command::Health,
+        command: Command::Health { briefing: false },
     })
     .await;
     assert!(health.stdout.contains("\"courier\""), "{}", health.stdout);

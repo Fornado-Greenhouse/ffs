@@ -93,6 +93,15 @@ pub struct AtomListParams {
     pub predicate: Option<PredicateName>,
     #[serde(default)]
     pub as_of: Option<Iso8601>,
+    /// task_41: the entity-less form. With `predicate` and no
+    /// `entity`, list every atom of that predicate whose `tx_time` is
+    /// after `since` (all of them when omitted), newest first, up to
+    /// `limit` (default 1000, ceiling 5000). The auditor's briefing
+    /// reads its windows this way.
+    #[serde(default)]
+    pub since: Option<Iso8601>,
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -317,6 +326,27 @@ pub struct AuditPublishParams {
     /// Optional bitemporal anchor. Defaults to "now" if omitted.
     #[serde(default)]
     pub valid_from: Option<Iso8601>,
+    /// task_41: `auditor.daily_summary` (default; chains on the
+    /// `auditor` entity) or `auditor.briefing` (a fresh entity per
+    /// briefing, validated against the registered spec). Anything
+    /// else is refused.
+    #[serde(default)]
+    pub predicate: Option<String>,
+}
+
+/// `audit.run` (task_41): invoke the auditor skill once, on demand.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditRunParams {
+    /// `tick` (the daily summary) or `briefing`.
+    #[serde(default = "default_audit_op")]
+    pub op: String,
+    /// Briefing only: override the window start to this many days ago.
+    #[serde(default)]
+    pub window_days: Option<u32>,
+}
+
+fn default_audit_op() -> String {
+    "tick".into()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -325,6 +355,9 @@ pub struct AuditQueryParams {
     /// every auditor.daily_summary atom in the store.
     #[serde(default)]
     pub since: Option<Iso8601>,
+    /// task_41: `daily_summary` (default) or `briefing`.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

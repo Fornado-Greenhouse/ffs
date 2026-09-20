@@ -18,7 +18,7 @@
 use std::borrow::Cow;
 
 use crate::atom::PredicateName;
-use crate::predicate::{FamilyEntry, SpecRegistry};
+use crate::predicate::{FamilyEntry, PathLayout, SpecRegistry};
 
 /// Normalize OS-native path separators in a projection-path string to
 /// the substrate-canonical forward slash. The substrate's contract is
@@ -58,6 +58,8 @@ pub struct PathFamily {
     pub folder: String,
     pub predicate: PredicateName,
     pub name_field: String,
+    /// `by_name` (the default) or `flat` (task_41).
+    pub layout: PathLayout,
 }
 
 impl PathFamily {
@@ -66,6 +68,7 @@ impl PathFamily {
             folder: e.family.clone(),
             predicate: PredicateName::new(e.predicate.clone()),
             name_field: e.name_field.clone(),
+            layout: e.layout,
         }
     }
 
@@ -134,16 +137,19 @@ impl FamilyTable {
                 family: "contacts".into(),
                 predicate: "contact.person".into(),
                 name_field: "display_name".into(),
+                layout: PathLayout::ByName,
             },
             FamilyEntry {
                 family: "people".into(),
                 predicate: "person.generic".into(),
                 name_field: "display_name".into(),
+                layout: PathLayout::ByName,
             },
             FamilyEntry {
                 family: "notes".into(),
                 predicate: "note".into(),
                 name_field: "title".into(),
+                layout: PathLayout::ByName,
             },
         ])
     }
@@ -158,12 +164,19 @@ pub fn family_for_predicate(table: &FamilyTable, predicate: &PredicateName) -> O
     table.for_predicate(predicate)
 }
 
-/// Produce the canonical projection path for `(family, basename)` in
-/// the form `<folder>/by-name/<letter>/<basename>.md`. Returns `None`
-/// when the basename starts with a character that has no uppercased
-/// alphabetic form (e.g., an empty basename or a leading digit; the
-/// path library has no destination for those at MVP).
+/// Produce the canonical projection path for `(family, basename)`:
+/// `<folder>/by-name/<letter>/<basename>.md` for a `by_name` family,
+/// `<folder>/<basename>.md` for a `flat` one (task_41). For `by_name`,
+/// returns `None` when the basename starts with a character that has
+/// no uppercased alphabetic form (an empty basename or a leading digit;
+/// those belong in a `flat` family).
 pub fn path_for_basename(family: &PathFamily, basename: &str) -> Option<String> {
+    if family.layout == PathLayout::Flat {
+        if basename.is_empty() || basename.contains('/') {
+            return None;
+        }
+        return Some(format!("{}/{}.md", family.folder, basename));
+    }
     let first = basename.chars().next()?;
     let letter = first.to_uppercase().next()?;
     if !letter.is_alphabetic() {
@@ -226,6 +239,15 @@ pub fn parse(path: &str, table: &FamilyTable) -> Result<ParsedPath, PathError> {
             raw: trimmed.into(),
         }),
         [_, "recent"] => Ok(ParsedPath::Recent { family }),
+        // A flat family (task_41) files entities directly under its
+        // folder: `briefings/2026-09-20.md`.
+        [_, file] if family.layout == PathLayout::Flat && file.ends_with(".md") => {
+            let basename = file.strip_suffix(".md").unwrap_or(file);
+            Ok(ParsedPath::SingleEntity {
+                family,
+                basename: basename.to_string(),
+            })
+        }
         [_, "by-name", letter] => {
             if letter.chars().count() != 1 {
                 return Err(PathError::BadLetter((*letter).into()));
@@ -483,6 +505,7 @@ mod tests {
             folder: "widgets".into(),
             predicate: PredicateName::new("widget.thing"),
             name_field: "display_name".into(),
+            layout: PathLayout::ByName,
         });
         let t = FamilyTable::from_entries(
             entries
@@ -491,6 +514,7 @@ mod tests {
                     family: f.folder,
                     predicate: f.predicate.as_str().to_string(),
                     name_field: f.name_field,
+                    layout: f.layout,
                 })
                 .collect(),
         );

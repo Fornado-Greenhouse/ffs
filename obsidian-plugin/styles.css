@@ -299,3 +299,83 @@
   white-space: nowrap;
   max-width: 100%;
 }
+
+/* ---- Briefing (task_41) ---- */
+
+.ffs-briefing {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.ffs-briefing-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ffs-briefing-header h4 {
+  margin: 0;
+}
+
+.ffs-briefing h5 {
+  margin: 16px 0 4px;
+  font-size: 0.8em;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.ffs-briefing-page-link,
+.ffs-briefing-window,
+.ffs-briefing-muted,
+.ffs-briefing-empty,
+.ffs-briefing-truncated {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.ffs-briefing-narrative {
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+.ffs-briefing-ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.ffs-briefing-event-kind {
+  margin-top: 4px;
+  font-size: 0.85em;
+  font-family: var(--font-monospace);
+  color: var(--text-muted);
+}
+
+.ffs-briefing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ffs-briefing-card {
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  font-size: 0.9em;
+}
+
+.ffs-briefing-card-title {
+  font-weight: 500;
+}
+
+.ffs-briefing-actions {
+  margin-top: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}

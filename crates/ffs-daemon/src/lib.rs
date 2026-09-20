@@ -18,7 +18,9 @@ pub mod ingest_watcher;
 pub mod materializer;
 pub mod notify;
 pub mod resolver;
+pub mod scheduler;
 pub mod scribe;
+pub mod skill_proxy;
 pub mod transport;
 
 pub use api::{ApiError, ApiPayload, ApiRequest, ApiResponse, ERR_CAPABILITY_DENIED};
@@ -34,4 +36,8 @@ pub use ingest_watcher::{IngestWatcher, IngestWatcherConfig};
 pub use materializer::{MaterializeError, Materialized, WorkingSetMaterializer};
 pub use notify::{Event, EventPublisher};
 pub use resolver::{CandidateLookup, ResolveReport, StoreLookup, SubmissionContext, resolve_set};
+pub use scheduler::{
+    DEFAULT_BRIEFING_INTERVAL, DEFAULT_TICK_INTERVAL, parse_interval, spawn_schedule,
+};
 pub use scribe::{ResolvingExtractor, SkillsHostInvoker, SkillsHostScribeExtractor};
+pub use skill_proxy::{DispatcherProxy, SKILL_ALLOWED_METHODS};

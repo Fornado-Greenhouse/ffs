@@ -62,6 +62,9 @@ pub struct FamilyEntry {
     pub family: String,
     pub predicate: String,
     pub name_field: String,
+    /// Folder layout; `by_name` unless the spec says `flat` (task_41).
+    #[serde(default)]
+    pub layout: super::PathLayout,
 }
 
 #[derive(Debug, Error)]
@@ -202,6 +205,7 @@ impl SpecRegistry {
                     family: p.family.clone(),
                     predicate: s.name.clone(),
                     name_field: p.name_field.clone(),
+                    layout: p.layout,
                 })
             })
             .collect();

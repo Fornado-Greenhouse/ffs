@@ -73,6 +73,16 @@
 //! - `FFS_SCRIBE_ANTHROPIC_KEY` — API key for the Anthropic adapter.
 //!   When unset on macOS the scribe looks for the keychain item
 //!   `ffs-scribe-anthropic` (task_27/33 machinery).
+//! - `FFS_AUDITOR_TICK_INTERVAL` / `FFS_AUDITOR_BRIEFING_INTERVAL`
+//!   (task_41) — how often the daemon asks the auditor skill for the
+//!   daily health summary (default `24h`) and the morning briefing
+//!   (default `7d`; `1d` for a daily briefing). `<n><s|m|h|d>`; `0` or
+//!   `off` disables that schedule. The first run is one interval after
+//!   boot; `audit.run {op}` (`ffs health --briefing` reads the result)
+//!   runs one on demand. The briefing's own knobs
+//!   (`FFS_BRIEFING_PROMOTE_MIN_ARTICLES`, `FFS_BRIEFING_ATOM_CEILING`,
+//!   `FFS_BRIEFING_LIST_MAX`) are read by the skill; see
+//!   `skills/auditor/SKILL.md`.
 //! - Courier (task_40): the `courier` skill bundle writes
 //!   `$FFS_DATA_DIR/ingest/.courier/last_run.json` after each tick;
 //!   `health.summary.courier` and the `courier.status` RPC read it
@@ -104,7 +114,7 @@ use ffs_core::quarantine::IngestQuarantine;
 use ffs_core::quarantine_sqlite::SqliteQuarantine;
 use ffs_core::store::{AtomStore, SqliteAtomStore, StoreError};
 use ffs_core::working_set::InMemoryWorkingSet;
-use ffs_skills_host::{RefuseAllProxy, SkillsHost};
+use ffs_skills_host::SkillsHost;
 
 use ffs_daemon::ingest_watcher::{DEFAULT_POLL_INTERVAL, DEFAULT_STABILITY_WINDOW};
 use ffs_daemon::{
@@ -274,12 +284,15 @@ async fn run() -> Result<(), StartupError> {
     );
 
     // Skills host: discover bundles under $FFS_DATA_DIR/skills and
-    // spawn each as a supervised subprocess. `RefuseAllProxy` is
-    // the substrate-access stub; Phase 2 wires a real proxy that
-    // routes skill-side `query` frames through the dispatcher with
-    // the skill's identity.
+    // spawn each as a supervised subprocess. Skill-side `query` frames
+    // route through `DispatcherProxy` (task_41) into this daemon's
+    // dispatcher, allow-listed to reads, `audit.publish_summary`, and
+    // `ingest.submit`; the dispatcher is installed into the proxy
+    // once it exists (it needs the host for the scribe), and queries
+    // before that are refused with a clear message.
     let skills_dir = data_dir.join("skills");
-    let mut skills_host = SkillsHost::new(Arc::new(RefuseAllProxy));
+    let skill_proxy = Arc::new(ffs_daemon::DispatcherProxy::new());
+    let mut skills_host = SkillsHost::new(skill_proxy.clone());
     // Every skill gets FFS_DATA_DIR explicitly (the daemon may have
     // defaulted it from $HOME, in which case the variable is not in
     // our own environment) so bundles can read
@@ -363,6 +376,7 @@ async fn run() -> Result<(), StartupError> {
         suppression: Some(suppression.clone()),
     };
     let dispatcher = Arc::new(dispatcher);
+    skill_proxy.install(dispatcher.clone());
 
     // Working-set materializer: subscribes to event.atom.committed
     // and writes rendered projections to disk under $FFS_DATA_DIR/.
@@ -517,6 +531,54 @@ async fn run() -> Result<(), StartupError> {
         stability_window_ms = stability_window.as_millis() as u64,
         "ingest watcher started"
     );
+
+    // Auditor scheduler (task_41): the daily summary and the morning
+    // briefing on their own intervals, only when the auditor bundle
+    // is installed. Held so the tasks live until the daemon exits.
+    let _auditor_schedules = if skills_host.get("auditor").is_some() {
+        let invoker: Arc<dyn ffs_daemon::SkillInvoker> =
+            Arc::new(ffs_daemon::SkillsHostInvoker::new(skills_host.clone()));
+        let mut handles = Vec::new();
+        for (var, op, default) in [
+            (
+                "FFS_AUDITOR_TICK_INTERVAL",
+                "tick",
+                ffs_daemon::DEFAULT_TICK_INTERVAL,
+            ),
+            (
+                "FFS_AUDITOR_BRIEFING_INTERVAL",
+                "briefing",
+                ffs_daemon::DEFAULT_BRIEFING_INTERVAL,
+            ),
+        ] {
+            let every = match std::env::var(var) {
+                Ok(raw) => match ffs_daemon::parse_interval(&raw) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(var, error = %e, "ignoring bad interval; using default");
+                        Some(default)
+                    }
+                },
+                Err(_) => Some(default),
+            };
+            match every {
+                Some(every) => {
+                    tracing::info!(op, every_secs = every.as_secs(), "auditor schedule armed");
+                    handles.push(ffs_daemon::spawn_schedule(
+                        invoker.clone(),
+                        op,
+                        every,
+                        cancel.clone(),
+                    ));
+                }
+                None => tracing::info!(op, "auditor schedule disabled"),
+            }
+        }
+        handles
+    } else {
+        tracing::info!("auditor skill not installed; no auditor schedule");
+        Vec::new()
+    };
 
     transport::serve(&socket_path, dispatcher, cancel).await?;
     Ok(())

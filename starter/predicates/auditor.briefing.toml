@@ -1,0 +1,90 @@
+# auditor.briefing — the morning briefing (task_41).
+#
+# One atom per briefing, minted by the auditor skill from the atoms
+# committed since the previous briefing: who is new, who moved (from
+# `affiliation` activity, ADR-031), which organizations are trending,
+# what happened, who to promote, who to call, what needs the owner's
+# eye (the resolver's `ambiguous` proposals), and which files might be
+# the same person (alias overlap). Every entity reference is an
+# `{entity, display}` object keyed by the opaque id (ADR-030); the
+# renderer adds `basename` so the template writes `[[target|display]]`
+# wikilinks that survive renames.
+#
+# Files as `briefings/<date>.md` (a flat family: the name field is a
+# date, not a name). No reverse-map rules: the page is read-only, an
+# edit routes to ingest as a correction like any unmapped edit.
+#
+# The claim contract is documented in skills/auditor/SKILL.md.
+
+name = "auditor.briefing"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["date", "window", "narrative"]
+
+[claim_schema.properties]
+date = { type = "string" }
+cadence = { type = "string" }
+generated_at = { type = "string" }
+narrative = { type = "string" }
+truncated = { type = "boolean" }
+ceiling = { type = "integer" }
+new_people = { type = "array", items = { type = "object" } }
+changes = { type = "array", items = { type = "object" } }
+trending_orgs = { type = "array", items = { type = "object" } }
+events = { type = "array", items = { type = "object" } }
+promotion_candidates = { type = "array", items = { type = "object" } }
+follow_ups = { type = "array", items = { type = "object" } }
+needs_your_eye = { type = "array", items = { type = "object" } }
+possible_duplicates = { type = "array", items = { type = "object" } }
+recent_merges = { type = "array", items = { type = "object" } }
+filing = { type = "object" }
+
+[claim_schema.properties.window]
+type = "object"
+required = ["from", "to"]
+[claim_schema.properties.window.properties]
+from = { type = "string" }
+to = { type = "string" }
+
+[rendering]
+template = "auditor-briefing.md.tera"
+frontmatter_fields = ["date", "cadence"]
+body_sections = [
+    "Narrative",
+    "Needs your eye",
+    "New people",
+    "Changes",
+    "Trending organizations",
+    "Events",
+    "Promotion candidates",
+    "Follow-ups",
+    "Possible duplicates",
+    "Filing stats",
+]
+additive_sections = []
+
+# -------- pagination --------
+#
+# `briefings/recent/` lists newest first; there is no by-name listing
+# for a flat family.
+
+[pagination]
+strategy = "recency"
+
+# -------- projection family (ADR-028; flat layout, task_41) --------
+
+[path]
+family = "briefings"
+name_field = "date"
+layout = "flat"
+
+# -------- ontology alignment (ADR-031, informative only) --------
+
+[ontology]
+bfo = "generically dependent continuant"
+cco = "cco:ReportArtifact"
+iao = "iao:Report"
+note = "A derived report over a window of the owner's records; it asserts nothing about the world beyond what the cited atoms assert."

@@ -1,0 +1,98 @@
+---
+date: {{ claim.date }}
+{%- if claim.cadence %}
+cadence: {{ claim.cadence }}
+{%- endif %}
+window: {{ claim.window.from }} to {{ claim.window.to }}
+---
+{%- set r = claim_resolved %}
+{%- macro link(ref) %}{% if ref.basename %}[[{{ ref.basename }}|{{ ref.display }}]]{% else %}{{ ref.display }}{% endif %}{% endmacro link %}
+
+## Narrative
+
+{{ claim.narrative }}
+
+## Needs your eye
+{% if r.needs_your_eye and r.needs_your_eye | length > 0 %}
+{% for item in r.needs_your_eye -%}
+- {{ item.predicate }}: {{ item.display }} (submission {{ item.submission_id }}, ref {{ item.local_ref }})
+{% for c in item.candidates -%}
+  - could be {{ self::link(ref=c) }} ({{ c.score }})
+{% endfor -%}
+{% endfor %}
+{%- else %}
+Nothing waiting on you.
+{% endif %}
+## New people
+{% if r.new_people and r.new_people | length > 0 %}
+{% for p in r.new_people -%}
+- {{ self::link(ref=p) }}{% if p.organization %}, {{ self::link(ref=p.organization) }}{% endif %}{% if p.first_seen_article %}; first seen in {{ self::link(ref=p.first_seen_article) }}{% endif %}
+{% endfor %}
+{%- else %}
+No one new this window.
+{% endif %}
+## Changes
+{% if r.changes and r.changes | length > 0 %}
+{% for c in r.changes -%}
+- {{ self::link(ref=c) }} {{ c.kind }}{% if c.organization %} {{ self::link(ref=c.organization) }}{% endif %}{% if c.from and c.to %}: {{ c.from }} to {{ c.to }}{% elif c.to %}: {{ c.to }}{% endif %}{% if c.as_reported %} (as reported {{ c.as_reported }}){% endif %}{% if c.source_article %}; source {{ self::link(ref=c.source_article) }}{% endif %}
+{% endfor %}
+{%- else %}
+No joins, departures, or retitles recorded.
+{% endif %}
+## Trending organizations
+{% if r.trending_orgs and r.trending_orgs | length > 0 %}
+{% for o in r.trending_orgs -%}
+- {{ self::link(ref=o) }}: {{ o.mentions_this_window }} mentions (prior window {{ o.mentions_prior_window }})
+{% endfor %}
+{%- else %}
+No organization is trending.
+{% endif %}
+## Events
+{% if r.events and r.events | length > 0 %}
+{% for group in r.events -%}
+### {{ group.kind }}
+{% for e in group.items -%}
+- {{ self::link(ref=e) }}{% if e.date %} ({{ e.date }}){% endif %}{% if e.participants and e.participants | length > 0 %}: {% for p in e.participants %}{{ self::link(ref=p) }}{% if p.role %} ({{ p.role }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+{% endfor %}
+{% endfor %}
+{%- else %}
+No events this window.
+{% endif %}
+## Promotion candidates
+{% if r.promotion_candidates and r.promotion_candidates | length > 0 %}
+{% for p in r.promotion_candidates -%}
+- {{ self::link(ref=p) }}{% if p.organization %}, {{ self::link(ref=p.organization) }}{% endif %}: {{ p.article_count }} articles, {{ p.mention_count }} mentions. {{ p.reason }}
+{% endfor %}
+{%- else %}
+No one to promote yet.
+{% endif %}
+## Follow-ups
+{% if r.follow_ups and r.follow_ups | length > 0 %}
+{% for f in r.follow_ups -%}
+- {{ self::link(ref=f) }} at {{ self::link(ref=f.organization) }}{% if f.triggering_article %}: see {{ self::link(ref=f.triggering_article) }}{% endif %}
+{% endfor %}
+{%- else %}
+No one to call about the news.
+{% endif %}
+## Possible duplicates
+{% if r.possible_duplicates and r.possible_duplicates | length > 0 %}
+{% for d in r.possible_duplicates -%}
+- {{ self::link(ref=d.entity_a) }} and {{ self::link(ref=d.entity_b) }} ({{ d.family }}) share {{ d.shared_aliases | join(sep=", ") }}
+{% endfor %}
+{%- else %}
+No files look like the same person or organization.
+{% endif %}
+{%- if r.recent_merges and r.recent_merges | length > 0 %}
+### Recent merges (undoable)
+{% for m in r.recent_merges -%}
+- {{ self::link(ref=m.source) }} merged into {{ self::link(ref=m.target) }} ({{ m.tx_time }})
+{% endfor %}
+{%- endif %}
+## Filing stats
+{% if claim.filing %}
+- auto-filed: {{ claim.filing.auto_filed_count | default(value=0) }}
+- reviewed: {{ claim.filing.reviewed_count | default(value=0) }}
+{% endif -%}
+{% if claim.truncated %}
+Lists were truncated at the {{ claim.ceiling }}-atom ceiling.
+{% endif %}

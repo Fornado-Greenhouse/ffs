@@ -18,6 +18,7 @@ const MVP_THREE: &[&str] = &["contact.person", "person.generic", "note"];
 /// The full starter set after task_38 (ADR-028, ADR-030, ADR-031).
 const EXPECTED_PREDICATES: &[&str] = &[
     "affiliation",
+    "auditor.briefing",
     "contact.person",
     "entity.different_from",
     "entity.same_as",
@@ -69,6 +70,7 @@ fn family_table_declares_the_folders_and_only_the_folders() {
         table,
         vec![
             ("articles".into(), "source.article".into(), "title".into()),
+            ("briefings".into(), "auditor.briefing".into(), "date".into()),
             (
                 "contacts".into(),
                 "contact.person".into(),
@@ -171,7 +173,7 @@ fn full_starter_reverse_map_rule_count_is_recorded() {
         .sum();
     assert_eq!(
         total, 55,
-        "expected 55 reverse-map rules across the nine starter specs"
+        "expected 55 reverse-map rules across the ten starter specs (the briefing has none)"
     );
 }
 

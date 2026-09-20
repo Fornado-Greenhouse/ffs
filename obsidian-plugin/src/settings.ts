@@ -15,6 +15,7 @@
 import type { App, Plugin, PluginSettingTab } from "obsidian";
 
 import type { FamilyEntry } from "./paths.js";
+import type { BriefingLocalState } from "./briefing.js";
 
 export interface FfsPluginSettings {
   socketPath: string;
@@ -25,6 +26,10 @@ export interface FfsPluginSettings {
    * enumerate when the daemon is down, replaced on each successful
    * load. Empty until the daemon has answered once. */
   knownFamilies: FamilyEntry[];
+  /** Briefing-section local state (task_41): promotion candidates
+   * the owner dismissed, with the dismissal time. Not user-edited;
+   * plugin data rather than an atom. */
+  briefing: BriefingLocalState;
 }
 
 export const DEFAULT_SETTINGS: FfsPluginSettings = {
@@ -35,6 +40,7 @@ export const DEFAULT_SETTINGS: FfsPluginSettings = {
   cliPath: "ffs",
   identityKeyPath: "",
   knownFamilies: [],
+  briefing: { dismissed: {} },
 };
 
 /**

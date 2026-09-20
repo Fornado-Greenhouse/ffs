@@ -1197,6 +1197,7 @@ impl Dispatcher {
             "working_set.evict_to_cap" => self.working_set_evict_to_cap(req.params).await,
             "audit.publish_summary" => self.audit_publish_summary(req.params).await,
             "audit.query" => self.audit_query(req.params).await,
+            "audit.run" => self.audit_run(req.params).await,
             "ingest.list_pending" => self.ingest_list_pending().await,
             "ingest.accept" => self.ingest_accept(req.params).await,
             "ingest.reject" => self.ingest_reject(req.params).await,
@@ -1261,15 +1262,41 @@ impl Dispatcher {
 
     async fn atom_list(&self, params: Value) -> Result<Value, ApiError> {
         let p: AtomListParams = parse_params(params)?;
-        let entity = p.entity.ok_or_else(|| ApiError {
-            code: ERR_INVALID_PARAMS,
-            message: "atom.list requires `entity` (entity-less listing not in MVP)".into(),
-            data: None,
-        })?;
-        let atoms = self
-            .store
-            .list_by_entity(&entity, p.predicate.as_ref(), p.as_of.as_ref())
-            .map_err(store_err)?;
+        let atoms = match (&p.entity, &p.predicate) {
+            (Some(entity), _) => self
+                .store
+                .list_by_entity(entity, p.predicate.as_ref(), p.as_of.as_ref())
+                .map_err(store_err)?,
+            // task_41: the entity-less, windowed form. Existing RPCs
+            // could not express "every atom of a predicate since a
+            // watermark" (`atom.list` demanded an entity, `audit.query`
+            // lists only the auditor's own atoms, `entity.search` is
+            // ranked and limited), so this form was added here rather
+            // than as a new method.
+            (None, Some(predicate)) => {
+                let limit = p.limit.unwrap_or(ATOM_LIST_DEFAULT_LIMIT);
+                if limit == 0 || limit > ATOM_LIST_MAX_LIMIT {
+                    return Err(ApiError {
+                        code: ERR_INVALID_PARAMS,
+                        message: format!(
+                            "atom.list `limit` must be between 1 and {ATOM_LIST_MAX_LIMIT}"
+                        ),
+                        data: None,
+                    });
+                }
+                self.store
+                    .list_by_predicate(predicate, p.since.as_ref(), limit)
+                    .map_err(store_err)?
+            }
+            (None, None) => {
+                return Err(ApiError {
+                    code: ERR_INVALID_PARAMS,
+                    message: "atom.list requires `entity`, or `predicate` for the windowed form"
+                        .into(),
+                    data: None,
+                });
+            }
+        };
 
         let now = current_iso8601();
         // Capability-filter the returned list.
@@ -1293,7 +1320,11 @@ impl Dispatcher {
                 allowed.push(env);
             }
         }
-        to_value(&allowed)
+        // Each row carries its content hash (task_41): a caller that
+        // needs to walk a supersession chain or cite the atom would
+        // otherwise have to recompute it.
+        let rows: Vec<Value> = allowed.iter().map(with_hash).collect::<Result<_, _>>()?;
+        Ok(Value::Array(rows))
     }
 
     async fn projection_render(&self, params: Value) -> Result<Value, ApiError> {
@@ -2312,14 +2343,57 @@ impl Dispatcher {
             message: "audit.publish_summary requires a configured daemon signing key".into(),
             data: None,
         })?;
+        // task_41: two auditor predicates. The daily summary chains on
+        // the singleton `auditor` entity; a briefing is its own entity
+        // (one file per date under `briefings/`) and must validate
+        // against the registered spec so the template can rely on the
+        // claim contract.
+        let predicate_name = p
+            .predicate
+            .clone()
+            .unwrap_or_else(|| DAILY_SUMMARY_PREDICATE.to_string());
+        if predicate_name != DAILY_SUMMARY_PREDICATE && predicate_name != BRIEFING_PREDICATE {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!(
+                    "audit.publish_summary publishes only {DAILY_SUMMARY_PREDICATE} or {BRIEFING_PREDICATE}; got {predicate_name}"
+                ),
+                data: None,
+            });
+        }
+        let is_briefing = predicate_name == BRIEFING_PREDICATE;
+        if is_briefing {
+            if self.registry.get(BRIEFING_PREDICATE).is_none() {
+                return Err(ApiError {
+                    code: ERR_NOT_IMPLEMENTED,
+                    message: format!(
+                        "{BRIEFING_PREDICATE} is not registered; install the starter spec"
+                    ),
+                    data: None,
+                });
+            }
+            self.registry
+                .validate_claim(BRIEFING_PREDICATE, &p.claim)
+                .map_err(|e| ApiError {
+                    code: ERR_INVALID_PARAMS,
+                    message: format!("briefing claim rejected: {e}"),
+                    data: None,
+                })?;
+        }
+        let predicate = PredicateName::new(&predicate_name);
+        let entity = if is_briefing {
+            EntityId::mint()
+        } else {
+            EntityId::new("auditor")
+        };
 
         // Capability check: the caller must hold Write on the
-        // auditor.daily_summary predicate (auditor identity in
-        // production; owner during MVP).
+        // auditor predicate (auditor identity in production; owner
+        // during MVP).
         let now = current_iso8601();
         let target = Target {
-            predicate: PredicateName::new("auditor.daily_summary"),
-            entity: EntityId::new("auditor"),
+            predicate: predicate.clone(),
+            entity: entity.clone(),
             classification: None,
             tier: None,
         };
@@ -2337,27 +2411,27 @@ impl Dispatcher {
 
         // Chain newest-on-newest: if a previous summary exists, the
         // new one supersedes it. Provides a stable single-entity
-        // "current summary" head for `audit.query`.
-        let supersedes = self
-            .store
-            .head_of_chain(
-                &EntityId::new("auditor"),
-                &PredicateName::new("auditor.daily_summary"),
-                None,
-            )
-            .map_err(store_err)?
-            .map(|env| env.content_hash())
-            .transpose()
-            .map_err(|e| ApiError {
-                code: ERR_INTERNAL,
-                message: format!("content_hash: {e}"),
-                data: None,
-            })?;
+        // "current summary" head for `audit.query`. A briefing is a
+        // fresh entity and never supersedes.
+        let supersedes = if is_briefing {
+            None
+        } else {
+            self.store
+                .head_of_chain(&entity, &predicate, None)
+                .map_err(store_err)?
+                .map(|env| env.content_hash())
+                .transpose()
+                .map_err(|e| ApiError {
+                    code: ERR_INTERNAL,
+                    message: format!("content_hash: {e}"),
+                    data: None,
+                })?
+        };
 
         let tmpl = AtomTemplate {
             v: 1,
-            entity: EntityId::new("auditor"),
-            predicate: PredicateName::new("auditor.daily_summary"),
+            entity,
+            predicate,
             claim: p.claim,
             valid_from: p.valid_from.unwrap_or_else(|| now.clone()),
             valid_to: None,
@@ -2397,14 +2471,36 @@ impl Dispatcher {
             params
         };
         let p: AuditQueryParams = parse_params(params)?;
-        let atoms = self
-            .store
-            .list_by_entity(
-                &EntityId::new("auditor"),
-                Some(&PredicateName::new("auditor.daily_summary")),
-                p.since.as_ref(),
-            )
-            .map_err(store_err)?;
+        let kind = p.kind.as_deref().unwrap_or("daily_summary");
+        let atoms = match kind {
+            "daily_summary" => self
+                .store
+                .list_by_entity(
+                    &EntityId::new("auditor"),
+                    Some(&PredicateName::new(DAILY_SUMMARY_PREDICATE)),
+                    p.since.as_ref(),
+                )
+                .map_err(store_err)?,
+            // task_41: briefings are one entity each, so they list by
+            // predicate.
+            "briefing" => self
+                .store
+                .list_by_predicate(
+                    &PredicateName::new(BRIEFING_PREDICATE),
+                    p.since.as_ref(),
+                    ATOM_LIST_DEFAULT_LIMIT,
+                )
+                .map_err(store_err)?,
+            other => {
+                return Err(ApiError {
+                    code: ERR_INVALID_PARAMS,
+                    message: format!(
+                        "audit.query `kind` must be daily_summary or briefing; got {other}"
+                    ),
+                    data: None,
+                });
+            }
+        };
 
         let now = current_iso8601();
         let mut visible = Vec::with_capacity(atoms.len());
@@ -2428,9 +2524,50 @@ impl Dispatcher {
             }
         }
         // Most-recent first by tx_time so the daily-health-summary
-        // panel can take the head.
+        // panel can take the head. Rows carry their hash (task_41) so
+        // the plugin can cite the briefing a promotion came from.
         visible.sort_by(|a, b| b.tx_time.as_str().cmp(a.tx_time.as_str()));
-        to_value(&visible)
+        let rows: Vec<Value> = visible.iter().map(with_hash).collect::<Result<_, _>>()?;
+        Ok(Value::Array(rows))
+    }
+
+    /// `audit.run` (task_41): one auditor pass on demand, through the
+    /// skills host: `tick` publishes the daily summary, `briefing`
+    /// publishes a briefing. The scheduler in `main.rs` drives the
+    /// same two ops on their intervals.
+    async fn audit_run(&self, params: Value) -> Result<Value, ApiError> {
+        let params = if params.is_null() {
+            serde_json::json!({})
+        } else {
+            params
+        };
+        let p: AuditRunParams = parse_params(params)?;
+        if p.op != "tick" && p.op != "briefing" {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!("audit.run `op` must be tick or briefing; got {}", p.op),
+                data: None,
+            });
+        }
+        let Some(invoker) = self.skill_invoker.as_ref() else {
+            return Err(ApiError {
+                code: ERR_NOT_IMPLEMENTED,
+                message: "audit.run: no skills host is wired into this daemon".into(),
+                data: None,
+            });
+        };
+        let mut input = serde_json::json!({"op": p.op});
+        if let Some(days) = p.window_days {
+            input["window_days"] = serde_json::json!(days);
+        }
+        invoker
+            .invoke("auditor", input)
+            .await
+            .map_err(|reason| ApiError {
+                code: ERR_NOT_IMPLEMENTED,
+                message: format!("audit.run: {reason}"),
+                data: None,
+            })
     }
 
     /// Internal helper: list working-set entries, re-render each,
@@ -2461,6 +2598,28 @@ impl Dispatcher {
 }
 
 // ---- helpers ----
+
+/// The two predicates `audit.publish_summary` signs (task_41).
+pub const DAILY_SUMMARY_PREDICATE: &str = "auditor.daily_summary";
+pub const BRIEFING_PREDICATE: &str = "auditor.briefing";
+/// `atom.list` windowed form: default and ceiling for `limit`.
+pub const ATOM_LIST_DEFAULT_LIMIT: usize = 1000;
+pub const ATOM_LIST_MAX_LIMIT: usize = 5000;
+
+/// An atom envelope as a JSON object with its content hash added as
+/// `hash` (task_41). Additive: every field the envelope had is kept.
+fn with_hash(env: &ffs_core::AtomEnvelope) -> Result<Value, ApiError> {
+    let hash = env.content_hash().map_err(|e| ApiError {
+        code: ERR_INTERNAL,
+        message: format!("content_hash: {e}"),
+        data: None,
+    })?;
+    let mut v = to_value(env)?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("hash".into(), Value::String(hash.to_multibase()));
+    }
+    Ok(v)
+}
 
 fn parse_params<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, ApiError> {
     serde_json::from_value(params).map_err(|e| ApiError {

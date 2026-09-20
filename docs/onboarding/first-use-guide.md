@@ -168,6 +168,8 @@ explore:
 | `people/by-name/<letter>/` | Generic person records (not part of your contact graph). |
 | `notes/by-name/<letter>/` | Your free-form notes. |
 | `audit/daily/<date>.md` | Each day's auditor summary as a rendered Markdown file. |
+| `briefings/<date>.md` | The morning briefing: who is new, who moved, what to do next (see below). |
+| `briefings/recent/` | The last few briefings, newest first. |
 
 You can bookmark any of these in Obsidian's sidebar.
 
@@ -394,6 +396,52 @@ events). You read one source and decide what it produced, together.
   a parse warning under that section rather than a guess.
 - The Obsidian panel now shows only a count line ("N pending, M need
   your eye") and a link to today's inbox.
+
+## The morning briefing
+
+Once the courier is filing the paper and the clerk is keeping the
+cabinets current, the question is no longer "what arrived?" but
+"who moved, what's new, who should I call?" The auditor answers
+that once a week (by default) in a page at `briefings/<date>.md`,
+and the daily summary panel shows the same briefing with buttons.
+Reading it top to bottom takes a few minutes:
+
+1. **Needs your eye.** Proposals the resolver could not place:
+   "this Pat Example could be the one at Acme or the one at the
+   county." Pick a candidate, or "someone new", or reject. Nothing
+   is filed until you choose.
+2. **New people.** People whose file was created in the window,
+   with the article they first appeared in.
+3. **Changes.** Joins, departures, and retitles, read from
+   affiliation records. Dates are labelled "as reported": the
+   press reports the announcement, not the start date.
+4. **Trending organizations.** Organizations mentioned more this
+   window than last.
+5. **Events.** What happened, grouped by kind, with who was
+   involved.
+6. **Promotion candidates.** People mentioned often enough (three
+   articles, by default), or affiliated with an organization one of
+   your contacts is affiliated with. **Promote to contact** files a
+   proposal into the same review queue as everything else; it is
+   not a contact until you accept it. **Dismiss** hides the
+   suggestion for thirty days.
+7. **Follow-ups.** Contacts whose organization made news, with the
+   article, so you know who to call.
+8. **Possible duplicates.** Two files that share a name or alias.
+   **Merge** joins them (one file, both histories kept, undoable
+   with one click on the next briefing). **Keep separate** records
+   that they are different people so the question never comes back.
+
+Every name on the page is a link to that person's or organization's
+file, and the link survives renames.
+
+Cadence: weekly by default. For a daily briefing set
+`FFS_AUDITOR_BRIEFING_INTERVAL=1d` in the daemon's environment (your
+technical friend knows where). `ffs health --briefing` prints the
+latest one in the terminal, and an agent connected over MCP can read
+it with `ffs_audit_query` and `kind: "briefing"` to draft the
+follow-ups for you. The briefing never changes your files: every
+action on it is a click you make.
 
 ## What to do when something looks wrong
 
