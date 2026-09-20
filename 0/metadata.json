@@ -287,6 +287,37 @@
         "label": "Skill: cy-execute-task",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_015A4bY9vY15kwh7Jtt5n1sX",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2813,
+        "end": 2814,
+        "entry_ids": [
+          "8513de21-58b7-49d4-9220-630af466139d"
+        ],
+        "tool_use_id": "toolu_015A4bY9vY15kwh7Jtt5n1sX"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015A4bY9vY15kwh7Jtt5n1sX"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {

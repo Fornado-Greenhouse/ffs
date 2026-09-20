@@ -1559,3 +1559,20 @@ An accept grant without `--max-per-day` or `--unlimited` exits 64 before any RPC
 **One behavior worth the parent's eye.** The owner's accept of a role change keeps the person head's `role` scalar, because the shared signing path merges additively per ADR-030 and the role change lives in the new affiliation. The classifier still routes it to review as the spec requires. The e2e test asserts this as designed; if the intent was for an owner accept to overwrite the scalar, that is a task_45 signing-path decision, not a task_39 one.</result>
 <usage><subagent_tokens>202623</subagent_tokens><tool_uses>106</tool_uses><duration_ms>1665061</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a928af324a0cf2952</task-id>
+<tool-use-id>toolu_016AE1pXnXrtyeXu6gPHaCv8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a928af324a0cf2952.output</output-file>
+<status>completed</status>
+<summary>Agent "Write task_49: wire the fast-path watcher" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: wrote `.compozy/tasks/ffs-mvp/task_49.md` and added its row plus a build-order line to `_tasks.md`; nothing else touched, nothing committed.
+
+- `task_49.md`: status pending, type backend, complexity medium, dependencies task_09, task_38, task_39; Overview states the finding (watcher never ran in the binary; `ffs-fastpath` depends on `ffs-daemon` for `EventPublisher` and the `Dispatcher` behind `DispatcherSink`; `main.rs` never references it; `fastpath.submit` stub), the two broken promises (no editor-edit absorption; inbox ticks render but do not apply), and that an ADR is optional with a short ADR-036 recommended. Requirements: decide and record the dependency shape (inversion recommended: move `EventPublisher`/`Event` and `DecisionSink` into `ffs-core` or a tiny `ffs-events` crate so `ffs-daemon` can depend on `ffs-fastpath`; sidecar alternative listed with its costs and rejected unless the inversion is too invasive), start the watcher in `main.rs` after the materializers with the registry's families plus `inbox/`, a `DispatcherSink`, and the one shared `SuppressionRegistry`; implement or delete `fastpath.submit`; two binary e2e tests (editor edit absorbed within budget; inbox `accept` tick applied and re-rendered under Decided); keep all existing tests green; update ARCHITECTURE.md. Subtasks 49.1 to 49.6, Implementation Details (why the cycle exists, the clean cut, the sidecar for the record), Relevant/Dependent files, Related ADRs, Deliverables, Tests, Success Criteria.
+- `_tasks.md`: row 49 after row 48; build-order step "6b. **Task 49.** ..." inserted before step 7.
+- `compozy tasks validate --name ffs-mvp`: all tasks valid (49 scanned).</result>
+<usage><subagent_tokens>891789</subagent_tokens><tool_uses>2</tool_uses><duration_ms>73232</duration_ms></usage>
+</task-notification>
