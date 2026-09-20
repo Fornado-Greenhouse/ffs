@@ -1,0 +1,355 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M30DAK2Z74JTGFPVHBJXWQ1N",
+  "session_id": "af7c00f1-b4ce-4505-8d35-b5ec4e0c9341",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T22:00:04.65453Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "eeefe00fd6cd",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 7024,
+    "cache_creation_tokens": 7376971,
+    "cache_read_tokens": 156935270,
+    "output_tokens": 396707,
+    "api_call_count": 304
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-goal-2026-09-14T01:32:22.806698Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "3a0c281baba0",
+      "timestamp": "2026-09-14T01:32:22.806698Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01W1FjK8eYw6scz7kqwtatCt",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30,
+        "end": 31,
+        "entry_ids": [
+          "e9ee3f4f-b247-46e0-b362-d7be417895b7"
+        ],
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JEz9snmjRR7fayyfWwfKTf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1428,
+        "end": 1429,
+        "entry_ids": [
+          "acc22cd1-0f7a-48b2-b339-32a26fa9ce71"
+        ],
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01AtFqmqtwyuW5QTAY3MianU",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1826,
+        "end": 1827,
+        "entry_ids": [
+          "d6ba85b3-ffab-4cf8-a7ce-f82b1cec09f0"
+        ],
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Y6DyeARd37HStrSeobkJFp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2105,
+        "end": 2106,
+        "entry_ids": [
+          "4e89967d-eadf-41b9-9e14-0515d6140bb4"
+        ],
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015LpifjMCeA5NktGSdFvFGx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2236,
+        "end": 2237,
+        "entry_ids": [
+          "58076d69-e469-49c3-bdb7-658440bdbf1b"
+        ],
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_017chWquExT7jptaMoL2mh93",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2625,
+        "end": 2626,
+        "entry_ids": [
+          "60aa3ac9-48af-45eb-a421-07b96f7359e3"
+        ],
+        "tool_use_id": "toolu_017chWquExT7jptaMoL2mh93"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017chWquExT7jptaMoL2mh93"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015A4bY9vY15kwh7Jtt5n1sX",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "eeefe00fd6cd",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2813,
+        "end": 2814,
+        "entry_ids": [
+          "8513de21-58b7-49d4-9220-630af466139d"
+        ],
+        "tool_use_id": "toolu_015A4bY9vY15kwh7Jtt5n1sX"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015A4bY9vY15kwh7Jtt5n1sX"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 66
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 2859,
+      "user_lines_removed": 30,
+      "agent_lines_added": 4022,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        ".compozy/tasks/ffs-mvp/adrs/README.md": 1,
+        ".compozy/tasks/ffs-mvp/adrs/adr-027.md": 1,
+        ".compozy/tasks/ffs-mvp/adrs/adr-035.md": 8,
+        "ARCHITECTURE.md": 1,
+        "README.md": 2,
+        "crates/ffs-core/src/atom.rs": 10,
+        "crates/ffs-core/src/capability/mod.rs": 8,
+        "crates/ffs-core/src/capability/scope.rs": 56,
+        "crates/ffs-core/src/quarantine.rs": 8,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 8,
+        "crates/ffs-core/src/store/migrations.rs": 2,
+        "crates/ffs-core/src/store/mod.rs": 1,
+        "crates/ffs-core/src/store/schema.rs": 7,
+        "crates/ffs-core/src/store/sqlite.rs": 2,
+        "crates/ffs-core/tests/clip_tier_task48.rs": 75,
+        "crates/ffs-daemon/src/dispatch.rs": 18,
+        "crates/ffs-daemon/src/scribe.rs": 6,
+        "crates/ffs-daemon/tests/federation_pull_integration.rs": 92,
+        "crates/ffs-daemon/tests/filing_cabinet_task38.rs": 1,
+        "crates/ffs-daemon/tests/ingest_pipeline_e2e.rs": 244,
+        "crates/ffs-daemon/tests/scribe_integration.rs": 1,
+        "crates/ffs-daemon/tests/summary_panel_integration.rs": 3,
+        "crates/ffs-mcp/src/lib.rs": 5,
+        "crates/ffs-mcp/src/tools.rs": 96,
+        "crates/ffs-mcp/tests/mcp_integration.rs": 4,
+        "crates/ffs-mcp/tests/morning_read_skill_docs_task48.rs": 56,
+        "docs/agent-memory/CONVENTION.md": 2,
+        "docs/agent-memory/README.md": 6,
+        "docs/agent-memory/skill/ffs-morning-read/SKILL.md": 103,
+        "docs/onboarding/first-use-guide.md": 4,
+        "skills/scribe/contract.py": 102,
+        "skills/scribe/engine.py": 25,
+        "skills/scribe/tests/test_morning_read.py": 75
+      },
+      "user_removed_per_file": {
+        ".compozy/tasks/ffs-mvp/adrs/README.md": 1,
+        ".compozy/tasks/ffs-mvp/adrs/adr-027.md": 1,
+        "ARCHITECTURE.md": 1,
+        "README.md": 2,
+        "crates/ffs-core/src/capability/mod.rs": 4,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 3,
+        "crates/ffs-core/src/store/migrations.rs": 1,
+        "crates/ffs-core/src/store/mod.rs": 1,
+        "crates/ffs-daemon/src/dispatch.rs": 2,
+        "crates/ffs-mcp/src/lib.rs": 4,
+        "crates/ffs-mcp/src/tools.rs": 4,
+        "crates/ffs-mcp/tests/mcp_integration.rs": 3,
+        "docs/agent-memory/README.md": 2,
+        "skills/scribe/engine.py": 1
+      }
+    }
+  ]
+}
