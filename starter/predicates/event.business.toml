@@ -93,3 +93,12 @@ bfo = "process"
 cco = "cco:Act"
 iao = ""
 note = "An occurrent with participants; date is its temporal region; kind names the process type; participants carry a role in the event."
+
+# -------- quarantine policy (ADR-029) --------
+#
+# Records of this predicate are events, not state: a new one never
+# overwrites anything, so a proposal is always additive and may
+# auto-file under an `Accept` grant.
+
+[quarantine]
+append_only = true

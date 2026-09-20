@@ -33,6 +33,12 @@ pub enum Event {
     },
     #[serde(rename = "event.federation.peer.changed")]
     FederationPeerChanged { peer: String },
+    /// The quarantine's pending set changed (a submission completed
+    /// extraction, was accepted, rejected, auto-filed, retracted, or
+    /// merged). The inbox materializer (ADR-032) re-renders
+    /// `inbox/<date>.md` on this event.
+    #[serde(rename = "event.quarantine.changed")]
+    QuarantineChanged { submission_id: Option<String> },
 }
 
 /// On-the-wire frame: JSON-RPC notification envelope with the event flattened in.

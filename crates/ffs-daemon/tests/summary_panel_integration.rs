@@ -133,6 +133,7 @@ fn setup() -> Harness {
         peer_mounts: Arc::new(InMemoryPeerMount::new()),
         data_dir: None,
         skill_invoker: None,
+        ingest_agent_identity: None,
     };
     Harness {
         _dir: dir,

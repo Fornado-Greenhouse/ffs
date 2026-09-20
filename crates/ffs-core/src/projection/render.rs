@@ -248,6 +248,7 @@ impl ProjectionRenderer {
     fn affiliations_for(
         &self,
         entity: &EntityId,
+        merged_losers: &[EntityId],
         as_of: Option<&Iso8601>,
     ) -> Result<(Vec<AffiliationRow>, Vec<Multihash>), RenderError> {
         if self.registry.get(AFFILIATION_PREDICATE).is_none() {
@@ -282,9 +283,12 @@ impl ProjectionRenderer {
                 .get("organization")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let (side, other) = if person == entity.as_str() {
+            // A merge loser's affiliations belong to the winner (ADR-030).
+            let is_self =
+                |id: &str| id == entity.as_str() || merged_losers.iter().any(|l| l.as_str() == id);
+            let (side, other) = if is_self(person) {
                 ("person", org)
-            } else if org == entity.as_str() {
+            } else if is_self(org) {
                 ("organization", person)
             } else {
                 continue;
@@ -339,9 +343,14 @@ impl ProjectionRenderer {
         if self.registry.get(SAME_AS_PREDICATE).is_none() {
             return Ok(None);
         }
-        self.store
+        let head = self
+            .store
             .head_of_chain(entity, &PredicateName::new(SAME_AS_PREDICATE), as_of)
-            .map_err(RenderError::Store)
+            .map_err(RenderError::Store)?;
+        // An undone merge (the same_as head carries a `valid_to`) no
+        // longer redirects; the loser renders on its own again. Mirrors
+        // `AtomStore::same_as_target`.
+        Ok(head.filter(|h| h.valid_to.is_none()))
     }
 
     fn render_single_entity(
@@ -411,9 +420,78 @@ impl ProjectionRenderer {
         // (ADR-031 reverse lookup). Templates that ignore the extras
         // render byte-identically to before task_38.
         let as_of = req.as_of.as_ref();
+
+        // Merge winners (ADR-029, ADR-030): a loser's atoms stay in place
+        // and render under the winner. Fold each loser's head of this
+        // predicate into the context: `merged_from` names them, their
+        // additive arrays join the rendered claim (winner's items first,
+        // then the loser's not already present), and their head hashes
+        // count as sources so a change on either side re-renders.
+        let mut claim = head.claim.clone();
+        let mut merged_from: Vec<serde_json::Value> = Vec::new();
+        let mut loser_hashes: Vec<Multihash> = Vec::new();
+        let mut loser_ids: Vec<EntityId> = Vec::new();
+        if self.registry.get(SAME_AS_PREDICATE).is_some() {
+            let name_field = spec
+                .path
+                .as_ref()
+                .map(|p| p.name_field.clone())
+                .unwrap_or_else(|| "display_name".to_string());
+            for loser in self
+                .store
+                .same_as_losers(entity, as_of)
+                .map_err(RenderError::Store)?
+            {
+                let Some(loser_head) = self
+                    .store
+                    .head_of_chain(&loser, &predicate, as_of)
+                    .map_err(RenderError::Store)?
+                else {
+                    continue;
+                };
+                let display = loser_head
+                    .claim
+                    .get(&name_field)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(loser.as_str())
+                    .to_string();
+                merged_from.push(serde_json::json!({
+                    "entity": loser.as_str(),
+                    "display": display,
+                    "basename": self.basename_for(&family, &loser)?,
+                }));
+                loser_ids.push(loser.clone());
+                if let (Some(dst), Some(src)) =
+                    (claim.as_object_mut(), loser_head.claim.as_object())
+                {
+                    for (key, value) in src {
+                        let Some(items) = value.as_array() else {
+                            continue;
+                        };
+                        let entry = dst
+                            .entry(key.clone())
+                            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                        if let Some(existing) = entry.as_array_mut() {
+                            for item in items {
+                                if !existing.contains(item) {
+                                    existing.push(item.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                loser_hashes.push(
+                    loser_head
+                        .content_hash()
+                        .map_err(|e| RenderError::Serialization(e.to_string()))?,
+                );
+            }
+        }
+
         let mut ctx = Context::new();
         ctx.insert("entity", entity.as_str());
-        ctx.insert("claim", &head.claim);
+        ctx.insert("claim", &claim);
+        ctx.insert("merged_from", &merged_from);
         ctx.insert("classification", head.classification.as_str());
         ctx.insert("basename", &self.basename_for(&family, entity)?);
         for (field, key) in [
@@ -433,7 +511,8 @@ impl ProjectionRenderer {
             "participants_resolved",
             &self.resolve_refs(head.claim.get("participants"), as_of)?,
         );
-        let (affiliations, affiliation_hashes) = self.affiliations_for(entity, as_of)?;
+        let (affiliations, affiliation_hashes) =
+            self.affiliations_for(entity, &loser_ids, as_of)?;
         ctx.insert("affiliations", &affiliations);
 
         let markdown = self
@@ -451,6 +530,7 @@ impl ProjectionRenderer {
 
         let mut source_atoms = vec![head_hash];
         source_atoms.extend(affiliation_hashes);
+        source_atoms.extend(loser_hashes);
         Ok(ProjectionResponse {
             markdown,
             render_hash,

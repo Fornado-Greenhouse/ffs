@@ -153,6 +153,7 @@ fn setup() -> Harness {
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
         data_dir: Some(data_dir.clone()),
         skill_invoker: Some(invoker.clone()),
+        ingest_agent_identity: None,
     });
     Harness {
         _dir: dir,

@@ -119,6 +119,7 @@ fn setup() -> Harness {
         working_set_dir: working_set_dir.clone(),
         ingest_dir: ingest_dir.clone(),
         suppression,
+        decision_sink: None,
     };
 
     Harness {

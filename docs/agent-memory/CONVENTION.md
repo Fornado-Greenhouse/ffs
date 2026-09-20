@@ -325,6 +325,8 @@ The owner's decisions have priority over anything the agent inferred.
 
 The daily summary is where the owner exercises this override. Agents do not get a vote there.
 
+Auto-filing (ADR-029) is the owner's grant, not the agent's decision: a proposal files itself only because the owner issued a capability with the `accept` action for that agent, and the grant never covers a proposal that would overwrite an existing fact or one whose identity is ambiguous. Those always wait for the owner.
+
 The same priority applies to publisher policy. What may be fetched or clipped from a publisher, and when, is the owner's configuration in `$FFS_DATA_DIR/config/sources.toml`. The software records the publishers' terms so the owner can decide and applies the owner's setting as written; it does not adjudicate the owner's license or fair-use position (ADR-035, amended 2026-09-15). An agent MUST NOT substitute its own reading of a publisher's terms for the owner's setting.
 
 ---

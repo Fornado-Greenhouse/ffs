@@ -324,6 +324,7 @@ mod tests {
             pagination: None,
             path: None,
             ontology: None,
+            quarantine: None,
         }
     }
 

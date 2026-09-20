@@ -107,6 +107,8 @@ fn status_to_str(s: &SubmissionStatus) -> &'static str {
         SubmissionStatus::Failed => "failed",
         SubmissionStatus::Accepted => "accepted",
         SubmissionStatus::Rejected => "rejected",
+        SubmissionStatus::AutoAccepted => "auto_accepted",
+        SubmissionStatus::PartiallyAccepted => "partially_accepted",
     }
 }
 
@@ -117,6 +119,8 @@ fn status_from_str(s: &str) -> Result<SubmissionStatus, QuarantineError> {
         "failed" => Ok(SubmissionStatus::Failed),
         "accepted" => Ok(SubmissionStatus::Accepted),
         "rejected" => Ok(SubmissionStatus::Rejected),
+        "auto_accepted" => Ok(SubmissionStatus::AutoAccepted),
+        "partially_accepted" => Ok(SubmissionStatus::PartiallyAccepted),
         other => Err(QuarantineError::BadTransition {
             from: other.into(),
             to: "<unknown>".into(),
@@ -172,6 +176,7 @@ struct SubmissionRow {
     status: String,
     failure_reason: Option<String>,
     accepted_hashes_json: String,
+    auto_accepted_hashes_json: String,
 }
 
 fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission, QuarantineError> {
@@ -184,6 +189,7 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
         status,
         failure_reason,
         accepted_hashes_json,
+        auto_accepted_hashes_json,
     } = row;
     let mut stmt = conn
         .prepare(
@@ -251,7 +257,52 @@ fn row_to_submission(conn: &Connection, row: SubmissionRow) -> Result<Submission
         proposals,
         failure_reason,
         accepted_atom_hashes: decode_hashes(&accepted_hashes_json),
+        auto_accepted_atom_hashes: decode_hashes(&auto_accepted_hashes_json),
     })
+}
+
+const SELECT_SUBMISSION: &str = "SELECT id, source_uri, content_hash, content, tx_time, status,
+        failure_reason, accepted_atom_hashes, auto_accepted_atom_hashes
+ FROM quarantine_submissions";
+
+type SubmissionTuple = (
+    String,
+    String,
+    Vec<u8>,
+    Vec<u8>,
+    String,
+    String,
+    Option<String>,
+    String,
+    String,
+);
+
+fn map_submission_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SubmissionTuple> {
+    Ok((
+        row.get::<_, String>(0)?,
+        row.get::<_, String>(1)?,
+        row.get::<_, Vec<u8>>(2)?,
+        row.get::<_, Vec<u8>>(3)?,
+        row.get::<_, String>(4)?,
+        row.get::<_, String>(5)?,
+        row.get::<_, Option<String>>(6)?,
+        row.get::<_, String>(7)?,
+        row.get::<_, String>(8)?,
+    ))
+}
+
+fn tuple_to_row(t: SubmissionTuple) -> SubmissionRow {
+    SubmissionRow {
+        id: t.0,
+        source_uri: t.1,
+        content_hash: t.2,
+        content: t.3,
+        tx_time: t.4,
+        status: t.5,
+        failure_reason: t.6,
+        accepted_hashes_json: t.7,
+        auto_accepted_hashes_json: t.8,
+    }
 }
 
 #[async_trait]
@@ -295,99 +346,37 @@ impl IngestQuarantine for SqliteQuarantine {
         let conn = self.conn.lock().unwrap();
         let row = conn
             .query_row(
-                "SELECT id, source_uri, content_hash, content, tx_time, status,
-                        failure_reason, accepted_atom_hashes
-                 FROM quarantine_submissions WHERE id = ?1",
+                &format!("{SELECT_SUBMISSION} WHERE id = ?1"),
                 params![id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Vec<u8>>(2)?,
-                        row.get::<_, Vec<u8>>(3)?,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, String>(5)?,
-                        row.get::<_, Option<String>>(6)?,
-                        row.get::<_, String>(7)?,
-                    ))
-                },
+                map_submission_row,
             )
             .ok()?;
-        row_to_submission(
-            &conn,
-            SubmissionRow {
-                id: row.0,
-                source_uri: row.1,
-                content_hash: row.2,
-                content: row.3,
-                tx_time: row.4,
-                status: row.5,
-                failure_reason: row.6,
-                accepted_hashes_json: row.7,
-            },
-        )
-        .ok()
+        row_to_submission(&conn, tuple_to_row(row)).ok()
     }
 
     async fn list(&self, status_filter: Option<SubmissionStatus>) -> Vec<Submission> {
         let conn = self.conn.lock().unwrap();
-        let (sql, status_str): (&str, Option<&str>) = match status_filter.as_ref() {
-            None => (
-                "SELECT id, source_uri, content_hash, content, tx_time, status,
-                        failure_reason, accepted_atom_hashes
-                 FROM quarantine_submissions
-                 ORDER BY id ASC",
-                None,
-            ),
+        let (sql, status_str): (String, Option<&str>) = match status_filter.as_ref() {
+            None => (format!("{SELECT_SUBMISSION} ORDER BY id ASC"), None),
             Some(s) => (
-                "SELECT id, source_uri, content_hash, content, tx_time, status,
-                        failure_reason, accepted_atom_hashes
-                 FROM quarantine_submissions
-                 WHERE status = ?1
-                 ORDER BY id ASC",
+                format!("{SELECT_SUBMISSION} WHERE status = ?1 ORDER BY id ASC"),
                 Some(status_to_str(s)),
             ),
         };
-        let Ok(mut stmt) = conn.prepare(sql) else {
+        let Ok(mut stmt) = conn.prepare(&sql) else {
             return Vec::new();
         };
-
-        let mapper = |row: &rusqlite::Row<'_>| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
-                row.get::<_, Vec<u8>>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, String>(7)?,
-            ))
-        };
         let rows_iter = if let Some(s) = status_str {
-            stmt.query_map(params![s], mapper)
+            stmt.query_map(params![s], map_submission_row)
         } else {
-            stmt.query_map([], mapper)
+            stmt.query_map([], map_submission_row)
         };
         let Ok(rows_iter) = rows_iter else {
             return Vec::new();
         };
-
         let mut out = Vec::new();
         for row in rows_iter.flatten() {
-            if let Ok(sub) = row_to_submission(
-                &conn,
-                SubmissionRow {
-                    id: row.0,
-                    source_uri: row.1,
-                    content_hash: row.2,
-                    content: row.3,
-                    tx_time: row.4,
-                    status: row.5,
-                    failure_reason: row.6,
-                    accepted_hashes_json: row.7,
-                },
-            ) {
+            if let Ok(sub) = row_to_submission(&conn, tuple_to_row(row)) {
                 out.push(sub);
             }
         }
@@ -511,7 +500,10 @@ impl IngestQuarantine for SqliteQuarantine {
             )
             .map_err(|_| QuarantineError::NotFound(id.to_string()))?;
         let current = status_from_str(&current_status)?;
-        if current != SubmissionStatus::Extracted {
+        if !matches!(
+            current,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
             return Err(QuarantineError::BadTransition {
                 from: status_to_str(&current).into(),
                 to: "accepted".into(),
@@ -541,7 +533,10 @@ impl IngestQuarantine for SqliteQuarantine {
             )
             .map_err(|_| QuarantineError::NotFound(id.to_string()))?;
         let current = status_from_str(&current_status)?;
-        if current != SubmissionStatus::Extracted {
+        if !matches!(
+            current,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
             return Err(QuarantineError::BadTransition {
                 from: status_to_str(&current).into(),
                 to: "rejected".into(),
@@ -553,6 +548,73 @@ impl IngestQuarantine for SqliteQuarantine {
         )
         .map_err(map_io)?;
         Ok(())
+    }
+
+    async fn auto_accept(
+        &self,
+        id: &str,
+        atom_hashes: Vec<Multihash>,
+        remaining_pending: bool,
+    ) -> Result<(), QuarantineError> {
+        let conn = self.conn.lock().unwrap();
+        let (status, existing_json): (String, String) = conn
+            .query_row(
+                "SELECT status, auto_accepted_atom_hashes FROM quarantine_submissions WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|_| QuarantineError::NotFound(id.to_string()))?;
+        let current = status_from_str(&status)?;
+        if !matches!(
+            current,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
+            return Err(QuarantineError::BadTransition {
+                from: status_to_str(&current).into(),
+                to: "auto_accepted".into(),
+            });
+        }
+        let mut all = decode_hashes(&existing_json);
+        all.extend(atom_hashes);
+        let next = if remaining_pending {
+            SubmissionStatus::PartiallyAccepted
+        } else {
+            SubmissionStatus::AutoAccepted
+        };
+        conn.execute(
+            "UPDATE quarantine_submissions
+             SET status = ?1, auto_accepted_atom_hashes = ?2
+             WHERE id = ?3",
+            params![status_to_str(&next), encode_hashes(&all), id],
+        )
+        .map_err(map_io)?;
+        Ok(())
+    }
+
+    async fn list_auto_filed(
+        &self,
+        since: Option<&Iso8601>,
+    ) -> Result<Vec<(Multihash, Submission)>, QuarantineError> {
+        let conn = self.conn.lock().unwrap();
+        let sql = format!(
+            "{SELECT_SUBMISSION} WHERE auto_accepted_atom_hashes != '[]' AND tx_time > ?1
+             ORDER BY tx_time DESC, id DESC"
+        );
+        let since_str = since.map(|t| t.as_str().to_string()).unwrap_or_default();
+        let mut stmt = conn.prepare(&sql).map_err(map_io)?;
+        let rows: Vec<SubmissionTuple> = stmt
+            .query_map(params![since_str], map_submission_row)
+            .map_err(map_io)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_io)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let sub = row_to_submission(&conn, tuple_to_row(row))?;
+            for h in &sub.auto_accepted_atom_hashes {
+                out.push((h.clone(), sub.clone()));
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -616,6 +678,43 @@ mod tests {
         q.complete(&id2, vec![proposal("note")]).await.unwrap();
         let bare = q.get(&id2).await.unwrap().proposals.remove(0);
         assert!(bare.resolution.is_none() && bare.candidates.is_empty() && !bare.ends_role);
+    }
+
+    #[tokio::test]
+    async fn auto_accept_records_hashes_and_partial_then_full_status_and_lists_them() {
+        let q = SqliteQuarantine::open_in_memory(&dek()).unwrap();
+        let id = q.submit("u".into(), b"x".to_vec()).await.unwrap();
+        q.complete(
+            &id,
+            vec![proposal("org.company"), proposal("person.generic")],
+        )
+        .await
+        .unwrap();
+        let h1 = Multihash::blake3_of(b"auto-1");
+        q.auto_accept(&id, vec![h1.clone()], true).await.unwrap();
+        let sub = q.get(&id).await.unwrap();
+        assert_eq!(sub.status, SubmissionStatus::PartiallyAccepted);
+        assert_eq!(sub.auto_accepted_atom_hashes, vec![h1.clone()]);
+        assert!(
+            sub.accepted_atom_hashes.is_empty(),
+            "owner accepts stay separate"
+        );
+        let h2 = Multihash::blake3_of(b"auto-2");
+        q.auto_accept(&id, vec![h2.clone()], false).await.unwrap();
+        let sub = q.get(&id).await.unwrap();
+        assert_eq!(sub.status, SubmissionStatus::AutoAccepted);
+        assert_eq!(sub.auto_accepted_atom_hashes, vec![h1.clone(), h2.clone()]);
+        let listed = q.list_auto_filed(None).await.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|(_, s)| s.id == id));
+        let none = q
+            .list_auto_filed(Some(&Iso8601::new("2999-01-01T00:00:00Z").unwrap()))
+            .await
+            .unwrap();
+        assert!(none.is_empty());
+        // Owner-accepted submissions are not auto-filed.
+        let err = q.auto_accept(&id, vec![], false).await.unwrap_err();
+        assert!(matches!(err, QuarantineError::BadTransition { .. }));
     }
 
     #[tokio::test]

@@ -97,6 +97,9 @@ pub struct IngestWatcherConfig {
     pub quarantine: Arc<dyn IngestQuarantine>,
     pub scribe: Option<Arc<dyn ScribeExtractor>>,
     pub publisher: Arc<EventPublisher>,
+    /// ADR-029 auto-filer run after each extraction; `None` disables
+    /// auto-filing for watcher submissions (tests, read-only daemons).
+    pub auto_filer: Option<Arc<crate::autofile::AutoFiler>>,
     pub cancel: CancellationToken,
     pub poll_interval: Duration,
     /// How long a file must sit with unchanged content before the
@@ -137,6 +140,7 @@ impl IngestWatcher {
                 quarantine: cfg.quarantine,
                 scribe: cfg.scribe,
                 publisher: cfg.publisher,
+                auto_filer: cfg.auto_filer,
                 cancel: cfg.cancel,
                 stability_window: cfg.stability_window,
             },
@@ -155,6 +159,7 @@ struct EventLoopCtx {
     quarantine: Arc<dyn IngestQuarantine>,
     scribe: Option<Arc<dyn ScribeExtractor>>,
     publisher: Arc<EventPublisher>,
+    auto_filer: Option<Arc<crate::autofile::AutoFiler>>,
     cancel: CancellationToken,
     stability_window: Duration,
 }
@@ -386,6 +391,7 @@ async fn process_one(ctx: &EventLoopCtx, path: &Path) {
     if let Some(scribe) = ctx.scribe.clone() {
         let quarantine = ctx.quarantine.clone();
         let publisher = ctx.publisher.clone();
+        let auto_filer = ctx.auto_filer.clone();
         let submission_id = submission_id.clone();
         tokio::spawn(async move {
             match scribe.extract(&source_uri, &content).await {
@@ -397,9 +403,21 @@ async fn process_one(ctx: &EventLoopCtx, path: &Path) {
                     // Obsidian plugin's summary panel can refresh.
                     let hash = Multihash::blake3_of(&content);
                     debug!(submission_id = %submission_id, proposal_count = proposals.len(), "scribe extraction done");
-                    let _ = publisher; // reserved for a future `event.ingest.extracted` channel
                     if let Err(e) = quarantine.complete(&submission_id, proposals).await {
                         warn!(error = %e, id = %submission_id, "ingest_watcher: quarantine_complete_failed");
+                    }
+                    publisher.publish(crate::notify::Event::QuarantineChanged {
+                        submission_id: Some(submission_id.clone()),
+                    });
+                    if let Some(af) = auto_filer.as_ref() {
+                        match af.auto_file(&submission_id).await {
+                            Ok(r) => {
+                                debug!(id = %submission_id, filed = r.filed.len(), pending = r.pending.len(), "ingest_watcher: auto_file")
+                            }
+                            Err(e) => {
+                                warn!(error = %e.message, id = %submission_id, "ingest_watcher: auto_file failed; submission left pending")
+                            }
+                        }
                     }
                     let _ = hash;
                 }
@@ -525,6 +543,7 @@ mod tests {
             quarantine,
             scribe: Some(Arc::new(StubScribe) as Arc<dyn ScribeExtractor>),
             publisher: Arc::new(EventPublisher::new()),
+            auto_filer: None,
             cancel: CancellationToken::new(),
             stability_window: Duration::ZERO,
         }

@@ -36,10 +36,12 @@ pub use federation_peers::{
 };
 pub use multibase::MultibaseError;
 pub use multihash::{Multihash, MultihashError};
+pub use predicate::QuarantineSpec;
 pub use quarantine::{
     Candidate, CrossRef, InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError,
     Resolution, Submission, SubmissionStatus,
 };
+pub use quarantine::{Filing, classify};
 pub use quarantine_sqlite::SqliteQuarantine;
 pub use resolution::{
     BlockingConfig, BlockingKey, FieldWeight, ResolutionConfig, ResolutionConfigError, Thresholds,

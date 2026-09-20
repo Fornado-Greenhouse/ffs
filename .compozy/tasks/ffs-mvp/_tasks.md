@@ -42,7 +42,7 @@
 | 36 | Scribe v2: predicate-schema-driven extraction with pluggable engines | completed | high | task_11, task_26, task_32, task_42 |
 | 37 | Agent memory convention: adopt okf-agent-memory practices (ADR-027) | completed | medium | task_16, task_23 |
 | 38 | Filing cabinet: registry-declared path families + business-graph predicates and wikilinked templates (ADR-028) | completed | high | task_20, task_21, task_25, task_36, task_37 |
-| 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | pending | high | task_29, task_38, task_44, task_45 |
+| 39 | Auto-file policy: Accept capability action + additive/conflict routing in the quarantine (ADR-029) | completed | high | task_29, task_38, task_44, task_45 |
 | 40 | Courier: deterministic email-and-feeds intake + ffs_search v2 + URL dedup (pointers only for terms-restricted publishers) | completed | medium | task_37, task_38, task_43, task_45 |
 | 41 | Morning briefing: movers-and-shakers summary from the auditor | pending | medium | task_13, task_38, task_39, task_40 |
 | 42 | Spike: extraction quality on real business-press articles (gates task_36) | completed | low | task_11 |
@@ -52,6 +52,7 @@
 | 46 | Attestations, derived status, and staleness (ADR-034 local half) | pending | medium | task_38, task_41 |
 | 47 | Shared intake and shared accuracy over federation (ADR-034 federation half) | pending | high | task_15, task_40, task_45, task_46 |
 | 48 | Morning read: the owner-present reading session skill (ADR-035) | pending | medium | task_37, task_40, task_46 |
+| 49 | Wire the fast-path watcher and inbox decisions into the production daemon (dependency inversion) | pending | medium | task_09, task_38, task_39 |
 
 ## Build order (as of 2026-09-20)
 
@@ -62,6 +63,7 @@
 5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule: mailbox pointers and clips plus the county permit, Council, EDGAR, and RSS feeds; per-publisher fetch and clip policy in `sources.toml`, owner-set, default pointer/session for terms-restricted publishers (ADR-035 as amended); `ffs_search` v2 and URL dedup.
 5b. **Task 48.** The morning read, as soon as the courier files its first agenda: the owner-present session that opens articles one at a time and files the owner's notes (ADR-035).
 6. **Task 39.** Auto-file policy (ADR-029) with the review surface ADR-032 accepted from task_44: the inbox file grouped by source article, panel counts and link only; max_per_day default 50.
+6b. **Task 49.** The fast-path watcher and inbox ticks in the production daemon; found during task 39: the watcher never ran in the binary because of a crate dependency cycle.
 7. **Task 41.** The morning briefing, last, because it reads everything the others write.
 8. **Task 46.** Attestations and staleness, local (ADR-034 local half): makes "is it still accurate" a question the substrate answers before any peer exists; the owner's accept is the first attestation, windows per predicate, the briefing nags about facts past their window.
 9. **Task 47.** Shared intake and shared accuracy over federation (ADR-034 federation half), when ADR-033 lifts: subscriptions, article dedup by key, peer-derived atoms as proposals, peer attestations counted with source independence.

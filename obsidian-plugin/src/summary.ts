@@ -44,6 +44,8 @@ export interface ProposalItem {
  * expanded view. Excludes provenance — that's audit-trail data the
  * Accept-time decision doesn't need. */
 export interface ProposalPreview {
+  /** A role ending (ADR-031): always a review item. */
+  endsRole?: boolean;
   predicate: string;
   claim: Record<string, unknown>;
   rationale: string;
@@ -99,9 +101,39 @@ export function engineLabel(p: Pick<ProposalPreview, "engine" | "model">): strin
   return `engine: ${p.engine}`;
 }
 
+/** Today's inbox file, UTC day, per ADR-032 (`inbox/<YYYY-MM-DD>.md`). */
+export function inboxPathFor(now: Date = new Date()): string {
+  return `inbox/${now.toISOString().slice(0, 10)}.md`;
+}
+
+/**
+ * The panel's one-line summary of the queue (ADR-032 § Decision (4)):
+ * "N pending, M need your eye". Work happens in the inbox file; the
+ * panel only counts and links.
+ */
+export function countLine(state: Pick<PanelState, "pendingCount" | "needYourEye">): string {
+  const p = state.pendingCount;
+  const m = state.needYourEye;
+  const pending = `${p} pending`;
+  return m > 0 ? `${pending}, ${m} need your eye` : pending;
+}
+
+/** A proposal the owner has to look at: ambiguous identity or a role change. */
+export function needsEye(p: Pick<ProposalPreview, "resolution" | "predicate" | "endsRole">): boolean {
+  if (p.resolution === "ambiguous") return true;
+  if (p.endsRole) return true;
+  return p.predicate === "affiliation" && p.resolution === "existing";
+}
+
 export interface PanelState {
   /** Top-N flags from the latest auditor.daily_summary atom. */
   items: PanelItem[];
+  /** Proposals still pending across every submission. */
+  pendingCount: number;
+  /** Pending proposals that need the owner (ambiguous or role change). */
+  needYourEye: number;
+  /** Vault-relative path of today's inbox file (ADR-032). */
+  inboxPath: string;
   /** Narrative text the auditor produced (single string). */
   narrative: string;
   /** Pending submissions awaiting accept/reject. */
@@ -120,6 +152,9 @@ export interface PanelState {
 
 const EMPTY_STATE: PanelState = {
   items: [],
+  pendingCount: 0,
+  needYourEye: 0,
+  inboxPath: inboxPathFor(),
   narrative: "No auditor summary yet.",
   pendingProposals: [],
   empty: true,
@@ -197,6 +232,7 @@ export class SummaryPanelModel {
         model?: string;
         resolution?: string;
         entity?: string;
+        ends_role?: boolean;
         candidates?: Array<{
           entity?: string;
           display?: string;
@@ -226,6 +262,9 @@ export class SummaryPanelModel {
           if (typeof p?.entity === "string" && p.entity.length > 0) {
             preview.entity = p.entity;
           }
+          if (p?.ends_role === true) {
+            preview.endsRole = true;
+          }
           if (Array.isArray(p?.candidates) && p.candidates.length > 0) {
             preview.candidates = p.candidates.map((c) => ({
               entity: String(c?.entity ?? ""),
@@ -245,8 +284,12 @@ export class SummaryPanelModel {
       })
       .filter((it) => it.submissionId.length > 0);
 
+    const allProposals = pendingProposals.flatMap((it) => it.proposals);
     const next: PanelState = {
       items,
+      pendingCount: allProposals.length,
+      needYourEye: allProposals.filter(needsEye).length,
+      inboxPath: inboxPathFor(),
       narrative: String(latest?.claim?.narrative ?? EMPTY_STATE.narrative),
       pendingProposals,
       empty: latest === null && pendingProposals.length === 0,

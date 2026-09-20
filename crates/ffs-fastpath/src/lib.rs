@@ -16,6 +16,7 @@
 
 pub mod classifier;
 pub mod dispatch;
+pub mod inbox;
 pub mod suppress;
 pub mod watcher;
 
@@ -23,6 +24,10 @@ pub use classifier::{Classification, SlowPathReason, classify, is_federated_path
 pub use dispatch::{
     AppliedReceipt, DispatchError, Receipt, RoutedReceipt, apply_fast_path, dispatch,
     route_to_ingest,
+};
+pub use inbox::{
+    DecisionAction, DecisionSink, DispatcherSink, InboxDecision, ParsedInbox, apply_decisions,
+    decision_rpc, is_inbox_path, parse_inbox,
 };
 pub use suppress::SuppressionRegistry;
 pub use watcher::{DEFAULT_DEBOUNCE, FastPathContext, FastPathWatcher, PollingFastPathWatcher};

@@ -103,3 +103,12 @@ bfo = "information content entity"
 cco = ""
 iao = "iao:IAO_0000310"
 note = "A document about entities; mentions are is-about links; the url and content_hash identify the bearer; the summary is a derived information content entity."
+
+# -------- quarantine policy (ADR-029) --------
+#
+# Records of this predicate are events, not state: a new one never
+# overwrites anything, so a proposal is always additive and may
+# auto-file under an `Accept` grant.
+
+[quarantine]
+append_only = true

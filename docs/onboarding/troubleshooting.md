@@ -547,6 +547,70 @@ recipe. Short form below.
 
 ---
 
+## Why did this get filed automatically?
+
+### Symptom
+
+An atom (a new org file, a new bullet on a person, an article) is in
+the vault and nobody clicked accept. Or the opposite: you granted
+`accept` and something you expected to auto-file is still sitting in
+the inbox.
+
+### What's happening
+
+Auto-filing is the owner's grant, not the agent's decision. A
+`capability.grant` atom with the action `accept` lets the daemon file
+proposals that are purely additive, up to a daily cap, on behalf of
+the grantee named in the grant. Every atom filed that way carries a
+provenance entry of kind `auto_accept` whose hash is the grant that
+authorized it. If that entry is present, the answer is "the grant you
+issued"; if it is absent, the atom came through a click or through
+the fast path from an edit.
+
+### Diagnose
+
+1. Read the atom's provenance:
+
+   ```sh
+   ffs get ffs://local/atom/<atom-hash>
+   ```
+
+   Look for `"kind": "auto_accept"`; its `hash` is the grant.
+
+2. List the active grants, their caps, and today's usage:
+
+   ```sh
+   ffs capability list
+   ```
+
+3. To undo one item, tick its undo line in today's inbox file, or
+   have the daemon retract it directly (`ingest.retract` with the
+   atom hash, from any client that speaks the daemon's JSON-RPC).
+   Retraction supersedes the atom with an end date and a `retraction`
+   provenance entry; nothing is erased.
+
+4. To stop auto-filing entirely:
+
+   ```sh
+   ffs capability revoke <grant-hash>
+   ```
+
+### Something you expected to auto-file did not
+
+Three reasons, in the order to check them:
+
+- **It conflicts with an existing fact.** A proposal that would
+  overwrite a scalar already on the entity (role, organization,
+  title) is never additive, and a role ending is a supersession by
+  design. It waits in the inbox with the current value shown.
+- **The identity is ambiguous.** The scribe found more than one
+  candidate within the review band, so the proposal carries a
+  candidate list and no grant can file it. Pick a candidate or
+  "someone new" in the inbox.
+- **The daily cap is reached.** `ffs capability list` shows usage
+  against the cap for the current UTC day; anything past it routes to
+  review and files tomorrow only if you tick it or raise the cap.
+
 ## When all else fails
 
 The substrate is git-cloneable. Worst case, you can:

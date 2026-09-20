@@ -415,3 +415,129 @@ pub async fn federation_peer_list(socket: &Path) -> Outcome {
         Err(e) => map_client_err(e),
     }
 }
+
+// ---- task_39: `ffs capability` ----
+
+/// Arguments of `ffs capability grant`.
+#[derive(Debug, Clone)]
+pub struct GrantArgs {
+    pub action: String,
+    pub grantee: String,
+    pub predicates: Vec<String>,
+    pub classifications: Vec<String>,
+    pub max_per_day: Option<u32>,
+    pub unlimited: bool,
+    pub valid_to: Option<String>,
+}
+
+/// Validate a grant request before any RPC: an `accept` grant must
+/// carry a cap or say `--unlimited` (ADR-029). Returns the usage error
+/// text, or `None` when the request is well formed.
+pub fn grant_usage_error(args: &GrantArgs) -> Option<String> {
+    if args.action.trim().eq_ignore_ascii_case("accept")
+        && args.max_per_day.is_none()
+        && !args.unlimited
+    {
+        return Some(
+            "an accept grant needs --max-per-day N (50 is the guide's default) or --unlimited\n"
+                .into(),
+        );
+    }
+    if args.grantee.trim().is_empty() {
+        return Some("--grantee is required\n".into());
+    }
+    None
+}
+
+/// `ffs capability grant ...` — author an owner-signed grant.
+pub async fn capability_grant(socket: &Path, args: GrantArgs, json: bool) -> Outcome {
+    if let Some(msg) = grant_usage_error(&args) {
+        return Outcome::err(EXIT_USAGE, msg);
+    }
+    let params = serde_json::json!({
+        "action": args.action.trim().to_lowercase(),
+        "grantee": args.grantee,
+        "predicates": args.predicates,
+        "classifications": args.classifications,
+        "max_per_day": args.max_per_day,
+        "unlimited": args.unlimited,
+        "valid_to": args.valid_to,
+    });
+    match client::call(socket, "capability.grant", params).await {
+        Ok(resp) => Outcome::ok(format_result(&resp, json, |v| {
+            Some(format!(
+                "granted: {}\ngrantee: {}\n",
+                v.get("grant_hash").and_then(|x| x.as_str()).unwrap_or("?"),
+                v.get("grantee").and_then(|x| x.as_str()).unwrap_or("?"),
+            ))
+        })),
+        Err(e) => map_client_err(e),
+    }
+}
+
+/// `ffs capability list` — active grants with cap and today's usage.
+pub async fn capability_list(socket: &Path, json: bool) -> Outcome {
+    match client::call(socket, "capability.list", serde_json::Value::Null).await {
+        Ok(resp) => Outcome::ok(format_result(&resp, json, |v| {
+            let rows = v.as_array()?;
+            if rows.is_empty() {
+                return Some("no active grants\n".into());
+            }
+            let mut out = String::new();
+            for r in rows {
+                let actions = r
+                    .get("actions")
+                    .and_then(|a| a.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .unwrap_or_default();
+                let preds = r
+                    .get("predicates")
+                    .and_then(|a| a.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .unwrap_or_else(|| "any".into());
+                let cap = match r.get("max_per_day").and_then(|x| x.as_u64()) {
+                    Some(n) => format!("{n}/day"),
+                    None => "unlimited".into(),
+                };
+                out.push_str(&format!(
+                    "{}  {}  actions={}  predicates={}  cap={}  used_today={}\n",
+                    r.get("grant_hash").and_then(|x| x.as_str()).unwrap_or("?"),
+                    r.get("grantee").and_then(|x| x.as_str()).unwrap_or("?"),
+                    actions,
+                    preds,
+                    cap,
+                    r.get("used_today").and_then(|x| x.as_u64()).unwrap_or(0),
+                ));
+            }
+            Some(out)
+        })),
+        Err(e) => map_client_err(e),
+    }
+}
+
+/// `ffs capability revoke <grant-hash>` — supersede with no actions.
+pub async fn capability_revoke(socket: &Path, grant_hash: &str, json: bool) -> Outcome {
+    let params = serde_json::json!({"grant_hash": grant_hash});
+    match client::call(socket, "capability.revoke", params).await {
+        Ok(resp) => Outcome::ok(format_result(&resp, json, |v| {
+            Some(format!(
+                "revoked: {}\nsuperseded_by: {}\n",
+                v.get("revoked").and_then(|x| x.as_str()).unwrap_or("?"),
+                v.get("superseded_by")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("?"),
+            ))
+        })),
+        Err(e) => map_client_err(e),
+    }
+}

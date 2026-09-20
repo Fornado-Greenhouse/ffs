@@ -5,6 +5,9 @@ display_name: {{ claim.display_name }}
 {%- if claim.aliases %}{%- if claim.aliases | length > 0 %}
 aliases: [{{ claim.aliases | join(sep=", ") }}]
 {%- endif -%}{%- endif -%}
+{%- if merged_from %}{%- if merged_from | length > 0 %}
+merged_from: [{% for m in merged_from %}{% if not loop.first %}, {% endif %}"[[{{ m.basename }}|{{ m.display }}]]"{% endfor %}]
+{%- endif -%}{%- endif -%}
 {%- if claim.organization %}
 organization: {% if organization_link %}"[[{{ organization_link.basename }}|{{ organization_link.display }}]]"{% else %}{{ claim.organization }}{% endif %}
 {%- endif -%}

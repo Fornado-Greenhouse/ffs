@@ -37,6 +37,7 @@ import {
 } from "./settings.js";
 import {
   SummaryPanelModel,
+  countLine,
   type PanelState,
   type ProposalItem,
   type ProposalPreview,
@@ -345,6 +346,17 @@ class SummaryView extends ItemView {
     this.offStateChange = null;
   }
 
+  /** Open today's inbox file in the main area; a Notice when the daemon
+   * has not written one yet. */
+  private async openInbox(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      await this.app.workspace.getLeaf(false).openFile(file);
+      return;
+    }
+    new Notice(`FFS: no inbox file at ${path} yet (the daemon writes it when proposals are pending).`);
+  }
+
   private async triggerRefresh(): Promise<void> {
     try {
       await this.plugin.summary.refresh();
@@ -419,6 +431,20 @@ class SummaryView extends ItemView {
         cls: "ffs-summary-narrative",
       });
     }
+
+    // The queue is worked in the inbox file (ADR-032): the panel shows
+    // one count line and a link to today's inbox.
+    const inboxLine = root.createDiv({ cls: "ffs-summary-inbox" });
+    inboxLine.createSpan({ text: countLine(state) + " · " });
+    const inboxLink = inboxLine.createEl("a", {
+      text: `open ${state.inboxPath}`,
+      cls: "ffs-summary-inbox-link",
+    });
+    inboxLink.setAttr("href", "#");
+    inboxLink.onclick = (ev: MouseEvent) => {
+      ev.preventDefault();
+      void this.openInbox(state.inboxPath);
+    };
 
     // Pending proposals — accept / reject inline.
     if (state.pendingProposals.length > 0) {

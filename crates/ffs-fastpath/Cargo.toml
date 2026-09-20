@@ -11,6 +11,7 @@ rust-version.workspace = true
 ffs-core = { workspace = true }
 ffs-daemon = { workspace = true }
 
+async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -21,6 +22,7 @@ tracing = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 
 [dev-dependencies]
+ffs-federation = { workspace = true }
 tempfile = { workspace = true }
 tokio-util = { workspace = true }
 

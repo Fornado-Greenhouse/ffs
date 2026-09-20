@@ -193,3 +193,13 @@ CREATE TABLE IF NOT EXISTS nil_sightings (
     first_seen    TEXT NOT NULL
 );
 "#;
+
+/// V6 (task_39, ADR-029): auto-filing. Atoms the quarantine filed on
+/// its own under an `Accept` grant are recorded separately from the
+/// owner's accepts, and two new status values (`auto_accepted`,
+/// `partially_accepted`) join the status column. Rows written before
+/// v6 read back with an empty list.
+pub const V6_DDL: &str = r#"
+ALTER TABLE quarantine_submissions ADD COLUMN auto_accepted_atom_hashes TEXT NOT NULL DEFAULT '[]';
+CREATE INDEX IF NOT EXISTS provenance_kind_hash ON provenance(source_kind, source_hash);
+"#;

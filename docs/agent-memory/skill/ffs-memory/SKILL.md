@@ -123,6 +123,8 @@ The result is a `submission_id`. Report it as a proposal:
 
 If the call failed, say so and hand the owner the content you meant to submit. Do not claim persistence that did not happen, and do not re-submit the same content under a different `source_uri`.
 
+A `submission_id` may later resolve to auto-filed atoms if the owner has granted the `accept` action to your identity (ADR-029). That is the owner's grant at work, not something the submit result tells you, so you still report "proposed". If you need to know whether it was filed, check afterwards with `ffs_search` or `ffs_query` and report what those tools returned; never say "filed" on the strength of the submit result alone.
+
 ---
 
 ## 4. Discovery Checklist

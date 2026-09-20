@@ -28,6 +28,11 @@ pub struct CapabilityScope {
     pub classifications: Option<Vec<Tier>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<Tier>,
+    /// Daily ceiling on auto-filed atoms under this grant (ADR-029).
+    /// `None` is unlimited. Usage is counted from the store, never
+    /// process memory, so the cap survives daemon restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_day: Option<u32>,
 }
 
 impl CapabilityScope {
@@ -71,6 +76,17 @@ impl CapabilityScope {
             && list_narrows(&self.entities, &other.entities)
             && list_narrows(&self.classifications, &other.classifications)
             && tier_narrows(&self.tier, &other.tier)
+            && cap_narrows(self.max_per_day, other.max_per_day)
+    }
+}
+
+/// A smaller-or-equal cap narrows; `None` (unlimited) is broader than any
+/// `Some`, so `None` narrows only `None`.
+fn cap_narrows(new: Option<u32>, old: Option<u32>) -> bool {
+    match (new, old) {
+        (_, None) => true,
+        (None, Some(_)) => false,
+        (Some(n), Some(o)) => n <= o,
     }
 }
 
@@ -171,6 +187,55 @@ mod tests {
         };
         assert!(child.narrows_or_equals(&parent));
         assert!(!parent.narrows_or_equals(&child));
+    }
+
+    #[test]
+    fn max_per_day_smaller_narrows() {
+        let parent = CapabilityScope {
+            max_per_day: Some(50),
+            ..Default::default()
+        };
+        let smaller = CapabilityScope {
+            max_per_day: Some(10),
+            ..Default::default()
+        };
+        let equal = CapabilityScope {
+            max_per_day: Some(50),
+            ..Default::default()
+        };
+        let larger = CapabilityScope {
+            max_per_day: Some(60),
+            ..Default::default()
+        };
+        assert!(smaller.narrows_or_equals(&parent));
+        assert!(equal.narrows_or_equals(&parent));
+        assert!(!larger.narrows_or_equals(&parent));
+        let v = serde_json::to_value(&smaller).unwrap();
+        assert_eq!(v["max_per_day"], 10);
+        assert!(
+            serde_json::to_value(CapabilityScope::default())
+                .unwrap()
+                .get("max_per_day")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn max_per_day_none_broadens() {
+        let capped = CapabilityScope {
+            max_per_day: Some(50),
+            ..Default::default()
+        };
+        let unlimited = CapabilityScope::default();
+        assert!(
+            capped.narrows_or_equals(&unlimited),
+            "a cap narrows unlimited"
+        );
+        assert!(
+            !unlimited.narrows_or_equals(&capped),
+            "unlimited broadens a cap"
+        );
+        assert!(unlimited.narrows_or_equals(&unlimited));
     }
 
     #[test]

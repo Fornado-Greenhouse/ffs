@@ -114,6 +114,7 @@ fn make_side(name: &'static str, seed: u8) -> Side {
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
         data_dir: None,
         skill_invoker: None,
+        ingest_agent_identity: None,
     };
     Side {
         name,

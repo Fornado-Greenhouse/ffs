@@ -36,6 +36,18 @@ pub struct PredicateSpec {
     /// Informative ontology alignment (ADR-031). Never validated beyond
     /// shape; nothing in the daemon branches on it.
     pub ontology: Option<OntologySpec>,
+    /// `[quarantine]` table (ADR-029): `append_only = true` declares that
+    /// this predicate's records are events, not state, so a proposal for
+    /// it is always additive and may auto-file under an `Accept` grant.
+    pub quarantine: Option<QuarantineSpec>,
+}
+
+/// `[quarantine]` table (ADR-029, ADR-021 extension).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct QuarantineSpec {
+    #[serde(default)]
+    pub append_only: bool,
 }
 
 /// `[path]` table: which projection folder a predicate's entities live
@@ -117,6 +129,8 @@ pub(crate) mod mod_helpers {
         pub path: Option<PathSpec>,
         #[serde(default)]
         pub ontology: Option<OntologySpec>,
+        #[serde(default)]
+        pub quarantine: Option<QuarantineSpec>,
     }
 
     /// Parse a TOML predicate-spec string, converting the claim_schema
@@ -147,6 +161,7 @@ pub(crate) mod mod_helpers {
             pagination: raw.pagination,
             path: raw.path,
             ontology: raw.ontology,
+            quarantine: raw.quarantine,
         })
     }
 
@@ -490,6 +505,19 @@ frontmatter_fields = ["display_name"]
         )
         .expect("loads");
         assert_eq!(spec.path.unwrap().family, "widgets");
+    }
+
+    #[test]
+    fn quarantine_append_only_table_is_parsed_and_absent_means_false() {
+        let spec = parse("[quarantine]\nappend_only = true\n").expect("loads");
+        assert!(spec.quarantine.as_ref().is_some_and(|q| q.append_only));
+        let plain = parse("").expect("loads");
+        assert!(plain.quarantine.is_none());
+        let err = parse("[quarantine]\nappend_only = true\nbogus = 1\n").unwrap_err();
+        assert!(
+            matches!(err, SpecError::Toml { .. }),
+            "unknown key in [quarantine] fails loudly"
+        );
     }
 
     #[test]

@@ -86,6 +86,10 @@ def aggregate_metrics(window_hours: int = 24) -> Dict[str, Any]:
         # about a courier; the auditor reports on it either way.
         if "courier" in summary:
             metrics["courier"] = summary.get("courier")
+        # task_39: what the quarantine auto-filed in the window under an
+        # Accept grant (ADR-029). Absent on daemons that predate it.
+        if isinstance(summary.get("auto_filed"), dict):
+            metrics["auto_filed"] = summary["auto_filed"]
     return metrics
 
 
@@ -243,6 +247,9 @@ def narrative(metrics: Dict[str, Any], flags: List[Dict[str, Any]]) -> str:
     """Build a short human-readable narrative summarizing the day."""
     courier = courier_line(metrics)
     tail = f"\n{courier}." if courier else ""
+    filed = metrics.get("auto_filed") or {}
+    if int(filed.get("count") or 0) > 0:
+        tail += f"\nauto-filed {int(filed['count'])} item(s) under an Accept grant."
     if not flags:
         return (
             f"All quiet. {metrics.get('atom_author_rate', 0)} atom(s) over the last "
@@ -267,8 +274,27 @@ def build_claim(metrics: Dict[str, Any], flags: List[Dict[str, Any]]) -> Tuple[D
         "flags": flags,
         "panel": panel,
         "narrative": narrative(metrics, flags),
+        # ADR-029: the auto-filed list is not subject to the five-item
+        # panel cap; the owner sees everything the clerk filed.
+        "auto_filed": auto_filed_section(metrics),
     }
     return claim, panel
+
+
+def auto_filed_section(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """The `auto_filed` claim section: count, per-predicate counts, and
+    the item list, straight from `health.summary.auto_filed`."""
+    raw = metrics.get("auto_filed") or {}
+    items = list(raw.get("items") or [])
+    by_predicate: Dict[str, int] = {}
+    for it in items:
+        pred = str(it.get("predicate") or "")
+        by_predicate[pred] = by_predicate.get(pred, 0) + 1
+    return {
+        "count": int(raw.get("count") or len(items)),
+        "by_predicate": dict(raw.get("by_predicate") or by_predicate),
+        "items": items,
+    }
 
 
 def publish(claim: Dict[str, Any]) -> Dict[str, Any]:

@@ -85,6 +85,10 @@ pub struct FastPathContext {
     pub working_set_dir: PathBuf,
     pub ingest_dir: PathBuf,
     pub suppression: Arc<SuppressionRegistry>,
+    /// Where inbox decisions go (ADR-032). `None` means edits to
+    /// `inbox/<date>.md` are ignored; they are never projection edits
+    /// and never route to ingest.
+    pub decision_sink: Option<Arc<dyn crate::inbox::DecisionSink>>,
 }
 
 impl FastPathWatcher {
@@ -198,6 +202,27 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
     // `parse()` can't decompose a `\`-separated string.
     // See projection::path::normalize_separators + task_34.
     let rel_str = projection_path::normalize_separators(&rel.to_string_lossy()).into_owned();
+
+    // An inbox file (ADR-032) is a decision surface: ticks become
+    // quarantine decisions through the sink, and the file is neither a
+    // projection edit nor an ingest submission.
+    if crate::inbox::is_inbox_path(&rel_str) {
+        if let Some(sink) = &ctx.decision_sink {
+            let parsed = crate::inbox::parse_inbox(&String::from_utf8_lossy(&new_content));
+            let (applied, errors) = crate::inbox::apply_decisions(sink.as_ref(), &parsed).await;
+            debug!(
+                ?path,
+                applied,
+                warnings = parsed.warnings.len(),
+                errors = errors.len(),
+                "inbox decisions applied"
+            );
+            for e in errors {
+                warn!(?path, error = %e, "inbox decision failed");
+            }
+        }
+        return Ok(());
+    }
 
     if is_federated_path(&rel_str) {
         let _ = crate::dispatch::route_to_ingest(

@@ -306,3 +306,33 @@ describe("resolution on the proposal card (task_45)", () => {
     ).toEqual(["Sara Chen (Acme) (6.5)", "Sara Chen (City) (6.0)"]);
   });
 });
+
+describe("inbox count line and link (ADR-032, task_39)", () => {
+  it("counts pending proposals and the ones that need the owner's eye", async () => {
+    const { countLine, needsEye, inboxPathFor } = await import("../src/summary.js");
+    const client = fakeClient({
+      "audit.query": summaryAtom([]),
+      "ingest.list_pending": [
+        {
+          id: "sub-1",
+          source_uri: "file:///ingest/a.md",
+          proposals: [
+            { predicate: "source.article", claim: { title: "A" }, resolution: "new" },
+            { predicate: "person.generic", claim: { display_name: "P" }, resolution: "ambiguous", candidates: [] },
+            { predicate: "affiliation", claim: { title: "CEO" }, resolution: "existing" },
+            { predicate: "affiliation", claim: { title: "Chair" }, resolution: "new", ends_role: true },
+          ],
+        },
+      ],
+    });
+    const model = new SummaryPanelModel(client);
+    const state = await model.refresh();
+    expect(state.pendingCount).toBe(4);
+    expect(state.needYourEye).toBe(3);
+    expect(countLine(state)).toBe("4 pending, 3 need your eye");
+    expect(countLine({ pendingCount: 2, needYourEye: 0 })).toBe("2 pending");
+    expect(needsEye({ predicate: "note", resolution: "new" })).toBe(false);
+    expect(state.inboxPath).toBe(inboxPathFor());
+    expect(inboxPathFor(new Date("2026-09-21T15:00:00Z"))).toBe("inbox/2026-09-21.md");
+  });
+});

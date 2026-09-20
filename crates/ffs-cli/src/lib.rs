@@ -59,6 +59,46 @@ pub enum Command {
         #[command(subcommand)]
         command: CourierCommand,
     },
+    /// Capability grants: who may read, write, or auto-file (ADR-029).
+    Capability {
+        #[command(subcommand)]
+        command: CapabilityCommand,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum CapabilityCommand {
+    /// Author an owner-signed grant. Example (the guide's default):
+    /// `ffs capability grant --action accept --grantee mcp:agent/courier
+    /// --predicates source.article,event.business,org.company,person.generic
+    /// --max-per-day 50`
+    Grant {
+        /// read | write | supersede | accept | erase | classify | federate
+        #[arg(long)]
+        action: String,
+        /// An Ed25519 multibase key or an agent identity such as mcp:agent/courier
+        #[arg(long)]
+        grantee: String,
+        /// Comma-separated predicate names the grant covers
+        #[arg(long, value_delimiter = ',')]
+        predicates: Vec<String>,
+        /// Comma-separated classification tiers (default: any)
+        #[arg(long, value_delimiter = ',')]
+        classifications: Vec<String>,
+        /// Daily cap on auto-filed atoms; required for --action accept (50 is the guide's default)
+        #[arg(long, conflicts_with = "unlimited")]
+        max_per_day: Option<u32>,
+        /// No daily cap (accept grants must say so explicitly)
+        #[arg(long)]
+        unlimited: bool,
+        /// Expiry (ISO 8601 UTC)
+        #[arg(long)]
+        valid_to: Option<String>,
+    },
+    /// Active grants with their cap and today's usage.
+    List,
+    /// Revoke a grant (a superseding capability with no actions).
+    Revoke { grant_hash: String },
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -148,5 +188,38 @@ pub async fn run(args: Args) -> Outcome {
         Command::Courier {
             command: CourierCommand::Status,
         } => commands::courier_status(socket_ref, json).await,
+        Command::Capability {
+            command:
+                CapabilityCommand::Grant {
+                    action,
+                    grantee,
+                    predicates,
+                    classifications,
+                    max_per_day,
+                    unlimited,
+                    valid_to,
+                },
+        } => {
+            commands::capability_grant(
+                socket_ref,
+                commands::GrantArgs {
+                    action,
+                    grantee,
+                    predicates,
+                    classifications,
+                    max_per_day,
+                    unlimited,
+                    valid_to,
+                },
+                json,
+            )
+            .await
+        }
+        Command::Capability {
+            command: CapabilityCommand::List,
+        } => commands::capability_list(socket_ref, json).await,
+        Command::Capability {
+            command: CapabilityCommand::Revoke { grant_hash },
+        } => commands::capability_revoke(socket_ref, &grant_hash, json).await,
     }
 }

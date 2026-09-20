@@ -76,6 +76,18 @@ async fn spawn() -> Server {
 /// and the temp dir doubles as the data dir so `courier.status` can
 /// read `ingest/.courier/last_run.json` when a test writes it.
 async fn spawn_with(invoker: Option<Arc<dyn ffs_daemon::SkillInvoker>>) -> Server {
+    spawn_full(invoker, None).await
+}
+
+/// A daemon that can sign (capability grants, accepts): the owner's key.
+async fn spawn_signed() -> Server {
+    spawn_full(None, Some(Arc::new(owner_key()))).await
+}
+
+async fn spawn_full(
+    invoker: Option<Arc<dyn ffs_daemon::SkillInvoker>>,
+    signing_key: Option<Arc<SigningKey>>,
+) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let predicates_dir = dir.path().join("predicates");
     let templates_dir = dir.path().join("templates");
@@ -128,13 +140,14 @@ async fn spawn_with(invoker: Option<Arc<dyn ffs_daemon::SkillInvoker>>) -> Serve
         quarantine: Arc::new(InMemoryQuarantine::new()),
         scribe: None,
         working_set: Arc::new(InMemoryWorkingSet::new()),
-        signing_key: None,
+        signing_key,
         federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
         federation_client: None,
         our_cert_fingerprint: None,
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
         data_dir: Some(dir.path().to_path_buf()),
         skill_invoker: invoker,
+        ingest_agent_identity: None,
     });
 
     let socket = run_dir.join("ffs.sock");
@@ -319,6 +332,7 @@ async fn cli_capability_denied_exits_with_code_two() {
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
         data_dir: None,
         skill_invoker: None,
+        ingest_agent_identity: None,
     });
     let socket = run_dir.join("ffs.sock");
     let cancel = CancellationToken::new();
@@ -506,6 +520,158 @@ async fn courier_status_reads_health_summary() {
         "{}",
         health.stdout
     );
+    server.cancel.cancel();
+    let _ = timeout(Duration::from_secs(2), server.handle).await;
+}
+
+// ---- task_39: capability grants from the CLI ----
+
+fn grant_cmd(action: &str, max_per_day: Option<u32>, unlimited: bool) -> Command {
+    Command::Capability {
+        command: ffs_cli::CapabilityCommand::Grant {
+            action: action.into(),
+            grantee: "mcp:agent/courier".into(),
+            predicates: vec!["contact.person".into()],
+            classifications: vec![],
+            max_per_day,
+            unlimited,
+            valid_to: None,
+        },
+    }
+}
+
+/// `ffs capability grant --action accept` without `--max-per-day` or
+/// `--unlimited` is a usage error before any RPC (ADR-029: every accept
+/// grant carries a cap).
+#[tokio::test]
+async fn grant_accept_without_cap_is_usage_error() {
+    let server = spawn_signed().await;
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: grant_cmd("accept", None, false),
+    })
+    .await;
+    assert_eq!(
+        out.code, 64,
+        "EXIT_USAGE; stdout:\n{}\nstderr:\n{}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stderr.contains("--max-per-day"), "{}", out.stderr);
+    assert!(
+        server
+            .store
+            .list_by_predicate(
+                &PredicateName::new(ffs_core::capability::CAPABILITY_PREDICATE),
+                None,
+                100
+            )
+            .unwrap()
+            .len()
+            == 1,
+        "only the owner's bootstrap grant exists"
+    );
+
+    // With a cap it goes through and lists with the cap and zero usage.
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: true,
+        command: grant_cmd("accept", Some(50), false),
+    })
+    .await;
+    assert_eq!(out.code, 0, "stderr:\n{}", out.stderr);
+    let v: serde_json::Value = serde_json::from_str(out.stdout.trim()).unwrap();
+    let grant_hash = v["grant_hash"].as_str().unwrap().to_string();
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: Command::Capability {
+            command: ffs_cli::CapabilityCommand::List,
+        },
+    })
+    .await;
+    assert_eq!(out.code, 0, "stderr:\n{}", out.stderr);
+    let line = out
+        .stdout
+        .lines()
+        .find(|l| l.starts_with(&grant_hash))
+        .unwrap_or_else(|| panic!("grant missing from list:\n{}", out.stdout));
+    assert!(line.contains("actions=accept"), "{line}");
+    assert!(line.contains("predicates=contact.person"), "{line}");
+    assert!(line.contains("cap=50/day"), "{line}");
+    assert!(line.contains("used_today=0"), "{line}");
+
+    server.cancel.cancel();
+    let _ = timeout(Duration::from_secs(2), server.handle).await;
+}
+
+/// `ffs capability revoke <hash>` authors a superseding capability atom
+/// with no actions (ADR-007: revocation is supersession); the grant
+/// leaves `capability list`.
+#[tokio::test]
+async fn revoke_authors_empty_action_supersession() {
+    let server = spawn_signed().await;
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: true,
+        command: grant_cmd("write", None, false),
+    })
+    .await;
+    assert_eq!(out.code, 0, "stderr:\n{}", out.stderr);
+    let v: serde_json::Value = serde_json::from_str(out.stdout.trim()).unwrap();
+    let grant_hash = v["grant_hash"].as_str().unwrap().to_string();
+
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: Command::Capability {
+            command: ffs_cli::CapabilityCommand::Revoke {
+                grant_hash: grant_hash.clone(),
+            },
+        },
+    })
+    .await;
+    assert_eq!(out.code, 0, "stderr:\n{}", out.stderr);
+    assert!(
+        out.stdout.contains(&format!("revoked: {grant_hash}")),
+        "{}",
+        out.stdout
+    );
+    let superseded_by = out
+        .stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("superseded_by: "))
+        .unwrap()
+        .trim()
+        .to_string();
+
+    let env = server
+        .store
+        .get(&Multihash::from_multibase(&superseded_by).unwrap())
+        .unwrap()
+        .expect("revocation atom stored");
+    assert_eq!(
+        env.supersedes.as_ref().map(|h| h.to_multibase()).as_deref(),
+        Some(grant_hash.as_str())
+    );
+    let claim = ffs_core::capability::CapabilityClaim::from_envelope(&env).unwrap();
+    assert!(claim.actions.is_empty(), "revocation carries no actions");
+
+    let out = run(Args {
+        socket: Some(server.socket.clone()),
+        json: false,
+        command: Command::Capability {
+            command: ffs_cli::CapabilityCommand::List,
+        },
+    })
+    .await;
+    assert_eq!(out.code, 0);
+    assert!(
+        !out.stdout.contains(&grant_hash) && !out.stdout.contains(&superseded_by),
+        "neither the grant nor its revocation is active:\n{}",
+        out.stdout
+    );
+
     server.cancel.cancel();
     let _ = timeout(Duration::from_secs(2), server.handle).await;
 }

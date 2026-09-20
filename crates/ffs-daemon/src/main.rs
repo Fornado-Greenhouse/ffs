@@ -47,6 +47,15 @@
 //!   to wait, and for the "drop a finished note" flow where the
 //!   user already wrote the file in another tool.
 //! - `FFS_LOG` — `tracing-subscriber` env filter (default `info`).
+//! - `FFS_INGEST_AGENT_IDENTITY` — the identity that files dropped into
+//!   `ingest/` act as for auto-filing under an `Accept` grant (ADR-029).
+//!   Unset means folder drops never auto-file. Recommended for the
+//!   courier's drops: `mcp:agent/courier`, then grant it with
+//!   `ffs capability grant --action accept --grantee mcp:agent/courier
+//!   --predicates source.article,event.business,org.company,person.generic
+//!   --max-per-day 50`. MCP submissions carry their own `mcp:agent/<id>`
+//!   and need no env. The owner's bootstrap self-grant never includes
+//!   `accept`: a fresh substrate auto-files nothing.
 //!
 //! Scribe extraction engine (task_36, ADR-026). These are read by
 //! the scribe skill subprocess, which inherits the daemon's
@@ -149,6 +158,13 @@ async fn run() -> Result<(), StartupError> {
         .init();
 
     let data_dir = resolve_data_dir()?;
+    // ADR-029: the identity ingest-folder drops act as for auto-filing.
+    // Unset means filesystem drops never auto-file. Recommended value
+    // for the courier's drops: `mcp:agent/courier`.
+    let ingest_agent_identity: Option<String> = std::env::var("FFS_INGEST_AGENT_IDENTITY")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let predicates_dir = data_dir.join("config").join("predicates");
     let templates_dir = data_dir.join("config").join("templates");
     let run_dir = data_dir.join("run");
@@ -343,6 +359,7 @@ async fn run() -> Result<(), StartupError> {
         skill_invoker: Some(Arc::new(ffs_daemon::SkillsHostInvoker::new(
             skills_host.clone(),
         ))),
+        ingest_agent_identity: ingest_agent_identity.clone(),
     };
     let dispatcher = Arc::new(dispatcher);
 
@@ -360,6 +377,17 @@ async fn run() -> Result<(), StartupError> {
     ));
     let _materializer_handle = materializer.spawn(publisher.clone());
     tracing::info!("working-set materializer subscribed to event.atom.committed");
+
+    // Inbox materializer (ADR-032): renders the quarantine as
+    // inbox/<date>.md on every quarantine change, every commit, and a
+    // 30 s timer, through the same suppression registry as projections.
+    let inbox = Arc::new(ffs_daemon::inbox::InboxMaterializer::new(
+        quarantine.clone(),
+        suppression.clone(),
+        data_dir.clone(),
+    ));
+    let _inbox_handle = inbox.spawn(publisher.clone());
+    tracing::info!("inbox materializer subscribed to event.quarantine.changed");
 
     // Socket path computation: Unix daemons bind a UDS at
     // `$FFS_DATA_DIR/run/ffs.sock` so the path respects the
@@ -430,6 +458,7 @@ async fn run() -> Result<(), StartupError> {
         quarantine: quarantine.clone(),
         scribe: scribe.clone(),
         publisher: publisher.clone(),
+        auto_filer: Some(Arc::new(dispatcher.auto_filer())),
         cancel: cancel.clone(),
         poll_interval: DEFAULT_POLL_INTERVAL,
         stability_window,

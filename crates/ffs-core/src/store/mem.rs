@@ -210,4 +210,23 @@ impl AtomStore for MemAtomStore {
         self.inner.lock().unwrap().sightings.remove(key);
         Ok(())
     }
+
+    fn count_auto_accepted_since(
+        &self,
+        grant_hash: &Multihash,
+        since: &Iso8601,
+    ) -> Result<u32, StoreError> {
+        let inner = self.inner.lock().unwrap();
+        let n = inner
+            .atoms
+            .values()
+            .filter(|a| a.tx_time.as_str() >= since.as_str())
+            .filter(|a| {
+                a.provenance
+                    .iter()
+                    .any(|p| p.kind == crate::atom::SourceKind::AutoAccept && p.hash == *grant_hash)
+            })
+            .count();
+        Ok(n as u32)
+    }
 }

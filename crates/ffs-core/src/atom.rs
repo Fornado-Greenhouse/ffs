@@ -89,6 +89,12 @@ pub enum SourceKind {
     McpAgent,
     FederationPull,
     FastPath,
+    /// Filed by the quarantine under an `Accept` grant (ADR-029); the
+    /// entry's `hash` is the authorizing capability atom.
+    AutoAccept,
+    /// A supersession that retracts an auto-filed atom by setting
+    /// `valid_to` (ADR-029 undo); nothing is erased.
+    Retraction,
 }
 
 /// Provenance entry pointing back to the source material that produced the atom.

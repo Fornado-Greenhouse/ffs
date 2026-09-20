@@ -282,3 +282,47 @@ def test_courier_missed_schedule_is_a_flag():
     long_ago = {"courier": {"last_run": "2020-01-01T00:00:00Z", "items_seen": 1, "files_written": 1}}
     flags = audit.evaluate_flags(long_ago)
     assert any(f["kind"] == "courier_missed" for f in flags)
+
+
+# task_39: auto-filed section (ADR-029)
+def test_auto_filed_section_present_and_counted(monkeypatch):
+    import audit
+
+    def fake_query(method, params):
+        if method == "health.summary":
+            return {
+                "proposals": 2,
+                "drift_flags": 0,
+                "atom_count": 10,
+                "auto_filed": {
+                    "count": 3,
+                    "by_predicate": {"source.article": 2, "org.company": 1},
+                    "items": [
+                        {"hash": "z1", "entity": "zA", "predicate": "source.article", "source_uri": "file:///a", "tx_time": "2026-09-21T08:00:00Z", "kind": "auto_accept"},
+                        {"hash": "z2", "entity": "zB", "predicate": "source.article", "source_uri": "file:///b", "tx_time": "2026-09-21T08:01:00Z", "kind": "auto_accept"},
+                        {"hash": "z3", "entity": "zC", "predicate": "org.company", "source_uri": "file:///c", "tx_time": "2026-09-21T08:02:00Z", "kind": "auto_accept"},
+                    ],
+                },
+            }
+        raise audit.FfsSkillError("unexpected " + method)
+
+    monkeypatch.setattr(audit, "query", fake_query)
+    metrics = audit.aggregate_metrics()
+    flags = audit.evaluate_flags(metrics)
+    claim, panel = audit.build_claim(metrics, flags)
+    assert claim["auto_filed"]["count"] == 3
+    assert claim["auto_filed"]["by_predicate"] == {"source.article": 2, "org.company": 1}
+    assert len(claim["auto_filed"]["items"]) == 3
+    assert "auto-filed 3 item(s)" in claim["narrative"]
+    # the five-item panel cap does not apply to the auto-filed list
+    assert len(panel) <= 5
+
+
+def test_auto_filed_section_absent_on_old_daemon(monkeypatch):
+    import audit
+
+    monkeypatch.setattr(audit, "query", lambda m, p: {"proposals": 0, "drift_flags": 0, "atom_count": 0})
+    metrics = audit.aggregate_metrics()
+    claim, _ = audit.build_claim(metrics, audit.evaluate_flags(metrics))
+    assert claim["auto_filed"] == {"count": 0, "by_predicate": {}, "items": []}
+    assert "auto-filed" not in claim["narrative"]

@@ -324,6 +324,7 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
         data_dir: None,
         skill_invoker: None,
+        ingest_agent_identity: None,
     };
     Some(Harness {
         _dir: dir,

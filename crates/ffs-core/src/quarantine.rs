@@ -17,6 +17,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use crate::atom::AtomEnvelope;
+use crate::predicate::PredicateSpec;
 use crate::{EntityId, Iso8601, Multihash, PredicateName, Provenance};
 
 #[derive(Debug, thiserror::Error)]
@@ -45,6 +47,141 @@ pub enum SubmissionStatus {
     /// quarantine for the audit trail; the proposals never become
     /// atoms.
     Rejected,
+    /// Every proposal was filed by the quarantine under an `Accept`
+    /// grant (ADR-029); `auto_accepted_atom_hashes` records what
+    /// landed. Nothing waits for the owner.
+    AutoAccepted,
+    /// Some proposals auto-filed and the rest still wait for the
+    /// owner: the additive subset landed, the conflicting subset is
+    /// listed by `ingest.list_pending` as before.
+    PartiallyAccepted,
+}
+
+/// The quarantine's verdict on one proposal under ADR-029's additive
+/// rule: an `Additive` proposal may auto-file under an `Accept` grant;
+/// a `Conflicting` one always waits for the owner, with the reason.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "filing", content = "reason")]
+pub enum Filing {
+    Additive,
+    Conflicting(String),
+}
+
+impl Filing {
+    pub fn is_additive(&self) -> bool {
+        matches!(self, Filing::Additive)
+    }
+}
+
+fn is_scalar(v: &serde_json::Value) -> bool {
+    v.is_string() || v.is_number() || v.is_boolean()
+}
+
+fn array_is_superset(proposal: &serde_json::Value, head: &serde_json::Value) -> bool {
+    match (proposal.as_array(), head.as_array()) {
+        (Some(p), Some(h)) => h.iter().all(|item| p.contains(item)),
+        _ => false,
+    }
+}
+
+/// Classify a proposal against the current heads of the entity it
+/// resolved to (ADR-029 § Decision (2)). `heads` are that entity's
+/// current head atoms across predicates (empty for a new entity);
+/// `spec` is the proposal's predicate spec when registered;
+/// `multi_leaf` says the entity has more than one unsuperseded leaf for
+/// this predicate (a conflict the owner has not resolved).
+///
+/// Rules, in order:
+/// 1. `resolution: ambiguous` is always conflicting (ADR-030): no grant
+///    can auto-file it.
+/// 2. A multi-leaf head is conflicting.
+/// 3. A candidate list that names another entity matched on the same
+///    display name whose organization disagrees with the proposal's is
+///    conflicting even when resolution is `existing`: the resolver's
+///    doubt is the owner's to settle.
+/// 4. An append-only predicate (`[quarantine] append_only`) is additive:
+///    its records are events, not state.
+/// 5. A new entity (`resolution: new`, or no entity and no heads) is
+///    additive.
+/// 6. A role ending (`ends_role`, or a `valid_to` on a proposal that has
+///    an existing head) supersedes: conflicting.
+/// 7. Against an existing head of the same predicate, every claim key on
+///    the proposal must be a blank being filled, an equal scalar, or an
+///    additive array (declared additive section or a superset of the
+///    head's array); a differing scalar or a shrunk array is conflicting.
+pub fn classify(
+    proposal: &Proposal,
+    heads: &[AtomEnvelope],
+    spec: Option<&PredicateSpec>,
+    multi_leaf: bool,
+) -> Filing {
+    if proposal.resolution == Some(Resolution::Ambiguous) {
+        return Filing::Conflicting("ambiguous resolution".into());
+    }
+    if multi_leaf {
+        return Filing::Conflicting("entity has multiple unsuperseded heads".into());
+    }
+    if let Some(org) = proposal
+        .claim
+        .get("organization")
+        .and_then(|v| v.as_str())
+        .filter(|o| !o.is_empty())
+    {
+        let doubted = proposal.candidates.iter().any(|c| {
+            Some(&c.entity) != proposal.entity.as_ref()
+                && c.matched_on.iter().any(|m| m == "display_name")
+                && !c.matched_on.iter().any(|m| m == "organization")
+        });
+        if doubted {
+            return Filing::Conflicting(format!(
+                "another candidate shares the name but not the organization {org:?}"
+            ));
+        }
+    }
+    if spec.is_some_and(|s| s.quarantine.as_ref().is_some_and(|q| q.append_only)) {
+        return Filing::Additive;
+    }
+    let same_predicate_head = heads.iter().find(|h| h.predicate == proposal.predicate);
+    let is_new = proposal.resolution == Some(Resolution::New)
+        || (proposal.entity.is_none() && heads.is_empty());
+    if is_new && same_predicate_head.is_none() {
+        return Filing::Additive;
+    }
+    let Some(head) = same_predicate_head else {
+        // An existing entity with no head for this predicate: filing a
+        // first atom of a new predicate is additive.
+        return Filing::Additive;
+    };
+    if proposal.ends_role || proposal.valid_to.is_some() {
+        return Filing::Conflicting("role ending supersedes an existing head".into());
+    }
+    let Some(claim) = proposal.claim.as_object() else {
+        return Filing::Conflicting("claim is not an object".into());
+    };
+    for (key, value) in claim {
+        match head.claim.get(key) {
+            None | Some(serde_json::Value::Null) => continue,
+            Some(existing) if is_scalar(existing) => {
+                if existing != value {
+                    return Filing::Conflicting(format!("field {key} already has a value"));
+                }
+            }
+            Some(existing) if existing.is_array() => {
+                // Declared additive sections and undeclared arrays follow
+                // the same rule: keep every existing item, or it is an
+                // edit rather than an append.
+                if !array_is_superset(value, existing) {
+                    return Filing::Conflicting(format!("array field {key} would drop items"));
+                }
+            }
+            Some(existing) => {
+                if existing != value {
+                    return Filing::Conflicting(format!("field {key} differs"));
+                }
+            }
+        }
+    }
+    Filing::Additive
 }
 
 /// Outcome of daemon-side entity resolution for one proposal
@@ -243,6 +380,11 @@ pub struct Submission {
     /// atoms the daemon signed + inserted on acceptance.
     #[serde(default)]
     pub accepted_atom_hashes: Vec<Multihash>,
+    /// Atoms the quarantine filed on its own under an `Accept` grant
+    /// (ADR-029); distinct from the owner's accepts so the daily
+    /// summary and the undo path can tell them apart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auto_accepted_atom_hashes: Vec<Multihash>,
 }
 
 /// Storage trait for the ingest quarantine. Methods are async so a
@@ -267,6 +409,24 @@ pub trait IngestQuarantine: Send + Sync {
     /// Transition `Extracted` → `Rejected`. The proposals never
     /// become atoms; the submission stays for the audit trail.
     async fn reject(&self, id: &str) -> Result<(), QuarantineError>;
+    /// Record atoms the quarantine filed on its own under an `Accept`
+    /// grant (ADR-029). `remaining_pending = false` means every
+    /// proposal landed (status `AutoAccepted`); `true` leaves the
+    /// conflicting subset for the owner (status `PartiallyAccepted`,
+    /// still visible to `ingest.list_pending` callers that include it).
+    /// Callable from `Extracted` or `PartiallyAccepted`; hashes append.
+    async fn auto_accept(
+        &self,
+        id: &str,
+        atom_hashes: Vec<Multihash>,
+        remaining_pending: bool,
+    ) -> Result<(), QuarantineError>;
+    /// Every auto-filed atom hash with its submission, newest submission
+    /// first, optionally only submissions with `tx_time > since`.
+    async fn list_auto_filed(
+        &self,
+        since: Option<&Iso8601>,
+    ) -> Result<Vec<(Multihash, Submission)>, QuarantineError>;
 }
 
 /// In-memory quarantine. The default backend; sufficient for MVP and
@@ -310,6 +470,7 @@ impl IngestQuarantine for InMemoryQuarantine {
             proposals: Vec::new(),
             failure_reason: None,
             accepted_atom_hashes: Vec::new(),
+            auto_accepted_atom_hashes: Vec::new(),
         };
         self.submissions.lock().await.insert(id.clone(), sub);
         Ok(id)
@@ -371,7 +532,10 @@ impl IngestQuarantine for InMemoryQuarantine {
         let sub = guard
             .get_mut(id)
             .ok_or_else(|| QuarantineError::NotFound(id.to_string()))?;
-        if sub.status != SubmissionStatus::Extracted {
+        if !matches!(
+            sub.status,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
             return Err(QuarantineError::BadTransition {
                 from: format!("{:?}", sub.status).to_lowercase(),
                 to: "accepted".into(),
@@ -387,7 +551,10 @@ impl IngestQuarantine for InMemoryQuarantine {
         let sub = guard
             .get_mut(id)
             .ok_or_else(|| QuarantineError::NotFound(id.to_string()))?;
-        if sub.status != SubmissionStatus::Extracted {
+        if !matches!(
+            sub.status,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
             return Err(QuarantineError::BadTransition {
                 from: format!("{:?}", sub.status).to_lowercase(),
                 to: "rejected".into(),
@@ -395,6 +562,60 @@ impl IngestQuarantine for InMemoryQuarantine {
         }
         sub.status = SubmissionStatus::Rejected;
         Ok(())
+    }
+
+    async fn auto_accept(
+        &self,
+        id: &str,
+        atom_hashes: Vec<Multihash>,
+        remaining_pending: bool,
+    ) -> Result<(), QuarantineError> {
+        let mut guard = self.submissions.lock().await;
+        let sub = guard
+            .get_mut(id)
+            .ok_or_else(|| QuarantineError::NotFound(id.to_string()))?;
+        if !matches!(
+            sub.status,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
+            return Err(QuarantineError::BadTransition {
+                from: format!("{:?}", sub.status).to_lowercase(),
+                to: "auto_accepted".into(),
+            });
+        }
+        sub.auto_accepted_atom_hashes.extend(atom_hashes);
+        sub.status = if remaining_pending {
+            SubmissionStatus::PartiallyAccepted
+        } else {
+            SubmissionStatus::AutoAccepted
+        };
+        Ok(())
+    }
+
+    async fn list_auto_filed(
+        &self,
+        since: Option<&Iso8601>,
+    ) -> Result<Vec<(Multihash, Submission)>, QuarantineError> {
+        let guard = self.submissions.lock().await;
+        let mut subs: Vec<&Submission> = guard
+            .values()
+            .filter(|s| !s.auto_accepted_atom_hashes.is_empty())
+            .filter(|s| since.is_none_or(|t| s.tx_time.as_str() > t.as_str()))
+            .collect();
+        subs.sort_by(|a, b| {
+            b.tx_time
+                .as_str()
+                .cmp(a.tx_time.as_str())
+                .then(b.id.cmp(&a.id))
+        });
+        Ok(subs
+            .into_iter()
+            .flat_map(|s| {
+                s.auto_accepted_atom_hashes
+                    .iter()
+                    .map(move |h| (h.clone(), s.clone()))
+            })
+            .collect())
     }
 }
 

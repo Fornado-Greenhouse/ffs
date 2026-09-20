@@ -20,6 +20,16 @@ impl Decision {
     pub fn is_allow(&self) -> bool {
         matches!(self, Decision::Allow { .. })
     }
+    /// The content hash of the capability atom that authorized an
+    /// `Allow`; `None` on `Deny`. Auto-filing records this hash in the
+    /// atom's `auto_accept` provenance and counts `max_per_day` against
+    /// it (ADR-029).
+    pub fn allowed_by(&self) -> Option<&Multihash> {
+        match self {
+            Decision::Allow { capability } => Some(capability),
+            Decision::Deny { .. } => None,
+        }
+    }
     pub fn is_deny(&self) -> bool {
         matches!(self, Decision::Deny { .. })
     }

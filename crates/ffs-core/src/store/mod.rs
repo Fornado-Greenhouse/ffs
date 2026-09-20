@@ -52,7 +52,11 @@ use crate::multihash::Multihash;
 /// - v3 (task_36): `engine` and `model` columns on `quarantine_proposals`.
 /// - v4 (task_38, ADR-030): `path_index` table (family, basename ->
 ///   entity, display) so entity ids can be opaque.
-pub const SCHEMA_VERSION: u32 = 5;
+/// - v5 (task_45, ADR-030): resolution columns, `resolution_priors`,
+///   `nil_sightings`.
+/// - v6 (task_39, ADR-029): `auto_accepted_atom_hashes` on submissions
+///   and a provenance (kind, hash) index for `max_per_day` counting.
+pub const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -229,6 +233,47 @@ pub trait AtomStore: Send + Sync {
 
     /// Forget a NIL sighting (after minting).
     fn clear_sighting(&self, key: &str) -> Result<(), StoreError>;
+
+    // ---- auto-filing helpers (task_39, ADR-029) ----
+
+    /// How many atoms carry an `auto_accept` provenance entry whose hash
+    /// is `grant_hash` and whose `tx_time >= since`. This is the
+    /// `max_per_day` usage count: read from the store on every check so
+    /// it survives daemon restarts.
+    fn count_auto_accepted_since(
+        &self,
+        grant_hash: &Multihash,
+        since: &Iso8601,
+    ) -> Result<u32, StoreError>;
+
+    /// Entities whose head `entity.same_as` points at `winner` (the
+    /// merge losers). Scans the predicate; fine at personal scale.
+    fn same_as_losers(
+        &self,
+        winner: &EntityId,
+        as_of: Option<&Iso8601>,
+    ) -> Result<Vec<EntityId>, StoreError> {
+        let pred = PredicateName::new(SAME_AS_PREDICATE);
+        let mut out: Vec<EntityId> = Vec::new();
+        for atom in self.list_by_predicate(&pred, None, 10_000)? {
+            if out.contains(&atom.entity) || atom.entity == *winner {
+                continue;
+            }
+            if self.same_as_target(&atom.entity, as_of)?.as_ref() == Some(winner) {
+                out.push(atom.entity.clone());
+            }
+        }
+        Ok(out)
+    }
+
+    /// `follow_same_as` under the name ADR-029 and task_39 use.
+    fn resolve_same_as(
+        &self,
+        entity: &EntityId,
+        as_of: Option<&Iso8601>,
+    ) -> Result<EntityId, StoreError> {
+        self.follow_same_as(entity, as_of)
+    }
 }
 
 /// Predicate of the merge-redirect atom (ADR-030).

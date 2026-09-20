@@ -20,8 +20,8 @@ use ffs_core::quarantine::{IngestQuarantine, Proposal, SubmissionStatus};
 use ffs_core::store::AtomStore;
 use ffs_core::working_set::WorkingSetStore;
 use ffs_core::{
-    AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier,
-    predicate::SpecRegistry,
+    AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, Provenance, PublicKey, SourceKind,
+    Tier, predicate::SpecRegistry,
 };
 
 use ffs_federation::client::FederationClient;
@@ -87,6 +87,12 @@ pub struct Dispatcher {
     /// Hook for invoking daemon-hosted skills by name (`courier.run`).
     /// Production wires the skills host; tests inject a stub.
     pub skill_invoker: Option<Arc<dyn SkillInvoker>>,
+    /// Identity that ingest-folder drops (`file://` submissions) act
+    /// as for auto-filing (ADR-029): the daemon's
+    /// `FFS_INGEST_AGENT_IDENTITY` (recommended `mcp:agent/courier`).
+    /// `None` means filesystem drops have no grantee and never
+    /// auto-file. MCP submissions carry their own `mcp:agent/<id>`.
+    pub ingest_agent_identity: Option<String>,
 }
 
 /// Invoke a daemon-hosted skill by bundle name with a JSON input and
@@ -123,338 +129,31 @@ struct SearchRow {
     tier: u8,
 }
 
-/// The string and string-array property names a claim schema declares
-/// (`entity.search` v2 matches across exactly these; no field names
-/// live in code).
-fn schema_string_fields(schema: &Value) -> (Vec<String>, Vec<String>) {
-    let mut strings = Vec::new();
-    let mut arrays = Vec::new();
-    if let Some(props) = schema.get("properties").and_then(|v| v.as_object()) {
-        for (name, spec) in props {
-            match spec.get("type").and_then(|t| t.as_str()) {
-                Some("string") => strings.push(name.clone()),
-                Some("array")
-                    if spec
-                        .get("items")
-                        .and_then(|i| i.get("type"))
-                        .and_then(|t| t.as_str())
-                        == Some("string") =>
-                {
-                    arrays.push(name.clone())
-                }
-                _ => {}
-            }
-        }
-    }
-    (strings, arrays)
+/// The one signing path every write shares (ADR-029): the owner's
+/// accept, the quarantine's auto-file under an `Accept` grant, a
+/// retraction, and a merge all go through `sign_and_insert_set` /
+/// `sign_insert_publish`, so minting, cross-reference rewriting, role
+/// endings, alias growth, priors, sightings, and the `AtomCommitted`
+/// event happen exactly once and identically. Cheap to build from a
+/// `Dispatcher` (`Dispatcher::signer`) or from the auto-filer's Arcs.
+#[derive(Clone)]
+pub struct AtomSigner {
+    pub store: Arc<dyn AtomStore>,
+    pub registry: Arc<SpecRegistry>,
+    pub notifier: Arc<EventPublisher>,
 }
 
-impl Dispatcher {
-    pub async fn handle(&self, req: ApiRequest) -> ApiResponse {
-        let id = req.id.clone();
-        if req.jsonrpc != "2.0" {
-            return ApiResponse::error(
-                id,
-                ApiError {
-                    code: ERR_INVALID_REQUEST,
-                    message: format!("jsonrpc must be \"2.0\", got {:?}", req.jsonrpc),
-                    data: None,
-                },
-            );
-        }
-        let method = req.method.clone();
-        tracing::debug!(method = %method, "dispatch");
-
-        let result = match method.as_str() {
-            "atom.get" => self.atom_get(req.params).await,
-            "atom.list" => self.atom_list(req.params).await,
-            "projection.render" => self.projection_render(req.params).await,
-            "path.list" => self.path_list(req.params).await,
-            "path.families" => self.path_families().await,
-            "ingest.submit" => self.ingest_submit(req.params).await,
-            "fastpath.submit" => stub_not_implemented("task_09"),
-            "capability.evaluate" => self.capability_evaluate(req.params).await,
-            "federation.peer.add" => self.federation_peer_add(req.params).await,
-            "federation.peer.list" => self.federation_peer_list().await,
-            "bridge.establish" => self.bridge_establish(req.params).await,
-            "bridge.rotate" => self.bridge_rotate(req.params).await,
-            "federation.pull" => self.federation_pull(req.params).await,
-            "predicate.inspect" => self.predicate_inspect(req.params).await,
-            "health.summary" => self.health_summary().await,
-            "working_set.list" => self.working_set_list().await,
-            "working_set.touch" => self.working_set_touch(req.params).await,
-            "working_set.pin" => self.working_set_pin(req.params).await,
-            "working_set.materialize" => self.working_set_materialize(req.params).await,
-            "working_set.detect_drift" => self.working_set_detect_drift().await,
-            "working_set.refresh_drifted" => self.working_set_refresh_drifted().await,
-            "working_set.evict_to_cap" => self.working_set_evict_to_cap(req.params).await,
-            "audit.publish_summary" => self.audit_publish_summary(req.params).await,
-            "audit.query" => self.audit_query(req.params).await,
-            "ingest.list_pending" => self.ingest_list_pending().await,
-            "ingest.accept" => self.ingest_accept(req.params).await,
-            "ingest.reject" => self.ingest_reject(req.params).await,
-            "entity.search" => self.entity_search(req.params).await,
-            "courier.run" => self.courier_run(req.params).await,
-            "courier.status" => self.courier_status().await,
-            other => Err(ApiError {
-                code: ERR_METHOD_NOT_FOUND,
-                message: format!("unknown method: {other}"),
-                data: None,
-            }),
-        };
-
-        match result {
-            Ok(v) => ApiResponse::success(id, v),
-            Err(e) => ApiResponse::error(id, e),
-        }
+/// A proposal's own provenance plus one extra entry (the `auto_accept`
+/// record naming the grant, or a `retraction`).
+fn with_extra(base: &[Provenance], extra: Option<&Provenance>) -> Vec<Provenance> {
+    let mut v = base.to_vec();
+    if let Some(e) = extra {
+        v.push(e.clone());
     }
+    v
+}
 
-    // ---- handlers ----
-
-    async fn atom_get(&self, params: Value) -> Result<Value, ApiError> {
-        let p: AtomGetParams = parse_params(params)?;
-        let env = self
-            .store
-            .get(&p.hash)
-            .map_err(store_err)?
-            .ok_or_else(|| ApiError {
-                code: ERR_NOT_FOUND,
-                message: format!("atom not found: {}", p.hash.to_multibase()),
-                data: None,
-            })?;
-
-        let target = Target {
-            predicate: env.predicate.clone(),
-            entity: env.entity.clone(),
-            classification: Some(env.classification.clone()),
-            tier: None,
-        };
-        let now = current_iso8601();
-        let decision = capability::evaluate(
-            &*self.store,
-            &self.owner,
-            capability::Action::Read,
-            &target,
-            &now,
-        )
-        .map_err(eval_err)?;
-        if let Decision::Deny { reason } = decision {
-            return Err(capability_denied(&reason));
-        }
-        to_value(&env)
-    }
-
-    async fn atom_list(&self, params: Value) -> Result<Value, ApiError> {
-        let p: AtomListParams = parse_params(params)?;
-        let entity = p.entity.ok_or_else(|| ApiError {
-            code: ERR_INVALID_PARAMS,
-            message: "atom.list requires `entity` (entity-less listing not in MVP)".into(),
-            data: None,
-        })?;
-        let atoms = self
-            .store
-            .list_by_entity(&entity, p.predicate.as_ref(), p.as_of.as_ref())
-            .map_err(store_err)?;
-
-        let now = current_iso8601();
-        // Capability-filter the returned list.
-        let mut allowed: Vec<_> = Vec::with_capacity(atoms.len());
-        for env in atoms {
-            let target = Target {
-                predicate: env.predicate.clone(),
-                entity: env.entity.clone(),
-                classification: Some(env.classification.clone()),
-                tier: None,
-            };
-            let decision = capability::evaluate(
-                &*self.store,
-                &self.owner,
-                capability::Action::Read,
-                &target,
-                &now,
-            )
-            .map_err(eval_err)?;
-            if matches!(decision, Decision::Allow { .. }) {
-                allowed.push(env);
-            }
-        }
-        to_value(&allowed)
-    }
-
-    async fn projection_render(&self, params: Value) -> Result<Value, ApiError> {
-        let p: ProjectionRenderParams = parse_params(params)?;
-        let req = ProjectionRequest {
-            path: p.path,
-            as_of: p.as_of,
-            agent: self.owner.clone(),
-        };
-        let resp = self.renderer.render(&req).map_err(render_err)?;
-        to_value(&resp)
-    }
-
-    async fn path_list(&self, params: Value) -> Result<Value, ApiError> {
-        // For MVP, path.list is implemented as a projection render of the listing
-        // form (recent / by-name letter). Pagination is a Phase 2 refinement.
-        let p: PathListParams = parse_params(params)?;
-        let req = ProjectionRequest {
-            path: p.path,
-            as_of: None,
-            agent: self.owner.clone(),
-        };
-        let resp = self.renderer.render(&req).map_err(render_err)?;
-        to_value(&resp)
-    }
-
-    /// The registry's family table (ADR-028): one row per spec that
-    /// declares `[path]`. Consumers (the Obsidian plugin, the fast-path
-    /// watcher through its own registry) enumerate folders from this
-    /// instead of a hardcoded list.
-    async fn path_families(&self) -> Result<Value, ApiError> {
-        to_value(&self.registry.families())
-    }
-
-    async fn ingest_submit(&self, params: Value) -> Result<Value, ApiError> {
-        let p: IngestSubmitParams = parse_params(params)?;
-
-        // Capability check: the caller must hold a `Write` capability
-        // for the scribe's target predicate space. Per ADR-013, the
-        // quarantine is a `note`-scoped operation at the boundary —
-        // the actual atom-level capability check fires when the user
-        // accepts a proposal. Use `note` as the target predicate so
-        // the check is meaningful for the MVP: any agent that can
-        // create notes can submit raw content for scribing.
-        let now = current_iso8601();
-        let target = Target {
-            predicate: PredicateName::new("note"),
-            entity: EntityId::new("ingest"),
-            classification: None,
-            tier: None,
-        };
-        let decision = capability::evaluate(
-            &*self.store,
-            &self.owner,
-            capability::Action::Write,
-            &target,
-            &now,
-        )
-        .map_err(eval_err)?;
-        if let Decision::Deny { reason } = decision {
-            return Err(capability_denied(&reason));
-        }
-
-        let content_bytes = p.content.into_bytes();
-        let id = self
-            .quarantine
-            .submit(p.source_uri.clone(), content_bytes.clone())
-            .await
-            .map_err(quarantine_err)?;
-
-        // Fire scribe extraction in the background so `ingest.submit`
-        // returns immediately with the submission id. The user reads
-        // proposals via `health.summary` / the daily summary panel.
-        if let Some(scribe) = self.scribe.clone() {
-            let quarantine = self.quarantine.clone();
-            let submission_id = id.clone();
-            let source_uri = p.source_uri;
-            tokio::spawn(async move {
-                match scribe.extract(&source_uri, &content_bytes).await {
-                    Ok(proposals) => {
-                        if let Err(e) = quarantine.complete(&submission_id, proposals).await {
-                            tracing::warn!(error = %e, id = %submission_id, "quarantine_complete_failed");
-                        }
-                    }
-                    Err(e) => {
-                        if let Err(e2) = quarantine
-                            .fail(&submission_id, format!("scribe: {e}"))
-                            .await
-                        {
-                            tracing::warn!(error = %e2, id = %submission_id, "quarantine_fail_failed");
-                        }
-                    }
-                }
-            });
-        }
-
-        to_value(&IngestSubmitResult { submission_id: id })
-    }
-
-    /// List submissions waiting for user action (status == Extracted).
-    /// The daily-summary panel calls this to render the accept/reject
-    /// queue.
-    async fn ingest_list_pending(&self) -> Result<Value, ApiError> {
-        let subs = self
-            .quarantine
-            .list(Some(SubmissionStatus::Extracted))
-            .await;
-        to_value(&subs)
-    }
-
-    /// Accept a quarantined submission's proposals: sign each as an
-    /// atom with the daemon's signing key and insert into the store.
-    /// Records the inserted atom hashes on the submission and flips
-    /// its status to `Accepted`. Capability-checks `Write` on the
-    /// owner (per the existing ingest pipeline convention).
-    async fn ingest_accept(&self, params: Value) -> Result<Value, ApiError> {
-        let p: IngestAcceptParams = parse_params(params)?;
-        let key = self.signing_key.as_ref().ok_or_else(|| ApiError {
-            code: ERR_NOT_IMPLEMENTED,
-            message: "ingest.accept requires a configured daemon signing key".into(),
-            data: None,
-        })?;
-
-        // Capability check on the substrate's write surface — the
-        // user's daily-summary action authors atoms, so the same
-        // Write capability that gates ingest.submit gates this.
-        let now = current_iso8601();
-        let target = Target {
-            predicate: PredicateName::new("note"),
-            entity: EntityId::new("ingest"),
-            classification: None,
-            tier: None,
-        };
-        let decision = capability::evaluate(
-            &*self.store,
-            &self.owner,
-            capability::Action::Write,
-            &target,
-            &now,
-        )
-        .map_err(eval_err)?;
-        if let Decision::Deny { reason } = decision {
-            return Err(capability_denied(&reason));
-        }
-
-        let sub = self
-            .quarantine
-            .get(&p.submission_id)
-            .await
-            .ok_or_else(|| ApiError {
-                code: ERR_NOT_FOUND,
-                message: format!("submission not found: {}", p.submission_id),
-                data: None,
-            })?;
-        if sub.status != SubmissionStatus::Extracted {
-            return Err(ApiError {
-                code: ERR_INVALID_PARAMS,
-                message: format!(
-                    "submission {} is not in Extracted state (got {:?})",
-                    p.submission_id, sub.status
-                ),
-                data: None,
-            });
-        }
-
-        let hashes = self
-            .sign_and_insert_set(&sub.proposals, &p.choices, key, &now)
-            .await?;
-
-        self.quarantine
-            .accept(&p.submission_id, hashes.clone())
-            .await
-            .map_err(quarantine_err)?;
-        to_value(&serde_json::json!({"accepted_atom_hashes": hashes}))
-    }
-
+impl AtomSigner {
     /// Sign and insert a resolved proposal set (task_45, ADR-030,
     /// ADR-031) in dependency order:
     ///
@@ -472,12 +171,44 @@ impl Dispatcher {
     ///    `valid_to`; it never creates a new atom.
     /// 6. Every existing bind records a prior for its surface form;
     ///    every minted person clears its NIL sighting.
-    async fn sign_and_insert_set(
+    pub async fn sign_and_insert_set(
         &self,
         proposals: &[Proposal],
         choices: &std::collections::HashMap<String, String>,
         key: &SigningKey,
         now: &Iso8601,
+        extra_provenance: Option<&Provenance>,
+    ) -> Result<Vec<Multihash>, ApiError> {
+        self.sign_and_insert_subset(
+            proposals,
+            choices,
+            key,
+            now,
+            &std::collections::HashMap::new(),
+            None,
+            &|_| extra_provenance.cloned(),
+        )
+        .await
+    }
+
+    /// [`Self::sign_and_insert_set`] over part of a set: proposals whose
+    /// local ref is in `already_filed` are skipped and their ids seed
+    /// the cross-reference bindings (they landed in an earlier pass, an
+    /// auto-file under a grant or a previous accept); `only`, when
+    /// given, restricts filing to those indices (the rest stay pending
+    /// and a reference to them keeps its display text); and
+    /// `extra_for(index)` supplies each filed proposal's extra provenance
+    /// entry (the grant that allowed it, for auto-filing).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn sign_and_insert_subset(
+        &self,
+        proposals: &[Proposal],
+        choices: &std::collections::HashMap<String, String>,
+        key: &SigningKey,
+        now: &Iso8601,
+        already_filed: &std::collections::HashMap<String, EntityId>,
+        only: Option<&[usize]>,
+        extra_for: &(dyn Fn(usize) -> Option<Provenance> + Sync),
     ) -> Result<Vec<Multihash>, ApiError> {
         use ffs_core::quarantine::{CrossRef, Resolution};
         use std::collections::HashMap;
@@ -489,7 +220,10 @@ impl Dispatcher {
             .iter()
             .enumerate()
             .filter(|(i, p)| {
-                p.resolution == Some(Resolution::Ambiguous) && !choices.contains_key(&lref(p, *i))
+                p.resolution == Some(Resolution::Ambiguous)
+                    && !choices.contains_key(&lref(p, *i))
+                    && !already_filed.contains_key(&lref(p, *i))
+                    && only.is_none_or(|o| o.contains(i))
             })
             .map(|(i, p)| lref(p, i))
             .collect();
@@ -513,13 +247,18 @@ impl Dispatcher {
             .and_then(crate::scribe::parse_scribe_date);
 
         let order = crate::resolver::dependency_order(proposals);
-        let mut bound: HashMap<String, EntityId> = HashMap::new();
+        let mut bound: HashMap<String, EntityId> = already_filed.clone();
         let mut hashes: Vec<Multihash> = Vec::with_capacity(proposals.len());
         let affiliation = PredicateName::new("affiliation");
 
         for i in order {
             let proposal = &proposals[i];
             let this_ref = lref(proposal, i);
+            if already_filed.contains_key(&this_ref) || only.is_some_and(|o| !o.contains(&i)) {
+                continue;
+            }
+            let extra_provenance = extra_for(i);
+            let extra_provenance = extra_provenance.as_ref();
             let mut claim = proposal.claim.clone();
             // 4. Rewrite refs already bound.
             for r in &proposal.refs {
@@ -578,7 +317,7 @@ impl Dispatcher {
                             tx_time: now.clone(),
                             classification: head.classification.clone(),
                             supersedes: Some(hash),
-                            provenance: proposal.provenance.clone(),
+                            provenance: with_extra(&proposal.provenance, extra_provenance),
                         };
                         let h = self.sign_insert_publish(tmpl, key)?;
                         hashes.push(h);
@@ -745,7 +484,7 @@ impl Dispatcher {
                 tx_time: now.clone(),
                 classification: Tier::new("existence"),
                 supersedes,
-                provenance: proposal.provenance.clone(),
+                provenance: with_extra(&proposal.provenance, extra_provenance),
             };
             let h = self.sign_insert_publish(tmpl, key)?;
             hashes.push(h);
@@ -753,7 +492,7 @@ impl Dispatcher {
         Ok(hashes)
     }
 
-    fn sign_insert_publish(
+    pub fn sign_insert_publish(
         &self,
         tmpl: AtomTemplate,
         key: &SigningKey,
@@ -773,6 +512,973 @@ impl Dispatcher {
         });
         Ok(h)
     }
+}
+
+/// The string and string-array property names a claim schema declares
+/// (`entity.search` v2 matches across exactly these; no field names
+/// live in code).
+fn schema_string_fields(schema: &Value) -> (Vec<String>, Vec<String>) {
+    let mut strings = Vec::new();
+    let mut arrays = Vec::new();
+    if let Some(props) = schema.get("properties").and_then(|v| v.as_object()) {
+        for (name, spec) in props {
+            match spec.get("type").and_then(|t| t.as_str()) {
+                Some("string") => strings.push(name.clone()),
+                Some("array")
+                    if spec
+                        .get("items")
+                        .and_then(|i| i.get("type"))
+                        .and_then(|t| t.as_str())
+                        == Some("string") =>
+                {
+                    arrays.push(name.clone())
+                }
+                _ => {}
+            }
+        }
+    }
+    (strings, arrays)
+}
+
+impl Dispatcher {
+    /// The auto-filer for this dispatcher's substrate (ADR-029), as
+    /// Arcs so it can run inside the extraction task.
+    pub fn auto_filer(&self) -> crate::autofile::AutoFiler {
+        crate::autofile::AutoFiler {
+            store: self.store.clone(),
+            registry: self.registry.clone(),
+            quarantine: self.quarantine.clone(),
+            notifier: self.notifier.clone(),
+            signing_key: self.signing_key.clone(),
+            ingest_agent_identity: self.ingest_agent_identity.clone(),
+        }
+    }
+
+    // ---- task_39: auto-filing, retraction, identity assertions, capability admin ----
+
+    fn owner_signing_key(&self, what: &str) -> Result<Arc<SigningKey>, ApiError> {
+        self.signing_key.clone().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: format!("{what} requires a configured daemon signing key"),
+            data: None,
+        })
+    }
+
+    fn parse_hash(s: &str, what: &str) -> Result<Multihash, ApiError> {
+        Multihash::from_multibase(s).map_err(|e| ApiError {
+            code: ERR_INVALID_PARAMS,
+            message: format!("{what}: not a multibase content hash: {e}"),
+            data: None,
+        })
+    }
+
+    fn atom_or_not_found(&self, hash: &Multihash) -> Result<ffs_core::AtomEnvelope, ApiError> {
+        self.store
+            .get(hash)
+            .map_err(store_err)?
+            .ok_or_else(|| ApiError {
+                code: ERR_NOT_FOUND,
+                message: format!("atom not found: {}", hash.to_multibase()),
+                data: None,
+            })
+    }
+
+    /// Re-render an entity's projection after a merge or unmerge by
+    /// re-announcing its family head (the materializer is idempotent
+    /// by render hash, so a no-op is cheap).
+    fn republish_entity_head(&self, entity: &EntityId) {
+        for f in self.registry.families() {
+            let pred = PredicateName::new(&f.predicate);
+            if let Ok(Some(head)) = self.store.head_of_chain(entity, &pred, None)
+                && let Ok(h) = head.content_hash()
+            {
+                self.notifier.publish(crate::notify::Event::AtomCommitted {
+                    hash: h,
+                    entity: entity.clone(),
+                    predicate: pred,
+                });
+                return;
+            }
+        }
+    }
+
+    fn quarantine_changed(&self, submission_id: Option<String>) {
+        self.notifier
+            .publish(crate::notify::Event::QuarantineChanged { submission_id });
+    }
+
+    /// `ingest.list_auto_filed { since? }`: atoms the quarantine filed on
+    /// its own under an `Accept` grant, plus merges and unmerges, newest
+    /// first (ADR-029).
+    async fn ingest_list_auto_filed(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestListAutoFiledParams = if params.is_null() {
+            IngestListAutoFiledParams::default()
+        } else {
+            parse_params(params)?
+        };
+        let items = self.auto_filed_items(p.since.as_ref()).await?;
+        to_value(&items)
+    }
+
+    async fn auto_filed_items(
+        &self,
+        since: Option<&Iso8601>,
+    ) -> Result<Vec<AutoFiledItem>, ApiError> {
+        let mut items: Vec<AutoFiledItem> = Vec::new();
+        let rows = self
+            .quarantine
+            .list_auto_filed(since)
+            .await
+            .map_err(quarantine_err)?;
+        for (hash, sub) in rows {
+            if let Some(env) = self.store.get(&hash).map_err(store_err)? {
+                items.push(AutoFiledItem {
+                    hash: hash.to_multibase(),
+                    entity: env.entity.clone(),
+                    predicate: env.predicate.clone(),
+                    source_uri: sub.source_uri.clone(),
+                    tx_time: env.tx_time.clone(),
+                    submission_id: Some(sub.id.clone()),
+                    kind: "auto_accept".into(),
+                });
+            }
+        }
+        let same_as = PredicateName::new(ffs_core::SAME_AS_PREDICATE);
+        for env in self
+            .store
+            .list_by_predicate(&same_as, since, 1000)
+            .map_err(store_err)?
+        {
+            let Ok(h) = env.content_hash() else { continue };
+            let kind = if env.valid_to.is_some() {
+                "unmerge"
+            } else {
+                "merge"
+            };
+            items.push(AutoFiledItem {
+                hash: h.to_multibase(),
+                entity: env.entity.clone(),
+                predicate: env.predicate.clone(),
+                source_uri: String::new(),
+                tx_time: env.tx_time.clone(),
+                submission_id: None,
+                kind: kind.into(),
+            });
+        }
+        items.sort_by(|a, b| b.tx_time.as_str().cmp(a.tx_time.as_str()));
+        Ok(items)
+    }
+
+    /// The `auto_filed` section of `health.summary`: the last 24 hours.
+    async fn auto_filed_summary(&self) -> AutoFiledSummary {
+        let since = crate::autofile::since_hours_ago(&current_iso8601(), 24);
+        let items = self
+            .auto_filed_items(Some(&since))
+            .await
+            .unwrap_or_default();
+        let mut by_predicate = std::collections::BTreeMap::new();
+        for it in &items {
+            *by_predicate
+                .entry(it.predicate.as_str().to_string())
+                .or_insert(0u32) += 1;
+        }
+        AutoFiledSummary {
+            count: items.len() as u32,
+            by_predicate,
+            items,
+        }
+    }
+
+    /// `ingest.retract { atom_hash }`: undo an auto-filed atom by
+    /// supersession (ADR-029), so the head moves back: when the atom
+    /// itself superseded an earlier head (an additive merge onto an
+    /// existing entity), the new head restores that earlier claim; when
+    /// it was the entity's first atom, the new head is a copy whose
+    /// `valid_to` is now. Either way the new atom carries a `retraction`
+    /// provenance entry naming what it undid. Requires the owner's
+    /// `Supersede` capability on the target and refuses atoms that are
+    /// not their chain's head. Nothing is erased.
+    async fn ingest_retract(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestRetractParams = parse_params(params)?;
+        let hash = Self::parse_hash(&p.atom_hash, "atom_hash")?;
+        let env = self.atom_or_not_found(&hash)?;
+        let head = self
+            .store
+            .head_of_chain(&env.entity, &env.predicate, None)
+            .map_err(store_err)?;
+        let is_head = head
+            .as_ref()
+            .and_then(|h| h.content_hash().ok())
+            .is_some_and(|h| h == hash);
+        if !is_head {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!(
+                    "atom {} is not the head of its chain; retract the head instead",
+                    hash.to_multibase()
+                ),
+                data: None,
+            });
+        }
+        let now = current_iso8601();
+        let target = Target {
+            predicate: env.predicate.clone(),
+            entity: env.entity.clone(),
+            classification: Some(env.classification.clone()),
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Supersede,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+        let key = self.owner_signing_key("ingest.retract")?;
+        let retraction = Provenance {
+            kind: SourceKind::Retraction,
+            uri: format!("ffs://local/atom/{}", hash.to_multibase()),
+            hash: hash.clone(),
+        };
+        let prior = match env.supersedes.as_ref() {
+            Some(prev) => self.store.get(prev).map_err(store_err)?,
+            None => None,
+        };
+        let tmpl = match prior {
+            Some(prev) => AtomTemplate {
+                v: 1,
+                entity: env.entity.clone(),
+                predicate: env.predicate.clone(),
+                claim: prev.claim.clone(),
+                valid_from: prev.valid_from.clone(),
+                valid_to: prev.valid_to.clone(),
+                tx_time: now,
+                classification: prev.classification.clone(),
+                supersedes: Some(hash.clone()),
+                provenance: with_extra(&prev.provenance, Some(&retraction)),
+            },
+            None => AtomTemplate {
+                v: 1,
+                entity: env.entity.clone(),
+                predicate: env.predicate.clone(),
+                claim: env.claim.clone(),
+                valid_from: env.valid_from.clone(),
+                valid_to: Some(now.clone()),
+                tx_time: now,
+                classification: env.classification.clone(),
+                supersedes: Some(hash.clone()),
+                provenance: with_extra(&env.provenance, Some(&retraction)),
+            },
+        };
+        let h = self.signer().sign_insert_publish(tmpl, &key)?;
+        self.quarantine_changed(None);
+        to_value(
+            &serde_json::json!({"retracted": hash.to_multibase(), "superseded_by": h.to_multibase()}),
+        )
+    }
+
+    /// `entity.assert_different { a, b, criterion? }`: the owner's
+    /// statement that two entities are different people or things
+    /// (ADR-030). Written only on an explicit action, never inferred.
+    async fn entity_assert_different(&self, params: Value) -> Result<Value, ApiError> {
+        let p: EntityAssertDifferentParams = parse_params(params)?;
+        if p.a == p.b {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "a and b are the same entity".into(),
+                data: None,
+            });
+        }
+        let key = self.owner_signing_key("entity.assert_different")?;
+        let now = current_iso8601();
+        let mut claim = serde_json::json!({"other": p.b.as_str()});
+        if let Some(c) = p.criterion.filter(|c| !c.trim().is_empty()) {
+            claim["criterion"] = Value::String(c);
+        }
+        let tmpl = AtomTemplate {
+            v: 1,
+            entity: p.a.clone(),
+            predicate: PredicateName::new(ffs_core::DIFFERENT_FROM_PREDICATE),
+            claim,
+            valid_from: now.clone(),
+            valid_to: None,
+            tx_time: now,
+            classification: Tier::new("existence"),
+            supersedes: None,
+            provenance: vec![],
+        };
+        let h = self.signer().sign_insert_publish(tmpl, &key)?;
+        self.quarantine_changed(None);
+        to_value(&serde_json::json!({"atom_hash": h.to_multibase()}))
+    }
+
+    /// `entity.merge { source, target, reason?, criterion? }`: the owner
+    /// says `source` is the same entity as `target`. Authors an
+    /// `entity.same_as` atom on the loser; its atoms stay in place and
+    /// render under the winner (ADR-030). Undo is `entity.unmerge`.
+    async fn entity_merge(&self, params: Value) -> Result<Value, ApiError> {
+        let p: EntityMergeParams = parse_params(params)?;
+        if p.source == p.target {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "source and target are the same entity".into(),
+                data: None,
+            });
+        }
+        let winner = self
+            .store
+            .follow_same_as(&p.target, None)
+            .map_err(store_err)?;
+        if winner == p.source {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "target already merges into source; unmerge first".into(),
+                data: None,
+            });
+        }
+        let key = self.owner_signing_key("entity.merge")?;
+        let now = current_iso8601();
+        let mut claim = serde_json::json!({"target": winner.as_str()});
+        if let Some(r) = p.reason.filter(|r| !r.trim().is_empty()) {
+            claim["reason"] = Value::String(r);
+        }
+        if let Some(c) = p.criterion.filter(|c| !c.trim().is_empty()) {
+            claim["criterion"] = Value::String(c);
+        }
+        let tmpl = AtomTemplate {
+            v: 1,
+            entity: p.source.clone(),
+            predicate: PredicateName::new(ffs_core::SAME_AS_PREDICATE),
+            claim,
+            valid_from: now.clone(),
+            valid_to: None,
+            tx_time: now,
+            classification: Tier::new("existence"),
+            supersedes: None,
+            provenance: vec![],
+        };
+        let h = self.signer().sign_insert_publish(tmpl, &key)?;
+        self.republish_entity_head(&p.source);
+        self.republish_entity_head(&winner);
+        self.quarantine_changed(None);
+        to_value(
+            &serde_json::json!({"same_as_hash": h.to_multibase(), "source": p.source.as_str(), "target": winner.as_str()}),
+        )
+    }
+
+    /// `entity.unmerge { same_as_hash }`: undo a merge by superseding the
+    /// `entity.same_as` atom with `valid_to = now`. Both entities' files
+    /// come back; nothing is erased (ADR-030).
+    async fn entity_unmerge(&self, params: Value) -> Result<Value, ApiError> {
+        let p: EntityUnmergeParams = parse_params(params)?;
+        let hash = Self::parse_hash(&p.same_as_hash, "same_as_hash")?;
+        let env = self.atom_or_not_found(&hash)?;
+        if env.predicate.as_str() != ffs_core::SAME_AS_PREDICATE {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!("atom {} is not an entity.same_as atom", hash.to_multibase()),
+                data: None,
+            });
+        }
+        let is_head = self
+            .store
+            .head_of_chain(&env.entity, &env.predicate, None)
+            .map_err(store_err)?
+            .and_then(|h| h.content_hash().ok())
+            .is_some_and(|h| h == hash);
+        if env.valid_to.is_some() || !is_head {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "this merge is already undone".into(),
+                data: None,
+            });
+        }
+        let key = self.owner_signing_key("entity.unmerge")?;
+        let now = current_iso8601();
+        let mut provenance = env.provenance.clone();
+        provenance.push(Provenance {
+            kind: SourceKind::Retraction,
+            uri: format!("ffs://local/atom/{}", hash.to_multibase()),
+            hash: hash.clone(),
+        });
+        let target = env
+            .claim
+            .get("target")
+            .and_then(|v| v.as_str())
+            .map(EntityId::new);
+        let tmpl = AtomTemplate {
+            v: 1,
+            entity: env.entity.clone(),
+            predicate: env.predicate.clone(),
+            claim: env.claim.clone(),
+            valid_from: env.valid_from.clone(),
+            valid_to: Some(now.clone()),
+            tx_time: now,
+            classification: env.classification.clone(),
+            supersedes: Some(hash.clone()),
+            provenance,
+        };
+        let h = self.signer().sign_insert_publish(tmpl, &key)?;
+        self.republish_entity_head(&env.entity);
+        if let Some(t) = target {
+            self.republish_entity_head(&t);
+        }
+        self.quarantine_changed(None);
+        to_value(
+            &serde_json::json!({"unmerged": hash.to_multibase(), "superseded_by": h.to_multibase()}),
+        )
+    }
+
+    /// `capability.grant { action, grantee, predicates, classifications?,
+    /// max_per_day?, unlimited?, valid_to? }`: an owner-signed grant.
+    /// `accept` without a cap and without `unlimited` is refused
+    /// (ADR-029: every accept grant carries a cap).
+    async fn capability_grant(&self, params: Value) -> Result<Value, ApiError> {
+        use ffs_core::capability::{Action, CapabilityScope, build_capability_atom};
+        let p: CapabilityGrantParams = parse_params(params)?;
+        let action: Action = serde_json::from_value(Value::String(p.action.clone())).map_err(|_| {
+            ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!(
+                    "unknown action {:?}; expected read | write | supersede | accept | erase | classify | federate",
+                    p.action
+                ),
+                data: None,
+            }
+        })?;
+        if action == Action::Accept && p.max_per_day.is_none() && !p.unlimited {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "an accept grant needs max_per_day (50 is the default in the guide) or unlimited: true".into(),
+                data: None,
+            });
+        }
+        let key = self.owner_signing_key("capability.grant")?;
+        let grantee = crate::autofile::agent_identity_key(&p.grantee);
+        let scope = CapabilityScope {
+            predicates: if p.predicates.is_empty() {
+                None
+            } else {
+                Some(p.predicates.iter().map(PredicateName::new).collect())
+            },
+            entities: None,
+            classifications: if p.classifications.is_empty() {
+                None
+            } else {
+                Some(p.classifications.iter().map(Tier::new).collect())
+            },
+            tier: None,
+            max_per_day: if p.unlimited { None } else { p.max_per_day },
+        };
+        let now = current_iso8601();
+        let env = build_capability_atom(
+            &key,
+            grantee.clone(),
+            vec![action],
+            scope,
+            now.clone(),
+            p.valid_to,
+            now,
+            None,
+        )
+        .map_err(|e| ApiError {
+            code: ERR_INTERNAL,
+            message: format!("sign grant: {e}"),
+            data: None,
+        })?;
+        let h = self.store.insert(&env).map_err(store_err)?;
+        self.quarantine_changed(None);
+        to_value(
+            &serde_json::json!({"grant_hash": h.to_multibase(), "grantee": grantee.to_multibase()}),
+        )
+    }
+
+    /// `capability.list`: active grants (chain heads with a non-empty
+    /// action list) with their cap and today's usage.
+    async fn capability_list(&self) -> Result<Value, ApiError> {
+        use ffs_core::capability::CapabilityClaim;
+        let pred = PredicateName::new(ffs_core::capability::CAPABILITY_PREDICATE);
+        let atoms = self
+            .store
+            .list_by_predicate(&pred, None, 10_000)
+            .map_err(store_err)?;
+        let superseded: std::collections::HashSet<String> = atoms
+            .iter()
+            .filter_map(|a| a.supersedes.as_ref().map(|h| h.to_multibase()))
+            .collect();
+        let since = crate::autofile::midnight_utc(&current_iso8601());
+        let mut out: Vec<CapabilityListEntry> = Vec::new();
+        for env in atoms {
+            let Ok(h) = env.content_hash() else { continue };
+            if superseded.contains(&h.to_multibase()) {
+                continue;
+            }
+            let Ok(claim) = CapabilityClaim::from_envelope(&env) else {
+                continue;
+            };
+            if claim.actions.is_empty() {
+                continue;
+            }
+            let used_today = self
+                .store
+                .count_auto_accepted_since(&h, &since)
+                .unwrap_or(0);
+            out.push(CapabilityListEntry {
+                grant_hash: h.to_multibase(),
+                grantee: claim.grantee.to_multibase(),
+                actions: claim
+                    .actions
+                    .iter()
+                    .map(|a| {
+                        serde_json::to_value(a)
+                            .ok()
+                            .and_then(|v| v.as_str().map(str::to_string))
+                            .unwrap_or_default()
+                    })
+                    .collect(),
+                predicates: claim
+                    .scope
+                    .predicates
+                    .as_ref()
+                    .map(|v| v.iter().map(|p| p.as_str().to_string()).collect()),
+                classifications: claim
+                    .scope
+                    .classifications
+                    .as_ref()
+                    .map(|v| v.iter().map(|t| t.as_str().to_string()).collect()),
+                max_per_day: claim.scope.max_per_day,
+                used_today,
+                valid_from: env.valid_from.clone(),
+                valid_to: env.valid_to.clone(),
+            });
+        }
+        out.sort_by(|a, b| b.valid_from.as_str().cmp(a.valid_from.as_str()));
+        to_value(&out)
+    }
+
+    /// `capability.revoke { grant_hash }`: supersede a grant with an
+    /// empty action list (ADR-007: revocation is supersession).
+    async fn capability_revoke(&self, params: Value) -> Result<Value, ApiError> {
+        use ffs_core::capability::{CapabilityClaim, build_capability_atom};
+        let p: CapabilityRevokeParams = parse_params(params)?;
+        let hash = Self::parse_hash(&p.grant_hash, "grant_hash")?;
+        let env = self.atom_or_not_found(&hash)?;
+        let claim = CapabilityClaim::from_envelope(&env).map_err(|e| ApiError {
+            code: ERR_INVALID_PARAMS,
+            message: format!("not a capability atom: {e}"),
+            data: None,
+        })?;
+        let key = self.owner_signing_key("capability.revoke")?;
+        let now = current_iso8601();
+        let revoked = build_capability_atom(
+            &key,
+            claim.grantee.clone(),
+            vec![],
+            claim.scope.clone(),
+            now.clone(),
+            None,
+            now,
+            Some(hash.clone()),
+        )
+        .map_err(|e| ApiError {
+            code: ERR_INTERNAL,
+            message: format!("sign revocation: {e}"),
+            data: None,
+        })?;
+        let h = self.store.insert(&revoked).map_err(store_err)?;
+        self.quarantine_changed(None);
+        to_value(
+            &serde_json::json!({"revoked": hash.to_multibase(), "superseded_by": h.to_multibase()}),
+        )
+    }
+
+    /// The shared signing path (see [`AtomSigner`]).
+    pub fn signer(&self) -> AtomSigner {
+        AtomSigner {
+            store: self.store.clone(),
+            registry: self.registry.clone(),
+            notifier: self.notifier.clone(),
+        }
+    }
+
+    pub async fn handle(&self, req: ApiRequest) -> ApiResponse {
+        let id = req.id.clone();
+        if req.jsonrpc != "2.0" {
+            return ApiResponse::error(
+                id,
+                ApiError {
+                    code: ERR_INVALID_REQUEST,
+                    message: format!("jsonrpc must be \"2.0\", got {:?}", req.jsonrpc),
+                    data: None,
+                },
+            );
+        }
+        let method = req.method.clone();
+        tracing::debug!(method = %method, "dispatch");
+
+        let result = match method.as_str() {
+            "atom.get" => self.atom_get(req.params).await,
+            "atom.list" => self.atom_list(req.params).await,
+            "projection.render" => self.projection_render(req.params).await,
+            "path.list" => self.path_list(req.params).await,
+            "path.families" => self.path_families().await,
+            "ingest.submit" => self.ingest_submit(req.params).await,
+            "fastpath.submit" => stub_not_implemented("task_09"),
+            "capability.evaluate" => self.capability_evaluate(req.params).await,
+            "federation.peer.add" => self.federation_peer_add(req.params).await,
+            "federation.peer.list" => self.federation_peer_list().await,
+            "bridge.establish" => self.bridge_establish(req.params).await,
+            "bridge.rotate" => self.bridge_rotate(req.params).await,
+            "federation.pull" => self.federation_pull(req.params).await,
+            "predicate.inspect" => self.predicate_inspect(req.params).await,
+            "health.summary" => self.health_summary().await,
+            "working_set.list" => self.working_set_list().await,
+            "working_set.touch" => self.working_set_touch(req.params).await,
+            "working_set.pin" => self.working_set_pin(req.params).await,
+            "working_set.materialize" => self.working_set_materialize(req.params).await,
+            "working_set.detect_drift" => self.working_set_detect_drift().await,
+            "working_set.refresh_drifted" => self.working_set_refresh_drifted().await,
+            "working_set.evict_to_cap" => self.working_set_evict_to_cap(req.params).await,
+            "audit.publish_summary" => self.audit_publish_summary(req.params).await,
+            "audit.query" => self.audit_query(req.params).await,
+            "ingest.list_pending" => self.ingest_list_pending().await,
+            "ingest.accept" => self.ingest_accept(req.params).await,
+            "ingest.reject" => self.ingest_reject(req.params).await,
+            "ingest.list_auto_filed" => self.ingest_list_auto_filed(req.params).await,
+            "ingest.retract" => self.ingest_retract(req.params).await,
+            "entity.assert_different" => self.entity_assert_different(req.params).await,
+            "entity.merge" => self.entity_merge(req.params).await,
+            "entity.unmerge" => self.entity_unmerge(req.params).await,
+            "capability.grant" => self.capability_grant(req.params).await,
+            "capability.list" => self.capability_list().await,
+            "capability.revoke" => self.capability_revoke(req.params).await,
+            "entity.search" => self.entity_search(req.params).await,
+            "courier.run" => self.courier_run(req.params).await,
+            "courier.status" => self.courier_status().await,
+            other => Err(ApiError {
+                code: ERR_METHOD_NOT_FOUND,
+                message: format!("unknown method: {other}"),
+                data: None,
+            }),
+        };
+
+        match result {
+            Ok(v) => ApiResponse::success(id, v),
+            Err(e) => ApiResponse::error(id, e),
+        }
+    }
+
+    // ---- handlers ----
+
+    async fn atom_get(&self, params: Value) -> Result<Value, ApiError> {
+        let p: AtomGetParams = parse_params(params)?;
+        let env = self
+            .store
+            .get(&p.hash)
+            .map_err(store_err)?
+            .ok_or_else(|| ApiError {
+                code: ERR_NOT_FOUND,
+                message: format!("atom not found: {}", p.hash.to_multibase()),
+                data: None,
+            })?;
+
+        let target = Target {
+            predicate: env.predicate.clone(),
+            entity: env.entity.clone(),
+            classification: Some(env.classification.clone()),
+            tier: None,
+        };
+        let now = current_iso8601();
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Read,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+        to_value(&env)
+    }
+
+    async fn atom_list(&self, params: Value) -> Result<Value, ApiError> {
+        let p: AtomListParams = parse_params(params)?;
+        let entity = p.entity.ok_or_else(|| ApiError {
+            code: ERR_INVALID_PARAMS,
+            message: "atom.list requires `entity` (entity-less listing not in MVP)".into(),
+            data: None,
+        })?;
+        let atoms = self
+            .store
+            .list_by_entity(&entity, p.predicate.as_ref(), p.as_of.as_ref())
+            .map_err(store_err)?;
+
+        let now = current_iso8601();
+        // Capability-filter the returned list.
+        let mut allowed: Vec<_> = Vec::with_capacity(atoms.len());
+        for env in atoms {
+            let target = Target {
+                predicate: env.predicate.clone(),
+                entity: env.entity.clone(),
+                classification: Some(env.classification.clone()),
+                tier: None,
+            };
+            let decision = capability::evaluate(
+                &*self.store,
+                &self.owner,
+                capability::Action::Read,
+                &target,
+                &now,
+            )
+            .map_err(eval_err)?;
+            if matches!(decision, Decision::Allow { .. }) {
+                allowed.push(env);
+            }
+        }
+        to_value(&allowed)
+    }
+
+    async fn projection_render(&self, params: Value) -> Result<Value, ApiError> {
+        let p: ProjectionRenderParams = parse_params(params)?;
+        let req = ProjectionRequest {
+            path: p.path,
+            as_of: p.as_of,
+            agent: self.owner.clone(),
+        };
+        let resp = self.renderer.render(&req).map_err(render_err)?;
+        to_value(&resp)
+    }
+
+    async fn path_list(&self, params: Value) -> Result<Value, ApiError> {
+        // For MVP, path.list is implemented as a projection render of the listing
+        // form (recent / by-name letter). Pagination is a Phase 2 refinement.
+        let p: PathListParams = parse_params(params)?;
+        let req = ProjectionRequest {
+            path: p.path,
+            as_of: None,
+            agent: self.owner.clone(),
+        };
+        let resp = self.renderer.render(&req).map_err(render_err)?;
+        to_value(&resp)
+    }
+
+    /// The registry's family table (ADR-028): one row per spec that
+    /// declares `[path]`. Consumers (the Obsidian plugin, the fast-path
+    /// watcher through its own registry) enumerate folders from this
+    /// instead of a hardcoded list.
+    async fn path_families(&self) -> Result<Value, ApiError> {
+        to_value(&self.registry.families())
+    }
+
+    async fn ingest_submit(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestSubmitParams = parse_params(params)?;
+
+        // Capability check: the caller must hold a `Write` capability
+        // for the scribe's target predicate space. Per ADR-013, the
+        // quarantine is a `note`-scoped operation at the boundary —
+        // the actual atom-level capability check fires when the user
+        // accepts a proposal. Use `note` as the target predicate so
+        // the check is meaningful for the MVP: any agent that can
+        // create notes can submit raw content for scribing.
+        let now = current_iso8601();
+        let target = Target {
+            predicate: PredicateName::new("note"),
+            entity: EntityId::new("ingest"),
+            classification: None,
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Write,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+
+        let content_bytes = p.content.into_bytes();
+        let id = self
+            .quarantine
+            .submit(p.source_uri.clone(), content_bytes.clone())
+            .await
+            .map_err(quarantine_err)?;
+
+        // Fire scribe extraction in the background so `ingest.submit`
+        // returns immediately with the submission id. The user reads
+        // proposals via `health.summary` / the daily summary panel.
+        if let Some(scribe) = self.scribe.clone() {
+            let quarantine = self.quarantine.clone();
+            let submission_id = id.clone();
+            let source_uri = p.source_uri;
+            let auto_filer = self.auto_filer();
+            let notifier = self.notifier.clone();
+            tokio::spawn(async move {
+                match scribe.extract(&source_uri, &content_bytes).await {
+                    Ok(proposals) => {
+                        if let Err(e) = quarantine.complete(&submission_id, proposals).await {
+                            tracing::warn!(error = %e, id = %submission_id, "quarantine_complete_failed");
+                        }
+                        notifier.publish(crate::notify::Event::QuarantineChanged {
+                            submission_id: Some(submission_id.clone()),
+                        });
+                        // ADR-029: file the additive subset under an
+                        // Accept grant; the rest stays for the owner.
+                        match auto_filer.auto_file(&submission_id).await {
+                            Ok(r) => {
+                                tracing::debug!(id = %submission_id, filed = r.filed.len(), pending = r.pending.len(), "auto_file")
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e.message, id = %submission_id, "auto_file failed; submission left pending")
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if let Err(e2) = quarantine
+                            .fail(&submission_id, format!("scribe: {e}"))
+                            .await
+                        {
+                            tracing::warn!(error = %e2, id = %submission_id, "quarantine_fail_failed");
+                        }
+                    }
+                }
+            });
+        }
+
+        to_value(&IngestSubmitResult { submission_id: id })
+    }
+
+    /// List submissions waiting for user action (status == Extracted).
+    /// The daily-summary panel calls this to render the accept/reject
+    /// queue.
+    async fn ingest_list_pending(&self) -> Result<Value, ApiError> {
+        let mut subs = self
+            .quarantine
+            .list(Some(SubmissionStatus::Extracted))
+            .await;
+        // A partly auto-filed submission still waits for the owner on
+        // its conflicting subset (ADR-029).
+        subs.extend(
+            self.quarantine
+                .list(Some(SubmissionStatus::PartiallyAccepted))
+                .await,
+        );
+        to_value(&subs)
+    }
+
+    /// Accept a quarantined submission's proposals: sign each as an
+    /// atom with the daemon's signing key and insert into the store.
+    /// Records the inserted atom hashes on the submission and flips
+    /// its status to `Accepted`. Capability-checks `Write` on the
+    /// owner (per the existing ingest pipeline convention).
+    async fn ingest_accept(&self, params: Value) -> Result<Value, ApiError> {
+        let p: IngestAcceptParams = parse_params(params)?;
+        let key = self.signing_key.as_ref().ok_or_else(|| ApiError {
+            code: ERR_NOT_IMPLEMENTED,
+            message: "ingest.accept requires a configured daemon signing key".into(),
+            data: None,
+        })?;
+
+        // Capability check on the substrate's write surface — the
+        // user's daily-summary action authors atoms, so the same
+        // Write capability that gates ingest.submit gates this.
+        let now = current_iso8601();
+        let target = Target {
+            predicate: PredicateName::new("note"),
+            entity: EntityId::new("ingest"),
+            classification: None,
+            tier: None,
+        };
+        let decision = capability::evaluate(
+            &*self.store,
+            &self.owner,
+            capability::Action::Write,
+            &target,
+            &now,
+        )
+        .map_err(eval_err)?;
+        if let Decision::Deny { reason } = decision {
+            return Err(capability_denied(&reason));
+        }
+
+        let sub = self
+            .quarantine
+            .get(&p.submission_id)
+            .await
+            .ok_or_else(|| ApiError {
+                code: ERR_NOT_FOUND,
+                message: format!("submission not found: {}", p.submission_id),
+                data: None,
+            })?;
+        if !matches!(
+            sub.status,
+            SubmissionStatus::Extracted | SubmissionStatus::PartiallyAccepted
+        ) {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: format!(
+                    "submission {} is not in Extracted state (got {:?})",
+                    p.submission_id, sub.status
+                ),
+                data: None,
+            });
+        }
+
+        // `resolved_entity` is the one-ambiguity shorthand (task_39): it
+        // fills `choices` for the single ambiguous proposal, or errors
+        // when there is more than one to pick for.
+        let mut choices = p.choices.clone();
+        if let Some(re) = p.resolved_entity.as_ref().filter(|s| !s.trim().is_empty()) {
+            use ffs_core::quarantine::Resolution;
+            let ambiguous: Vec<String> = sub
+                .proposals
+                .iter()
+                .enumerate()
+                .filter(|(_, q)| q.resolution == Some(Resolution::Ambiguous))
+                .map(|(i, q)| q.local_ref.clone().unwrap_or_else(|| format!("#{i}")))
+                .collect();
+            match ambiguous.as_slice() {
+                [one] => {
+                    choices.entry(one.clone()).or_insert_with(|| re.clone());
+                }
+                [] => {}
+                many => {
+                    return Err(ApiError {
+                        code: ERR_INVALID_PARAMS,
+                        message: format!(
+                            "resolved_entity applies to a single ambiguous proposal; this submission has {}: use choices",
+                            many.len()
+                        ),
+                        data: Some(serde_json::json!({"ambiguous": many})),
+                    });
+                }
+            }
+        }
+        // Proposals an earlier auto-file pass already landed are not
+        // filed twice; their ids bind the remainder's cross-references.
+        let already = crate::autofile::filed_bindings(&*self.store, &sub);
+        let hashes = self
+            .signer()
+            .sign_and_insert_subset(&sub.proposals, &choices, key, &now, &already, None, &|_| {
+                None
+            })
+            .await?;
+
+        self.quarantine
+            .accept(&p.submission_id, hashes.clone())
+            .await
+            .map_err(quarantine_err)?;
+        self.quarantine_changed(Some(p.submission_id.clone()));
+        to_value(&serde_json::json!({"accepted_atom_hashes": hashes}))
+    }
 
     /// Reject a quarantined submission. No atoms are authored; the
     /// submission stays in the quarantine for the audit trail with
@@ -783,6 +1489,7 @@ impl Dispatcher {
             .reject(&p.submission_id)
             .await
             .map_err(quarantine_err)?;
+        self.quarantine_changed(Some(p.submission_id.clone()));
         to_value(&serde_json::json!({"rejected": p.submission_id}))
     }
 
@@ -1171,6 +1878,7 @@ impl Dispatcher {
             drift_flags,
             atom_count: self.atom_count_estimate(),
             courier: self.read_courier_status(),
+            auto_filed: self.auto_filed_summary().await,
         };
         to_value(&summary)
     }
@@ -1878,7 +2586,7 @@ fn capability_denied(reason: &capability::DenyReason) -> ApiError {
     }
 }
 
-fn current_iso8601() -> Iso8601 {
+pub fn current_iso8601() -> Iso8601 {
     use time::format_description::well_known::Iso8601 as Fmt;
     let now = time::OffsetDateTime::now_utc();
     let s = now

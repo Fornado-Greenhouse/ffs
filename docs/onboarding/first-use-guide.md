@@ -311,6 +311,90 @@ person or organization the mention might be, and it is asking you
 rather than guessing. Pick the right one, or tell it this is someone
 new. An ambiguous proposal always waits for you.
 
+## Letting the clerk file for you
+
+By default nothing is filed without you. Every proposal waits in the
+inbox until you tick it. Once the courier is running and you have
+seen a few mornings of proposals, you can hand the routine part to the
+clerk with one grant.
+
+**What auto-files under a grant.** Only additions: a new person,
+organization, article, or event that did not exist before; a new
+bullet appended to a section that accepts bullets (Notes, Tags,
+History, Mentions); and records that are events rather than state
+(articles and business events), which are only ever added, never
+changed.
+
+**What never auto-files, whatever the grant says.** Anything that
+would overwrite a fact you already have (a changed role, a new
+organization on an existing person, a corrected title); a role
+ending ("stepped down"); any mention the scribe could not tell apart
+from two people it already knows (an ambiguous identity); and
+anything past the daily cap. Those always wait for you in the inbox.
+
+**Granting it.** Your technical friend runs, or you run:
+
+```sh
+ffs capability grant --action accept \
+  --grantee mcp:agent/courier \
+  --predicates source.article,event.business,org.company,person.generic \
+  --max-per-day 50
+```
+
+The cap is required: `grant --action accept` without `--max-per-day`
+or `--unlimited` is refused. Fifty is the default in the examples
+because that is roughly a morning's batch: in the review-load
+measurement behind this design, 46 decisions took seven minutes.
+Auto-filed items plus the inbox items should add up to a morning you
+will actually do, and the cap keeps a runaway courier from filling
+the cabinet while you are away.
+
+**Seeing what was filed.** Today's inbox file has an "Auto-filed
+today" list with one line per item. `ffs capability list` shows the
+active grants, each one's cap, and how much of the cap has been used
+today. Every auto-filed atom carries a provenance entry of kind
+`auto_accept` naming the grant that authorized it, so the answer to
+"why is this here" is always on the atom.
+
+**Undoing one item.** Tick the undo box next to it in the inbox.
+Nothing is erased: the atom is superseded with an end date and a
+`retraction` provenance entry, the file re-renders, and the history
+stays inspectable. The inbox is the way to undo; there is no
+separate command to learn.
+
+**Turning it off.** `ffs capability revoke <grant-hash>` (the hash is
+in `ffs capability list`). Revocation is a new atom that supersedes
+the grant, so it takes effect on the next submission and leaves a
+record of when the grant was active.
+
+**How the inbox review works, day to day.** Each morning the daemon
+writes `inbox/<today>.md` in your vault. It is ordered by source: one
+section per article or feed item, headed by the source title and
+link, with everything the scribe extracted from it nested underneath
+(the article record, the people, the organizations, the roles, the
+events). You read one source and decide what it produced, together.
+
+- Tick a box to accept or reject an item. `[x]`, `[X]`, or any
+  non-space character counts as a tick.
+- Tick **accept all under this article** when the whole section
+  looks right. It expands to the individual accepts. It is refused
+  with a warning if an ambiguous item under it has no pick, because
+  that one needs your eye.
+- An **ambiguous** item shows its candidates with a score and the
+  evidence that matched (the name, an alias, the organization). Pick
+  one, or tick **someone new** to file a fresh entity.
+- **These are different people** is a separate tick on purpose.
+  Picking candidate A over candidate B does not mean B is a different
+  person from A; it might be the same person seen from another angle.
+  Only the explicit tick records that they are distinct, and once
+  recorded the clerk will never suggest merging them again.
+- **Merge into** and its undo, and the **Auto-filed today** undo
+  lines, live in the same file.
+- Two contradictory ticks in one block, or a malformed block, become
+  a parse warning under that section rather than a guess.
+- The Obsidian panel now shows only a count line ("N pending, M need
+  your eye") and a link to today's inbox.
+
 ## What to do when something looks wrong
 
 - **A proposal looks weird.** Reject it. The scribe is

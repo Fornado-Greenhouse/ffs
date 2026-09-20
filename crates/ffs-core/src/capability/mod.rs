@@ -48,6 +48,26 @@ pub enum Action {
     Erase,
     Classify,
     Federate,
+    /// Auto-file additive proposals from the quarantine without the
+    /// owner's click (ADR-029). Scoped like any other action; the
+    /// quarantine's additive/conflict classifier is the second gate.
+    Accept,
+}
+
+/// Deserialize the `actions` list tolerantly: an action string this
+/// build does not know is skipped rather than failing the whole claim,
+/// so a peer on an older version can still pull and evaluate a grant
+/// that carries a newer action (ADR-029). A grant made only of unknown
+/// actions deserializes to an empty list and therefore never allows.
+fn deserialize_actions<'de, D>(deserializer: D) -> Result<Vec<Action>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<Action>(v).ok())
+        .collect())
 }
 
 /// What the agent wants to act on. `entity` is required; `classification`
@@ -87,6 +107,7 @@ impl Target {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CapabilityClaim {
     pub grantee: PublicKey,
+    #[serde(deserialize_with = "deserialize_actions")]
     pub actions: Vec<Action>,
     pub scope: CapabilityScope,
 }
@@ -253,11 +274,230 @@ mod tests {
                 entities: None,
                 classifications: Some(vec![Tier::new("existence")]),
                 tier: Some(Tier::new("introducible")),
+                max_per_day: None,
             },
         };
         let v = serde_json::to_value(&claim).unwrap();
         let back: CapabilityClaim = serde_json::from_value(v).unwrap();
         assert_eq!(claim, back);
+    }
+
+    #[test]
+    fn unknown_action_string_is_skipped_not_fatal() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[5u8; 32]);
+        let g = PublicKey::from_verifying(&key.verifying_key());
+        let v = serde_json::json!({
+            "grantee": g.to_multibase(),
+            "actions": ["read", "teleport", "accept"],
+            "scope": {}
+        });
+        let claim: CapabilityClaim = serde_json::from_value(v).expect("tolerant");
+        assert_eq!(claim.actions, vec![Action::Read, Action::Accept]);
+        let only_unknown = serde_json::json!({
+            "grantee": g.to_multibase(),
+            "actions": ["teleport"],
+            "scope": {}
+        });
+        let claim: CapabilityClaim = serde_json::from_value(only_unknown).expect("tolerant");
+        assert!(claim.actions.is_empty());
+        assert_eq!(serde_json::to_value(Action::Accept).unwrap(), "accept");
+    }
+
+    // ---- Accept evaluation (ADR-029, task_39) ----
+
+    fn accept_fixture(
+        actions: Vec<Action>,
+        predicates: Option<Vec<&str>>,
+        valid_from: &str,
+        valid_to: Option<&str>,
+    ) -> (crate::store::MemAtomStore, PublicKey) {
+        let store = crate::store::MemAtomStore::new();
+        let owner = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let agent_key = ed25519_dalek::SigningKey::from_bytes(&[8u8; 32]);
+        let agent = PublicKey::from_verifying(&agent_key.verifying_key());
+        let env = build_capability_atom(
+            &owner,
+            agent.clone(),
+            actions,
+            CapabilityScope {
+                predicates: predicates.map(|v| v.into_iter().map(PredicateName::new).collect()),
+                ..Default::default()
+            },
+            Iso8601::new(valid_from).unwrap(),
+            valid_to.map(|t| Iso8601::new(t).unwrap()),
+            Iso8601::new("2026-01-01T00:00:00Z").unwrap(),
+            None,
+        )
+        .unwrap();
+        store.insert(&env).unwrap();
+        (store, agent)
+    }
+
+    fn target(pred: &str) -> Target {
+        Target::new(PredicateName::new(pred), EntityId::new("e1"))
+    }
+
+    fn at(t: &str) -> Iso8601 {
+        Iso8601::new(t).unwrap()
+    }
+
+    #[test]
+    fn accept_grant_with_matching_predicate_allows() {
+        let (store, agent) = accept_fixture(
+            vec![Action::Accept],
+            Some(vec!["org.company"]),
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+        let d = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("org.company"),
+            &at("2026-06-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert!(d.is_allow());
+        assert!(d.allowed_by().is_some(), "Allow carries the grant hash");
+    }
+
+    #[test]
+    fn accept_grant_predicate_mismatch_denies() {
+        let (store, agent) = accept_fixture(
+            vec![Action::Accept],
+            Some(vec!["org.company"]),
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+        let d = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("person.generic"),
+            &at("2026-06-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert_eq!(
+            d,
+            Decision::Deny {
+                reason: DenyReason::NotInScope
+            }
+        );
+    }
+
+    #[test]
+    fn superseded_accept_grant_denies() {
+        let (store, agent) = accept_fixture(
+            vec![Action::Accept],
+            Some(vec!["org.company"]),
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+        // Revoke by superseding with an empty action list.
+        let first = store
+            .list_by_entity(&EntityId::new(agent.to_multibase()), None, None)
+            .unwrap()
+            .remove(0);
+        let owner = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let revoke = build_capability_atom(
+            &owner,
+            agent.clone(),
+            vec![],
+            CapabilityScope {
+                predicates: Some(vec![PredicateName::new("org.company")]),
+                ..Default::default()
+            },
+            at("2026-01-01T00:00:00Z"),
+            None,
+            at("2026-02-01T00:00:00Z"),
+            Some(first.content_hash().unwrap()),
+        )
+        .unwrap();
+        store.insert(&revoke).unwrap();
+        let d = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("org.company"),
+            &at("2026-06-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert!(d.is_deny());
+    }
+
+    #[test]
+    fn accept_outside_bitemporal_window_denies() {
+        let (store, agent) = accept_fixture(
+            vec![Action::Accept],
+            Some(vec!["org.company"]),
+            "2026-03-01T00:00:00Z",
+            Some("2026-04-01T00:00:00Z"),
+        );
+        let before = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("org.company"),
+            &at("2026-02-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert_eq!(
+            before,
+            Decision::Deny {
+                reason: DenyReason::NotYetValid
+            }
+        );
+        let after = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("org.company"),
+            &at("2026-05-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert_eq!(
+            after,
+            Decision::Deny {
+                reason: DenyReason::Expired
+            }
+        );
+        let inside = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("org.company"),
+            &at("2026-03-15T00:00:00Z"),
+        )
+        .unwrap();
+        assert!(inside.is_allow());
+    }
+
+    #[test]
+    fn write_only_grant_denies_accept() {
+        let (store, agent) = accept_fixture(
+            vec![Action::Write],
+            Some(vec!["org.company"]),
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+        let d = evaluate(
+            &store,
+            &agent,
+            Action::Accept,
+            &target("org.company"),
+            &at("2026-06-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert!(d.is_deny());
+        let w = evaluate(
+            &store,
+            &agent,
+            Action::Write,
+            &target("org.company"),
+            &at("2026-06-01T00:00:00Z"),
+        )
+        .unwrap();
+        assert!(w.is_allow());
     }
 
     #[test]

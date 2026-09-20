@@ -151,6 +151,8 @@ impl AtomStore for SqliteAtomStore {
                 crate::atom::SourceKind::McpAgent => "mcp_agent",
                 crate::atom::SourceKind::FederationPull => "federation_pull",
                 crate::atom::SourceKind::FastPath => "fast_path",
+                crate::atom::SourceKind::AutoAccept => "auto_accept",
+                crate::atom::SourceKind::Retraction => "retraction",
             };
             tx.execute(
                 "INSERT INTO provenance(atom_hash, source_kind, source_uri, source_hash)
@@ -415,6 +417,22 @@ impl AtomStore for SqliteAtomStore {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM nil_sightings WHERE key = ?1", params![key])?;
         Ok(())
+    }
+
+    fn count_auto_accepted_since(
+        &self,
+        grant_hash: &Multihash,
+        since: &Iso8601,
+    ) -> Result<u32, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT p.atom_hash)
+             FROM provenance p JOIN atoms a ON a.content_hash = p.atom_hash
+             WHERE p.source_kind = 'auto_accept' AND p.source_hash = ?1 AND a.tx_time >= ?2",
+            params![grant_hash.as_bytes().as_slice(), since.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(n as u32)
     }
 }
 

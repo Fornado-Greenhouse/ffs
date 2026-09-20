@@ -156,6 +156,7 @@ async fn spawn_with_atoms(n_atoms: usize) -> Bench {
         peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
         data_dir: None,
         skill_invoker: None,
+        ingest_agent_identity: None,
     });
 
     let socket = run_dir.join("ffs.sock");
