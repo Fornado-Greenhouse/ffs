@@ -98,3 +98,14 @@ bfo = "object aggregate"
 cco = "cco:Organization"
 iao = ""
 note = "A group of persons acting as one agent; people attach through affiliation role atoms, not fields."
+
+# -------- attestation policy (ADR-034) --------
+#
+# How many independent confirmations a fact needs to count as current
+# and how many days one lasts. The owner's accept is the first
+# confirmation. config/attestation.toml may raise k; never lower it.
+
+[attestation]
+k = 1
+window_days = 180
+independent = true

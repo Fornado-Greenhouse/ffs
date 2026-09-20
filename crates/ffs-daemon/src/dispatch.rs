@@ -479,6 +479,7 @@ impl AtomSigner {
             }
             bound.insert(this_ref, entity.clone());
 
+            let attest_as_of = ffs_core::attestation::date_part(valid_from.as_str()).to_string();
             let tmpl = AtomTemplate {
                 v: 1,
                 entity,
@@ -492,9 +493,97 @@ impl AtomSigner {
                 provenance: with_extra(&proposal.provenance, extra_provenance),
             };
             let h = self.sign_insert_publish(tmpl, key)?;
+            self.attest_accepted(proposal, &h, &attest_as_of, extra_provenance, key, now)?;
             hashes.push(h);
         }
         Ok(hashes)
+    }
+
+    /// ADR-034 § Decision (1): every atom the owner accepts (or the
+    /// quarantine auto-files under a grant) gets one attestation from
+    /// the owner key. `re_read_same_source` when the proposal came from
+    /// a source the owner could re-read (its provenance uri), otherwise
+    /// `owner_knowledge`. The attestation's own provenance says how the
+    /// accept happened: `auto_accept` naming the grant, or `accept`
+    /// naming the accepted atom and the submission's content hash.
+    /// Attestations are never attested (the guard on the predicate).
+    fn attest_accepted(
+        &self,
+        proposal: &Proposal,
+        accepted: &Multihash,
+        as_of: &str,
+        extra_provenance: Option<&Provenance>,
+        key: &SigningKey,
+        now: &Iso8601,
+    ) -> Result<(), ApiError> {
+        use ffs_core::attestation::{ATTESTATION_PREDICATE, Basis};
+        if proposal.predicate.as_str() == ATTESTATION_PREDICATE {
+            return Ok(());
+        }
+        let owner = PublicKey::from_bytes(key.verifying_key().to_bytes());
+        let (basis, source) = match proposal.provenance.iter().find(|p| {
+            !p.uri.is_empty()
+                && matches!(
+                    p.kind,
+                    SourceKind::IngestFile | SourceKind::McpAgent | SourceKind::FederationPull
+                )
+        }) {
+            Some(p) => (Basis::ReReadSameSource, p.uri.clone()),
+            None => (
+                Basis::OwnerKnowledge,
+                format!("person:{}", owner.to_multibase()),
+            ),
+        };
+        let provenance = match extra_provenance {
+            Some(e) if e.kind == SourceKind::AutoAccept => e.clone(),
+            _ => Provenance {
+                kind: SourceKind::Accept,
+                uri: format!("ffs://local/atom/{}", accepted.to_multibase()),
+                hash: proposal
+                    .provenance
+                    .first()
+                    .map(|p| p.hash.clone())
+                    .unwrap_or_else(|| accepted.clone()),
+            },
+        };
+        self.attest(key, accepted, basis, &source, as_of, None, provenance, now)
+            .map(|_| ())
+    }
+
+    /// Sign and insert one attestation atom about `subject`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn attest(
+        &self,
+        key: &SigningKey,
+        subject: &Multihash,
+        basis: ffs_core::attestation::Basis,
+        source: &str,
+        as_of: &str,
+        note: Option<&str>,
+        provenance: Provenance,
+        now: &Iso8601,
+    ) -> Result<Multihash, ApiError> {
+        let mut claim = serde_json::json!({
+            "as_of": as_of,
+            "basis": basis.as_str(),
+            "source": source,
+        });
+        if let Some(n) = note {
+            claim["note"] = serde_json::Value::String(n.to_string());
+        }
+        let tmpl = AtomTemplate {
+            v: 1,
+            entity: EntityId::new(subject.to_multibase()),
+            predicate: PredicateName::new(ffs_core::attestation::ATTESTATION_PREDICATE),
+            claim,
+            valid_from: now.clone(),
+            valid_to: None,
+            tx_time: now.clone(),
+            classification: Tier::new("existence"),
+            supersedes: None,
+            provenance: vec![provenance],
+        };
+        self.sign_insert_publish(tmpl, key)
     }
 
     pub fn sign_insert_publish(
@@ -796,6 +885,29 @@ impl Dispatcher {
             uri: format!("ffs://local/atom/{}", hash.to_multibase()),
             hash: hash.clone(),
         };
+        // ADR-034 § Decision (4): an optional correction marker. `never_true`
+        // deprecates the retracted atom; `world_changed` keeps it as history.
+        let correction = match p.reason.as_deref() {
+            None => None,
+            Some(r) => Some(
+                ffs_core::attestation::CorrectionReason::parse(r).ok_or_else(|| ApiError {
+                    code: ERR_INVALID_PARAMS,
+                    message: format!("reason must be world_changed or never_true, got {r:?}"),
+                    data: None,
+                })?,
+            ),
+        };
+        let with_correction = |base: Vec<Provenance>| -> Vec<Provenance> {
+            let mut v = base;
+            if let Some(c) = correction {
+                v.push(Provenance {
+                    kind: SourceKind::Correction,
+                    uri: c.provenance_uri(),
+                    hash: hash.clone(),
+                });
+            }
+            v
+        };
         let prior = match env.supersedes.as_ref() {
             Some(prev) => self.store.get(prev).map_err(store_err)?,
             None => None,
@@ -811,7 +923,7 @@ impl Dispatcher {
                 tx_time: now,
                 classification: prev.classification.clone(),
                 supersedes: Some(hash.clone()),
-                provenance: with_extra(&prev.provenance, Some(&retraction)),
+                provenance: with_correction(with_extra(&prev.provenance, Some(&retraction))),
             },
             None => AtomTemplate {
                 v: 1,
@@ -823,7 +935,7 @@ impl Dispatcher {
                 tx_time: now,
                 classification: env.classification.clone(),
                 supersedes: Some(hash.clone()),
-                provenance: with_extra(&env.provenance, Some(&retraction)),
+                provenance: with_correction(with_extra(&env.provenance, Some(&retraction))),
             },
         };
         let h = self.signer().sign_insert_publish(tmpl, &key)?;
@@ -1203,6 +1315,7 @@ impl Dispatcher {
             "ingest.reject" => self.ingest_reject(req.params).await,
             "ingest.list_auto_filed" => self.ingest_list_auto_filed(req.params).await,
             "ingest.retract" => self.ingest_retract(req.params).await,
+            "attestation.create" => self.attestation_create(req.params).await,
             "entity.assert_different" => self.entity_assert_different(req.params).await,
             "entity.merge" => self.entity_merge(req.params).await,
             "entity.unmerge" => self.entity_unmerge(req.params).await,
@@ -1938,6 +2051,169 @@ impl Dispatcher {
         Ok(view)
     }
 
+    /// `attestation.create` (ADR-034, task_46): the owner attests that
+    /// a fact held, from the CLI (`ffs attest`) or the inbox's
+    /// "unchanged" / "re-read source" lines. Peers attest through
+    /// federation (task_47), never through this method.
+    async fn attestation_create(&self, params: Value) -> Result<Value, ApiError> {
+        use ffs_core::attestation::{ATTESTATION_PREDICATE, Basis, date_part};
+        let p: AttestationCreateParams = parse_params(params)?;
+        let raw = p.subject.trim();
+        let hash_str = raw.rsplit_once("/atom/").map(|(_, h)| h).unwrap_or(raw);
+        let hash = Self::parse_hash(hash_str, "subject")?;
+        let env = self.atom_or_not_found(&hash)?;
+        if env.predicate.as_str() == ATTESTATION_PREDICATE {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "an attestation cannot itself be attested".into(),
+                data: None,
+            });
+        }
+        let basis = Basis::parse(&p.basis).ok_or_else(|| ApiError {
+            code: ERR_INVALID_PARAMS,
+            message: format!(
+                "basis must be one of re_read_same_source, independent_source, primary_source, owner_knowledge, contradicted_by; got {:?}",
+                p.basis
+            ),
+            data: None,
+        })?;
+        let key = self.owner_signing_key("attestation.create")?;
+        let now = current_iso8601();
+        let source = p
+            .source
+            .clone()
+            .unwrap_or_else(|| format!("person:{}", self.owner.to_multibase()));
+        let as_of = p
+            .as_of
+            .clone()
+            .unwrap_or_else(|| date_part(now.as_str()).to_string());
+        let provenance = Provenance {
+            kind: SourceKind::Accept,
+            uri: "rpc:attestation.create".into(),
+            hash: hash.clone(),
+        };
+        let h = self.signer().attest(
+            &key,
+            &hash,
+            basis,
+            &source,
+            &as_of,
+            p.note.as_deref(),
+            provenance,
+            &now,
+        )?;
+        self.quarantine_changed(None);
+        to_value(&serde_json::json!({
+            "atom_hash": h.to_multibase(),
+            "subject": hash.to_multibase(),
+            "basis": basis.as_str(),
+            "as_of": as_of,
+        }))
+    }
+
+    /// Per-substrate `k` overrides from `$FFS_DATA_DIR/config/attestation.toml`.
+    pub fn attestation_overrides(&self) -> Vec<(String, u32)> {
+        let Some(dir) = self.data_dir.as_ref() else {
+            return Vec::new();
+        };
+        match ffs_core::attestation::load_overrides(&dir.join("config").join("attestation.toml")) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, "attestation.toml ignored");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Heads per derived status for every predicate, plus the facts
+    /// whose window elapsed (ADR-034 § Decision (3)). Computed on each
+    /// call; nothing is stored. Personal scale: one pass per predicate.
+    pub fn attestation_status_summary(&self) -> AttestationStatusSummary {
+        use ffs_core::attestation::{
+            ATTESTATION_PREDICATE, CorrectionReason, Status, correction_reason_of, policy_for,
+            report_for_head,
+        };
+        let overrides = self.attestation_overrides();
+        let now = current_iso8601();
+        let mut out = AttestationStatusSummary::default();
+        for name in self.registry.names() {
+            if name == ATTESTATION_PREDICATE {
+                continue;
+            }
+            let spec = self.registry.get(&name);
+            let policy = policy_for(spec.as_ref(), &overrides);
+            let predicate = PredicateName::new(&name);
+            let Ok(atoms) = self.store.list_by_predicate(&predicate, None, 10_000) else {
+                continue;
+            };
+            let name_field = self
+                .registry
+                .family_for_predicate(&name)
+                .map(|f| f.name_field)
+                .unwrap_or_else(|| "display_name".into());
+            let counts = out.by_predicate.entry(name.clone()).or_default();
+            let mut seen = std::collections::BTreeSet::new();
+            for atom in &atoms {
+                // A superseded atom whose correction says never_true is
+                // deprecated (Wikidata's deprecated rank).
+                if atom.supersedes.is_some()
+                    && correction_reason_of(atom) == Some(CorrectionReason::NeverTrue)
+                {
+                    counts.deprecated += 1;
+                }
+                if !seen.insert(atom.entity.as_str().to_string()) {
+                    continue;
+                }
+                let Ok(Some(head)) = self.store.head_of_chain(&atom.entity, &predicate, None)
+                else {
+                    continue;
+                };
+                let Ok((report, _)) = report_for_head(&*self.store, &head, &policy, &now) else {
+                    continue;
+                };
+                match report.status {
+                    Status::Current => counts.current += 1,
+                    Status::Unconfirmed => counts.unconfirmed += 1,
+                    Status::Stale => counts.stale += 1,
+                    Status::Disputed => counts.disputed += 1,
+                    Status::Deprecated => counts.deprecated += 1,
+                    Status::Ended => counts.ended += 1,
+                }
+                if report.status == Status::Stale {
+                    let display = head
+                        .claim
+                        .get(&name_field)
+                        .or_else(|| head.claim.get("display_name"))
+                        .or_else(|| head.claim.get("title"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(head.entity.as_str())
+                        .to_string();
+                    let owner_alone = !report.confirmed_by.is_empty()
+                        && report.confirmed_by.iter().all(|c| c.attester == self.owner);
+                    out.past_window.push(PastWindowItem {
+                        entity: head.entity.clone(),
+                        predicate: predicate.clone(),
+                        display,
+                        atom_hash: head
+                            .content_hash()
+                            .map(|h| h.to_multibase())
+                            .unwrap_or_default(),
+                        last_confirmed: report.as_of.clone(),
+                        owner_alone,
+                        status: report.status.as_str().to_string(),
+                    });
+                }
+            }
+        }
+        out.past_window.sort_by(|a, b| {
+            a.predicate
+                .as_str()
+                .cmp(b.predicate.as_str())
+                .then(a.display.cmp(&b.display))
+        });
+        out
+    }
+
     async fn health_summary(&self) -> Result<Value, ApiError> {
         // Proposals: count of `Pending` submissions in the quarantine
         // — those the scribe has accepted for processing but the user
@@ -1962,6 +2238,7 @@ impl Dispatcher {
             atom_count: self.atom_count_estimate(),
             courier: self.read_courier_status(),
             auto_filed: self.auto_filed_summary().await,
+            attestation_status: self.attestation_status_summary(),
         };
         to_value(&summary)
     }
@@ -2796,4 +3073,10 @@ pub fn current_iso8601() -> Iso8601 {
         .format(&Fmt::DEFAULT)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
     Iso8601::new(s).expect("formatted ISO8601 must parse")
+}
+
+impl crate::inbox::PastWindowProvider for Dispatcher {
+    fn past_window(&self) -> Vec<PastWindowItem> {
+        self.attestation_status_summary().past_window
+    }
 }

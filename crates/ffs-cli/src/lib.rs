@@ -68,6 +68,23 @@ pub enum Command {
         #[command(subcommand)]
         command: CapabilityCommand,
     },
+    /// Attest that a fact still holds (ADR-034): a confirmation about
+    /// one atom, signed by the owner key.
+    Attest {
+        /// The atom: an ffs://<graph>/atom/<hash> url or a bare hash.
+        subject: String,
+        /// re_read_same_source | independent_source | primary_source | owner_knowledge | contradicted_by
+        #[arg(long)]
+        basis: String,
+        /// What you checked (a url, "person:<you>", a filing).
+        #[arg(long)]
+        source: Option<String>,
+        /// The date the fact held (YYYY-MM-DD); defaults to today.
+        #[arg(long = "as-of")]
+        as_of: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -226,5 +243,12 @@ pub async fn run(args: Args) -> Outcome {
         Command::Capability {
             command: CapabilityCommand::Revoke { grant_hash },
         } => commands::capability_revoke(socket_ref, &grant_hash, json).await,
+        Command::Attest {
+            subject,
+            basis,
+            source,
+            as_of,
+            note,
+        } => commands::attest(socket_ref, &subject, &basis, source, as_of, note, json).await,
     }
 }

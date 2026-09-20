@@ -443,6 +443,35 @@ it with `ffs_audit_query` and `kind: "briefing"` to draft the
 follow-ups for you. The briefing never changes your files: every
 action on it is a click you make.
 
+## How FFS knows a fact is still true
+
+Wikipedia keeps facts honest by dating them and asking for a source; Wikidata ranks competing statements instead of deleting the losers. FFS does the same with one extra atom (ADR-034).
+
+Every time you accept a proposal, the daemon files an `attestation` about the accepted atom: who confirmed it (you), as of when, on what basis (you re-read the source it came from, or you simply know it), and from what source. Nothing about the fact itself changes. The clerk's auto-filed atoms get one too, marked as filed under your grant so you can tell "I read it" from "the clerk filed it".
+
+Each predicate says how long a confirmation lasts. Affiliations and people go unconfirmed after 90 days, organizations after 180, articles and events never. From those attestations the daemon derives a standing for every fact when it renders the file:
+
+- `current`: enough independent confirmations inside the window.
+- `unconfirmed`: fewer than needed (a pulled fact nobody here has vouched for).
+- `stale`: the window elapsed since the newest confirmation.
+- `disputed`: something contradicts it and nobody has re-confirmed since.
+- `deprecated`: a correction said it was never true.
+
+You see it as a `status:` line in the file's frontmatter, an "as of 2026-06-21, confirmed by you (re-read)" line under it, and a "Confirmed" section listing the attestations. An affiliation line that has gone stale gets a `[stale]` marker.
+
+When a fact is past its window it shows up in the inbox under Housekeeping as "Past their window" (and in the morning briefing), with two lines you can tick: **unchanged** (you know it still holds) and **re-read source** (you checked the source again). "All unchanged" ticks every untouched line in the batch. Nothing here ever changes a fact by itself: staleness only schedules the question.
+
+Two confirmations of the same article count as one. If you want two independent confirmations before a fact counts as current, raise `k` for that predicate in `~/.ffs/config/attestation.toml`; the file can raise the number, never lower it.
+
+From the terminal:
+
+```
+ffs attest ffs://local/atom/<hash> --basis owner_knowledge
+ffs attest ffs://local/atom/<hash> --basis independent_source --source https://example.com/filing
+```
+
+When you undo an auto-filed atom, you may say why: `world_changed` keeps the old atom as history, `never_true` marks it deprecated. The inbox's undo line accepts `reason:never_true` in its comment.
+
 ## What to do when something looks wrong
 
 - **A proposal looks weird.** Reject it. The scribe is

@@ -41,6 +41,10 @@ needs_your_eye = { type = "array", items = { type = "object" } }
 possible_duplicates = { type = "array", items = { type = "object" } }
 recent_merges = { type = "array", items = { type = "object" } }
 filing = { type = "object" }
+# ADR-034 (task_46): facts past their confirmation window and the
+# per-predicate derived-status counts, from health.summary.
+past_window = { type = "array", items = { type = "object" } }
+attestation_status = { type = "object" }
 
 [claim_schema.properties.window]
 type = "object"
@@ -54,6 +58,7 @@ template = "auditor-briefing.md.tera"
 frontmatter_fields = ["date", "cadence"]
 body_sections = [
     "Narrative",
+    "Past their window",
     "Needs your eye",
     "New people",
     "Changes",

@@ -1,0 +1,51 @@
+# attestation — one party's statement that a fact held, as of a date,
+# on a stated basis, from a stated source (ADR-034).
+#
+# The entity is the ATTESTED ATOM'S CONTENT HASH, not a person or an
+# organization: an attestation is about one immutable claim. A
+# superseded atom keeps its attestations; the new head starts with
+# none until the owner accepts it, which emits one.
+#
+# `basis` is the PGP certification level made explicit, so k-of-N
+# counts distinct sources instead of N copies of one reporter:
+#   re_read_same_source  the attester re-read the source the fact came from
+#   independent_source   a second publication or report
+#   primary_source       a filing, a company statement, a public record
+#   owner_knowledge      the owner knows it (the accept, "unchanged")
+#   contradicted_by      a dispute marker; `source` is the contradicting atom
+#
+# No [path]: attestations never render as their own files. They render
+# inside the attested projection as the "as of" line and the
+# "Confirmed" section.
+
+name = "attestation"
+version = 1
+
+[claim_schema]
+"$schema" = "https://json-schema.org/draft/2020-12/schema"
+type = "object"
+required = ["as_of", "basis"]
+
+[claim_schema.properties]
+as_of = { type = "string" }
+basis = { type = "string", enum = ["re_read_same_source", "independent_source", "primary_source", "owner_knowledge", "contradicted_by"] }
+source = { type = "string" }
+note = { type = "string" }
+
+[rendering]
+template = "attestation.md.tera"
+frontmatter_fields = ["as_of", "basis", "source"]
+body_sections = []
+additive_sections = []
+
+# -------- reverse-map rules (0) --------
+#
+# Attestations are never edited through a projection file; a new
+# confirmation is a new atom (`ffs attest`, the inbox's "unchanged" and
+# "re-read source" lines, or the accept path).
+
+[ontology]
+bfo = "information content entity"
+cco = ""
+iao = "iao:IAO_0000030"
+note = "An information content entity that is about one atom: the entity field is the subject atom's content hash; basis and source make the confirmation's independence countable (ADR-034)."

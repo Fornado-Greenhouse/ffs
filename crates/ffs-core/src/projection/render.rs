@@ -40,6 +40,20 @@ pub struct ProjectionRenderer {
     registry: Arc<SpecRegistry>,
     index: Arc<dyn PathIndex>,
     tera: Tera,
+    /// The owner's key, so the "as of" line can say "you" (ADR-034).
+    owner: Option<crate::atom::PublicKey>,
+    /// Per-substrate `k` overrides from `config/attestation.toml`.
+    attestation_overrides: Vec<(String, u32)>,
+}
+
+/// One confirmation as a template sees it (ADR-034 "Confirmed" section).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AttestationRow {
+    pub attester_label: String,
+    pub basis: String,
+    pub basis_label: String,
+    pub source: String,
+    pub as_of: String,
 }
 
 /// A resolved link target for a Tera template: the file basename the
@@ -66,6 +80,10 @@ pub struct AffiliationRow {
     /// the organization), `"organization"` when the rendered entity is
     /// the context (the row names the person).
     pub side: String,
+    /// ADR-034: set only when the row needs the owner's eye (`stale`
+    /// or `disputed`); a current or merely unconfirmed role renders as
+    /// before so existing files stay byte-identical.
+    pub status: Option<String>,
 }
 
 impl ProjectionRenderer {
@@ -93,7 +111,30 @@ impl ProjectionRenderer {
             registry,
             index: Arc::new(InMemoryPathIndex::new()),
             tera,
+            owner: None,
+            attestation_overrides: Vec::new(),
         })
+    }
+
+    /// The owner's public key: attestations it signed render as "you".
+    pub fn with_owner(mut self, owner: crate::atom::PublicKey) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    /// Per-substrate `k` overrides (ADR-034; `config/attestation.toml`).
+    pub fn with_attestation_overrides(mut self, overrides: Vec<(String, u32)>) -> Self {
+        self.attestation_overrides = overrides;
+        self
+    }
+
+    fn attester_label(&self, key: &crate::atom::PublicKey) -> String {
+        if self.owner.as_ref() == Some(key) {
+            "you".to_string()
+        } else {
+            let s = key.to_multibase();
+            s.chars().take(9).collect()
+        }
     }
 
     /// Use a shared path-to-entity index (the daemon passes its SQLite
@@ -345,6 +386,21 @@ impl ProjectionRenderer {
                 continue;
             };
             let link = self.link_for(other, as_of)?;
+            let policy = crate::attestation::policy_for(
+                self.registry.get(AFFILIATION_PREDICATE).as_ref(),
+                &self.attestation_overrides,
+            );
+            let now_for_status = as_of.cloned().unwrap_or_else(current_iso8601);
+            let (report, atts) =
+                crate::attestation::report_for_head(&*self.store, &head, &policy, &now_for_status)
+                    .map_err(RenderError::Store)?;
+            let status = match report.status {
+                crate::attestation::Status::Stale | crate::attestation::Status::Disputed => {
+                    Some(report.status.as_str().to_string())
+                }
+                _ => None,
+            };
+            hashes.extend(atts.iter().filter_map(|a| a.hash.clone()));
             rows.push(AffiliationRow {
                 entity: other.to_string(),
                 display: link
@@ -367,6 +423,7 @@ impl ProjectionRenderer {
                 valid_from: head.valid_from.as_str().to_string(),
                 valid_to: head.valid_to.as_ref().map(|t| t.as_str().to_string()),
                 side: side.to_string(),
+                status,
             });
             hashes.push(
                 head.content_hash()
@@ -567,6 +624,59 @@ impl ProjectionRenderer {
             self.affiliations_for(entity, &loser_ids, as_of)?;
         ctx.insert("affiliations", &affiliations);
 
+        // ADR-034: the fact's derived standing. Computed, never stored.
+        // `status_visible` keeps files without any confirmation (and
+        // without a stale or disputed marker) byte-identical to their
+        // pre-ADR-034 render; every atom the owner accepts carries one
+        // attestation, so in use the line shows.
+        let policy = crate::attestation::policy_for(Some(&spec), &self.attestation_overrides);
+        let (report, atts) =
+            crate::attestation::report_for_head(&*self.store, &head, &policy, &now)
+                .map_err(RenderError::Store)?;
+        let attestation_hashes: Vec<Multihash> =
+            atts.iter().filter_map(|a| a.hash.clone()).collect();
+        let status_visible = !report.confirmed_by.is_empty()
+            || matches!(
+                report.status,
+                crate::attestation::Status::Stale
+                    | crate::attestation::Status::Disputed
+                    | crate::attestation::Status::Deprecated
+            );
+        let as_of_line = report.as_of.as_ref().map(|d| {
+            let who: Vec<String> = report
+                .confirmed_by
+                .iter()
+                .map(|c| format!("{} ({})", self.attester_label(&c.attester), c.basis.label()))
+                .collect();
+            format!("as of {d}, confirmed by {}", who.join(", "))
+        });
+        let status_marker: Option<String> = match (report.status, report.since.as_deref()) {
+            (crate::attestation::Status::Unconfirmed, Some(d)) => {
+                Some(format!("[unconfirmed since {d}]"))
+            }
+            (crate::attestation::Status::Stale, Some(d)) => Some(format!("[stale since {d}]")),
+            (crate::attestation::Status::Disputed, _) => Some("[disputed]".to_string()),
+            (crate::attestation::Status::Deprecated, _) => Some("[deprecated]".to_string()),
+            _ => None,
+        };
+        let attestation_rows: Vec<AttestationRow> = report
+            .confirmed_by
+            .iter()
+            .map(|c| AttestationRow {
+                attester_label: self.attester_label(&c.attester),
+                basis: c.basis.as_str().to_string(),
+                basis_label: c.basis.label().to_string(),
+                source: c.source.clone(),
+                as_of: c.as_of.clone(),
+            })
+            .collect();
+        ctx.insert("status", report.status.as_str());
+        ctx.insert("status_report", &report);
+        ctx.insert("status_visible", &status_visible);
+        ctx.insert("as_of_line", &as_of_line);
+        ctx.insert("status_marker", &status_marker);
+        ctx.insert("attestations", &attestation_rows);
+
         let markdown = self
             .tera
             .render(&spec.rendering.template, &ctx)
@@ -583,6 +693,7 @@ impl ProjectionRenderer {
         let mut source_atoms = vec![head_hash];
         source_atoms.extend(affiliation_hashes);
         source_atoms.extend(loser_hashes);
+        source_atoms.extend(attestation_hashes);
         Ok(ProjectionResponse {
             markdown,
             render_hash,

@@ -379,6 +379,10 @@ pub struct HealthSummary {
     /// What the quarantine auto-filed in the last 24 hours (ADR-029).
     #[serde(default)]
     pub auto_filed: AutoFiledSummary,
+    /// Heads per derived status and the facts past their window
+    /// (ADR-034, task_46).
+    #[serde(default)]
+    pub attestation_status: AttestationStatusSummary,
 }
 
 // ---- task_39: auto-filing, retraction, identity assertions, capability admin ----
@@ -395,6 +399,10 @@ pub struct IngestRetractParams {
     /// Multibase content hash of the atom to retract; it must be the
     /// current head of its chain.
     pub atom_hash: String,
+    /// ADR-034 correction marker: `world_changed` (the old atom is
+    /// history) or `never_true` (it is deprecated). Optional.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -484,4 +492,55 @@ pub struct AutoFiledSummary {
     pub count: u32,
     pub by_predicate: std::collections::BTreeMap<String, u32>,
     pub items: Vec<AutoFiledItem>,
+}
+
+// ---- task_46: attestations and derived status (ADR-034) ----
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AttestationCreateParams {
+    /// The attested atom: an `ffs://<graph>/atom/<hash>` url or a bare
+    /// multibase content hash.
+    pub subject: String,
+    /// `re_read_same_source | independent_source | primary_source |
+    /// owner_knowledge | contradicted_by`.
+    pub basis: String,
+    #[serde(default)]
+    pub source: Option<String>,
+    /// `YYYY-MM-DD`; defaults to today.
+    #[serde(default)]
+    pub as_of: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Heads per derived status for one predicate.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StatusCounts {
+    pub current: u32,
+    pub unconfirmed: u32,
+    pub stale: u32,
+    pub disputed: u32,
+    pub deprecated: u32,
+    pub ended: u32,
+}
+
+/// A fact whose confirmation window has elapsed ("Past their window").
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PastWindowItem {
+    pub entity: EntityId,
+    pub predicate: PredicateName,
+    pub display: String,
+    pub atom_hash: String,
+    #[serde(default)]
+    pub last_confirmed: Option<String>,
+    /// Every confirmation so far is the owner's own.
+    pub owner_alone: bool,
+    pub status: String,
+}
+
+/// `health.summary.attestation_status` (ADR-034): derived, never stored.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttestationStatusSummary {
+    pub by_predicate: std::collections::BTreeMap<String, StatusCounts>,
+    pub past_window: Vec<PastWindowItem>,
 }

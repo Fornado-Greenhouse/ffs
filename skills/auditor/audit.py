@@ -75,13 +75,26 @@ def aggregate_metrics(window_hours: int = 24) -> Dict[str, Any]:
         "capability_denials_per_agent": {},
         "federation_pull_failure_rate_per_peer": {},
         "window_hours": int(window_hours),
+        # task_46 / ADR-034: derived attestation status per predicate,
+        # read from the daemon; the auditor never computes or stores it.
+        "status_counts": {},
+        "past_window": [],
+        "past_window_count": 0,
+        "past_window_owner_alone": 0,
     }
     try:
         summary = query("health.summary", {})
     except FfsSkillError as e:
         log("warn", f"health.summary failed: {e}")
-        return metrics
+        summary = None
     if isinstance(summary, dict):
+        att = summary.get("attestation_status")
+        if isinstance(att, dict):
+            metrics["status_counts"] = att.get("by_predicate") or {}
+            past = [p for p in (att.get("past_window") or []) if isinstance(p, dict)]
+            metrics["past_window"] = past
+            metrics["past_window_count"] = len(past)
+            metrics["past_window_owner_alone"] = sum(1 for p in past if p.get("owner_alone"))
         metrics["proposals"] = int(summary.get("proposals") or 0)
         metrics["drift_flags"] = int(summary.get("drift_flags") or 0)
         # `health.summary.atom_count` is approximate at MVP (the
@@ -150,6 +163,20 @@ def courier_missed(metrics: Dict[str, Any], now: Optional[datetime] = None) -> O
         "kind": "courier_missed",
         "since": since,
         "message": f"courier has not run since {since}",
+    }
+
+
+def past_window_flag(metrics: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """A low-priority flag when facts have outlived their confirmation
+    window (ADR-034). Never an action; the inbox carries the ticks."""
+    n = int(metrics.get("past_window_count") or 0)
+    if n <= 0:
+        return None
+    alone = int(metrics.get("past_window_owner_alone") or 0)
+    return {
+        "kind": "past_window",
+        "priority": 3,
+        "message": f"{n} fact(s) past their confirmation window ({alone} confirmed by you alone); see the inbox's Past their window",
     }
 
 
@@ -223,6 +250,9 @@ def evaluate_flags(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
 
     # Courier schedule missed (priority 3, task_40).
+    past = past_window_flag(metrics)
+    if past:
+        flags.append(past)
     missed = courier_missed(metrics)
     if missed is not None:
         flags.append(missed)
@@ -259,6 +289,9 @@ def narrative(metrics: Dict[str, Any], flags: List[Dict[str, Any]]) -> str:
     filed = metrics.get("auto_filed") or {}
     if int(filed.get("count") or 0) > 0:
         tail += f"\nauto-filed {int(filed['count'])} item(s) under an Accept grant."
+    status_line = attestation_status_line(metrics)
+    if status_line:
+        tail += f"\n{status_line}"
     if not flags:
         return (
             f"All quiet. {metrics.get('atom_author_rate', 0)} atom(s) over the last "
@@ -286,8 +319,41 @@ def build_claim(metrics: Dict[str, Any], flags: List[Dict[str, Any]]) -> Tuple[D
         # ADR-029: the auto-filed list is not subject to the five-item
         # panel cap; the owner sees everything the clerk filed.
         "auto_filed": auto_filed_section(metrics),
+        # ADR-034: derived status counts and the facts past their window.
+        "attestation_status": attestation_status_section(metrics),
     }
     return claim, panel
+
+
+def attestation_status_line(metrics: Dict[str, Any]) -> Optional[str]:
+    """One narrative line per ADR-034: heads per derived status and the
+    past-window count. Absent on a daemon that predates task_46."""
+    counts = metrics.get("status_counts") or {}
+    if not counts:
+        return None
+    totals: Dict[str, int] = {}
+    for per in counts.values():
+        if isinstance(per, dict):
+            for k, v in per.items():
+                totals[k] = totals.get(k, 0) + int(v or 0)
+    parts = [f"{totals.get(k, 0)} {k}" for k in ("current", "unconfirmed", "stale", "disputed", "deprecated") if totals.get(k)]
+    past = int(metrics.get("past_window_count") or 0)
+    alone = int(metrics.get("past_window_owner_alone") or 0)
+    line = "facts by status: " + (", ".join(parts) if parts else "none yet")
+    if past:
+        line += f"; {past} past their window ({alone} confirmed by you alone)"
+    return line
+
+
+def attestation_status_section(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """The `attestation_status` claim section: per-predicate counts and
+    the past-window list, straight from the daemon (never computed here)."""
+    return {
+        "by_predicate": metrics.get("status_counts") or {},
+        "past_window": metrics.get("past_window") or [],
+        "past_window_count": int(metrics.get("past_window_count") or 0),
+        "past_window_owner_alone": int(metrics.get("past_window_owner_alone") or 0),
+    }
 
 
 def auto_filed_section(metrics: Dict[str, Any]) -> Dict[str, Any]:

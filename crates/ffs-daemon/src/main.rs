@@ -246,7 +246,17 @@ async fn run() -> Result<(), StartupError> {
     let renderer = Arc::new(
         ProjectionRenderer::new(store.clone(), registry.clone(), &templates_dir)
             .map_err(|e| StartupError::Renderer(Box::new(e)))?
-            .with_path_index(path_index.clone()),
+            .with_path_index(path_index.clone())
+            .with_owner(owner_pubkey.clone())
+            .with_attestation_overrides(
+                ffs_core::attestation::load_overrides(
+                    &data_dir.join("config").join("attestation.toml"),
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "attestation.toml ignored");
+                    Vec::new()
+                }),
+            ),
     );
 
     // config/resolution.toml (ADR-030): entity-resolution weights and
@@ -401,6 +411,7 @@ async fn run() -> Result<(), StartupError> {
         suppression.clone(),
         data_dir.clone(),
     ));
+    inbox.set_past_window_provider(dispatcher.clone());
     let _inbox_handle = inbox.clone().spawn(publisher.clone());
     tracing::info!("inbox materializer subscribed to event.quarantine.changed");
 

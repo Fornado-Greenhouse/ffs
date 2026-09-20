@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Attestations, derived status, and staleness (the local half of ADR-034)
 type: backend
 complexity: medium
@@ -36,15 +36,34 @@ This task makes "is it still accurate" a question the substrate answers before a
 - MUST NOT change the atom envelope, the `ffs://` scheme, or the MCP tool signatures; `ffs_audit_query` and `ffs_render_projection` expose the derived status through the briefing and the rendered frontmatter.
 </requirements>
 
+## Result (2026-09-20)
+
+Completed as the local half of ADR-034. Verification: `cargo nextest run --workspace --all-features` 638 passed; `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean; `.venv/bin/python -m pytest skills/` 260 passed.
+
+What shipped:
+- `starter/predicates/attestation.toml` (no `[path]`, `[ontology]` IAO annotation, `basis` enum) and `starter/templates/attestation.md.tera`; `[attestation]` tables on `affiliation` (k 1, window 90), `person.generic` (k 1, window 90), `org.company` (k 1, window 180); `starter/config/attestation.toml` override example (raise only).
+- `crates/ffs-core/src/attestation.rs`: `Attestation`, `AttestationPolicy` (`from_spec`, `raised_to`), `Status` (`current | unconfirmed | stale | disputed | deprecated | ended`), `CorrectionReason`, pure `status_of`, `load_overrides` (dotted `[org.company]` tables flatten), and the store-backed helpers `policy_for`, `attestations_of`, `correction_for`, `report_for_head`. `SourceKind` gained `accept` and `correction`.
+- Signing path: `ingest.accept` and ADR-029 auto-accept emit exactly one owner attestation per accepted atom (`re_read_same_source` with the proposal's provenance uri, else `owner_knowledge` with `person:<owner>`); provenance is the grant's `auto_accept` entry when the clerk filed it, else `accept` with `ffs://local/atom/<accepted>` and the submission's content hash. Attestations are never attested, and attestation atoms do not count toward `max_per_day`.
+- `ingest.retract { atom_hash, reason? }` records `correction:<world_changed|never_true>`; a superseded atom with `never_true` is `deprecated`.
+- Rendering: `status:` frontmatter, an as-of line naming attesters and basis, `[stale since]` / `[unconfirmed since]` markers, a `## Confirmed` section, and `[stale]` suffixes on affiliation lines. Unattested renders stay byte-identical (`status_visible` guard); `contact.person` and `note` show status only when a window is configured.
+- `attestation.create { subject, basis, source?, as_of?, note? }` returns `{ atom_hash, subject, basis, as_of }`; `ffs attest <subject> --basis <b> [--source] [--as-of] [--note]` (usage exit 64 on a bad basis).
+- `health.summary.attestation_status` (`by_predicate` counts, `past_window` items with `owner_alone`); the inbox file's Housekeeping gains `### Past their window` with `unchanged`, `re-read source`, and `all unchanged` tick lines that the fast path turns into `attestation.create` calls; the auditor summary and briefing carry the counts and the list.
+- Docs: `docs/onboarding/first-use-guide.md` "How FFS knows a fact is still true"; `docs/agent-memory/CONVENTION.md` § 12.1.
+
+Design notes:
+- The e2e tests live in `crates/ffs-daemon/tests/autofile_task39.rs` (same harness) rather than a new `ingest_pipeline_e2e.rs` file.
+- The briefing repeats the tick lines for reading, but the inbox file is where ticking them applies.
+- An `ended` status (valid_to in the past) keeps closed affiliations out of "Past their window".
+
 ## Subtasks
-- [ ] 46.1 `attestation.toml` starter spec with `[ontology]`; loader accepts a spec without `[path]`; materializer skips path-less predicates; spec-load test.
-- [ ] 46.2 `[attestation]` table in the loader with defaults and the `config/attestation.toml` override (raise only); starter specs annotated; loader tests.
-- [ ] 46.3 Derived-status function in `ffs-core` with property tests (never current below k; independence collapse; window elapsed; disputed; deprecated; no-window predicates).
-- [ ] 46.4 Auto-attestation in the `ingest.accept` and auto-accept signing paths with provenance `kind: accept | auto_accept`; e2e assertion that every accepted atom has exactly one owner attestation.
-- [ ] 46.5 Rendering: `status:` frontmatter, "as of" line, markers, "Confirmed" section in the person, org, and affiliation templates; render tests.
-- [ ] 46.6 `correction.reason` on `ingest.retract` and the review surface; `deprecated` status; tests.
-- [ ] 46.7 Auditor status counts in the daily summary; briefing "Past their window" section with Re-read source and Unchanged actions (inbox file or panel per ADR-032); vitest for the plugin model.
-- [ ] 46.8 `attestation.create` daemon method and `ffs attest` CLI; docs in `docs/onboarding/first-use-guide.md` ("How FFS knows a fact is still true") and `docs/agent-memory/CONVENTION.md` § 12 (attestations as the FFS form of OKF `verified[]`).
+- [x] 46.1 `attestation.toml` starter spec with `[ontology]`; loader accepts a spec without `[path]`; materializer skips path-less predicates; spec-load test.
+- [x] 46.2 `[attestation]` table in the loader with defaults and the `config/attestation.toml` override (raise only); starter specs annotated; loader tests.
+- [x] 46.3 Derived-status function in `ffs-core` with property tests (never current below k; independence collapse; window elapsed; disputed; deprecated; no-window predicates).
+- [x] 46.4 Auto-attestation in the `ingest.accept` and auto-accept signing paths with provenance `kind: accept | auto_accept`; e2e assertion that every accepted atom has exactly one owner attestation.
+- [x] 46.5 Rendering: `status:` frontmatter, "as of" line, markers, "Confirmed" section in the person, org, and affiliation templates; render tests.
+- [x] 46.6 `correction.reason` on `ingest.retract` and the review surface; `deprecated` status; tests.
+- [x] 46.7 Auditor status counts in the daily summary; briefing "Past their window" section with Re-read source and Unchanged actions (inbox file or panel per ADR-032); vitest for the plugin model.
+- [x] 46.8 `attestation.create` daemon method and `ffs attest` CLI; docs in `docs/onboarding/first-use-guide.md` ("How FFS knows a fact is still true") and `docs/agent-memory/CONVENTION.md` § 12 (attestations as the FFS form of OKF `verified[]`).
 
 ## Implementation Details
 The status function is the only new logic with state-machine flavor, so it gets property tests. Everything else is plumbing on seams that already exist: the accept path (`crates/ffs-daemon/src/dispatch.rs::ingest_accept` and the shared `sign_and_insert` helper task_39 extracts), the spec loader (`crates/ffs-core/src/predicate/mod.rs`), the renderer (`crates/ffs-core/src/projection/render.rs` reverse lookup from ADR-031), the auditor tick, and the briefing template.
@@ -84,19 +103,19 @@ Attestations are found by `list_by_entity(<subject hash>, Some("attestation"))`;
 
 ## Tests
 - Unit tests:
-  - [ ] Property: `status_of` is never `current` with fewer than `k` independent attestations, for generated k, windows, and attestation sets.
-  - [ ] Property: with `independent = true`, N attestations sharing a `source` count as one; with `independent = false` they count as N.
-  - [ ] Window elapsed yields `stale`; a fresh attestation flips it back to `current`.
-  - [ ] An unresolved `contradicted_by` attestation yields `disputed`; a later owner attestation resolves it.
-  - [ ] Supersession with `correction.reason = never_true` yields `deprecated` for the superseded atom; `world_changed` yields plain history.
-  - [ ] A predicate with no `[attestation]` table is `current` after one attestation, forever.
-  - [ ] Loader: `[attestation]` parsed with defaults; override file can raise `k` but not lower it; spec without `[path]` loads and the materializer skips it.
-  - [ ] Auto-attestation: `ingest.accept` emits exactly one owner attestation with the proposal's source; auto-accept emits one with `kind: auto_accept` provenance.
-  - [ ] Render: person and affiliation projections carry `status:` frontmatter and the "as of" line; nothing is written to the store during render.
-  - [ ] Auditor: status counts per predicate; "Past their window" lists only elapsed windows and reports the owner-alone count.
+  - [x] Property: `status_of` is never `current` with fewer than `k` independent attestations, for generated k, windows, and attestation sets.
+  - [x] Property: with `independent = true`, N attestations sharing a `source` count as one; with `independent = false` they count as N.
+  - [x] Window elapsed yields `stale`; a fresh attestation flips it back to `current`.
+  - [x] An unresolved `contradicted_by` attestation yields `disputed`; a later owner attestation resolves it.
+  - [x] Supersession with `correction.reason = never_true` yields `deprecated` for the superseded atom; `world_changed` yields plain history.
+  - [x] A predicate with no `[attestation]` table is `current` after one attestation, forever.
+  - [x] Loader: `[attestation]` parsed with defaults; override file can raise `k` but not lower it; spec without `[path]` loads and the materializer skips it.
+  - [x] Auto-attestation: `ingest.accept` emits exactly one owner attestation with the proposal's source; auto-accept emits one with `kind: auto_accept` provenance.
+  - [x] Render: person and affiliation projections carry `status:` frontmatter and the "as of" line; nothing is written to the store during render.
+  - [x] Auditor: status counts per predicate; "Past their window" lists only elapsed windows and reports the owner-alone count.
 - Integration tests:
-  - [ ] e2e: accept an affiliation, advance the clock 91 days, render: `status: stale` and the briefing lists it; `ffs attest ... --basis owner_knowledge` flips it to `current` on the next render.
-  - [ ] e2e: two attestations from the same source url count as one at `k = 2`; an `independent_source` attestation makes it `current`.
+  - [x] e2e: accept an affiliation, advance the clock 91 days, render: `status: stale` and the briefing lists it; `ffs attest ... --basis owner_knowledge` flips it to `current` on the next render.
+  - [x] e2e: two attestations from the same source url count as one at `k = 2`; an `independent_source` attestation makes it `current`.
 - Test coverage target: >=80%
 - All tests must pass
 

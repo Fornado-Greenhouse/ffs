@@ -8,7 +8,14 @@ author: {{ claim.author }}
 {%- if claim.status %}
 status: {{ claim.status }}
 {%- endif %}
----
+{%- if status_visible and status_report.windowed %}
+status: {{ status }}
+{%- endif %}
+---{%- if status_visible and status_report.windowed and as_of_line %}
+{{ as_of_line }}{% if status_marker %} {{ status_marker }}{% endif %}
+{%- elif status_visible and status_report.windowed and status_marker %}
+{{ status_marker }}
+{%- endif %}
 {% if claim.body %}
 ## Body
 {{ claim.body }}
@@ -25,3 +32,10 @@ status: {{ claim.status }}
 - {{ ref }}
 {% endfor -%}
 {% endif -%}
+{%- if status_visible and status_report.windowed and attestations | length > 0 %}
+
+## Confirmed
+{% for a in attestations -%}
+- {{ a.attester_label }} ({{ a.basis_label }}) as of {{ a.as_of }}{% if a.source %}: {{ a.source }}{% endif %}
+{% endfor %}
+{%- endif -%}

@@ -1,0 +1,11 @@
+# attestation.toml — per-substrate attestation overrides (ADR-034).
+#
+# Installed to $FFS_DATA_DIR/config/attestation.toml. Each table names
+# a predicate and may RAISE the number of independent confirmations a
+# fact needs before it renders as current. A value below the spec's own
+# k is ignored: overrides raise, never lower. Windows are the spec's.
+#
+# Example: require two independent confirmations for affiliations.
+#
+# [affiliation]
+# k = 2

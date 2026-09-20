@@ -153,6 +153,8 @@ impl AtomStore for SqliteAtomStore {
                 crate::atom::SourceKind::FastPath => "fast_path",
                 crate::atom::SourceKind::AutoAccept => "auto_accept",
                 crate::atom::SourceKind::Retraction => "retraction",
+                crate::atom::SourceKind::Accept => "accept",
+                crate::atom::SourceKind::Correction => "correction",
             };
             tx.execute(
                 "INSERT INTO provenance(atom_hash, source_kind, source_uri, source_hash)
@@ -428,8 +430,13 @@ impl AtomStore for SqliteAtomStore {
         let n: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT p.atom_hash)
              FROM provenance p JOIN atoms a ON a.content_hash = p.atom_hash
-             WHERE p.source_kind = 'auto_accept' AND p.source_hash = ?1 AND a.tx_time >= ?2",
-            params![grant_hash.as_bytes().as_slice(), since.as_str()],
+             WHERE p.source_kind = 'auto_accept' AND p.source_hash = ?1 AND a.tx_time >= ?2
+               AND a.predicate <> ?3",
+            params![
+                grant_hash.as_bytes().as_slice(),
+                since.as_str(),
+                crate::attestation::ATTESTATION_PREDICATE
+            ],
             |row| row.get(0),
         )?;
         Ok(n as u32)

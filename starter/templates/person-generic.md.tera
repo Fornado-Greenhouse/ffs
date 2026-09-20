@@ -23,7 +23,14 @@ location: {{ claim.location }}
 {%- if claim.pronouns %}
 pronouns: {{ claim.pronouns }}
 {%- endif %}
----
+{%- if status_visible %}
+status: {{ status }}
+{%- endif %}
+---{%- if status_visible and as_of_line %}
+{{ as_of_line }}{% if status_marker %} {{ status_marker }}{% endif %}
+{%- elif status_visible and status_marker %}
+{{ status_marker }}
+{%- endif %}
 {% if claim.bio and claim.bio | length > 0 %}
 ## Bio
 {% for line in claim.bio -%}
@@ -39,6 +46,13 @@ pronouns: {{ claim.pronouns }}
 {% if affiliations %}{% if affiliations | length > 0 %}
 ## Affiliations
 {% for a in affiliations -%}
-- {% if a.basename %}[[{{ a.basename }}|{{ a.display }}]]{% else %}{{ a.display }}{% endif %}: {{ a.title | default(value="affiliated") }} ({{ a.valid_from }} to {% if a.valid_to %}{{ a.valid_to }}{% else %}present{% endif %})
+- {% if a.basename %}[[{{ a.basename }}|{{ a.display }}]]{% else %}{{ a.display }}{% endif %}: {{ a.title | default(value="affiliated") }} ({{ a.valid_from }} to {% if a.valid_to %}{{ a.valid_to }}{% else %}present{% endif %}){% if a.status %} [{{ a.status }}]{% endif %}
 {% endfor -%}
 {% endif %}{% endif -%}
+{%- if status_visible and attestations | length > 0 %}
+
+## Confirmed
+{% for a in attestations -%}
+- {{ a.attester_label }} ({{ a.basis_label }}) as of {{ a.as_of }}{% if a.source %}: {{ a.source }}{% endif %}
+{% endfor %}
+{%- endif -%}

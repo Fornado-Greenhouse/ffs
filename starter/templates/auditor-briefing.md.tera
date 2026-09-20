@@ -88,6 +88,17 @@ No files look like the same person or organization.
 - {{ self::link(ref=m.source) }} merged into {{ self::link(ref=m.target) }} ({{ m.tx_time }})
 {% endfor %}
 {%- endif %}
+## Past their window
+{% if r.past_window and r.past_window | length > 0 %}
+Facts whose confirmation window elapsed (ADR-034). The same lines sit in today's inbox under Housekeeping; tick them there. Nothing here changes a fact on its own.
+{% for p in r.past_window -%}
+- {{ p.display }} ({{ p.predicate }}): last confirmed {{ p.last_confirmed | default(value="never") }}{% if p.owner_alone %}, confirmed by you alone{% endif %}
+  - [ ] unchanged <!-- attest:{{ p.atom_hash }} basis:owner_knowledge -->
+  - [ ] re-read source <!-- attest:{{ p.atom_hash }} basis:re_read_same_source -->
+{% endfor %}
+{%- else %}
+Nothing past its window.
+{% endif %}
 ## Filing stats
 {% if claim.filing %}
 - auto-filed: {{ claim.filing.auto_filed_count | default(value=0) }}

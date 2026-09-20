@@ -225,6 +225,8 @@ Rules:
 
 A proposal is generated content. An accepted atom is verified content, signed by the owner. An agent MUST NOT describe its own proposals as verified, accepted, saved, stored, or recorded.
 
+Attestations are the FFS form of OKF's `verified: [{by, at}]` list (ADR-034): every accept emits one signed `attestation` atom about the accepted atom's hash, with a `basis` and a `source` so that confirmations can be counted as independent or not, and a fact's standing (current, unconfirmed, stale, disputed, deprecated) is derived from them at read time and never stored. An agent MAY read that standing from a rendered projection; it MUST NOT author attestations for facts it has not itself checked, and it never attests as the owner.
+
 ### 12.2 The author key is the actor
 
 Every atom is signed by exactly one author. An agent's identity is its key, or, for MCP proposals, the identity URI the server stamps. An agent MUST NOT attempt to present content as authored by the owner or by another agent.

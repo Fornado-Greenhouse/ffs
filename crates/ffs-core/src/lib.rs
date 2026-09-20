@@ -6,6 +6,7 @@
 //! capability evaluation (05), and projection rendering (06).
 
 pub mod atom;
+pub mod attestation;
 pub mod capability;
 pub mod error;
 pub mod events;
@@ -27,6 +28,11 @@ pub use atom::{
     AtomEnvelope, AtomTemplate, EntityId, Iso8601, PredicateName, Provenance, PublicKey, Signature,
     SourceKind, Tier,
 };
+pub use attestation::{
+    ATTESTATION_PREDICATE, Attestation, AttestationPolicy, Basis, Confirmation, CorrectionReason,
+    Status, StatusReport, attestations_of, correction_for, correction_reason_of, policy_for,
+    report_for_head, status_of,
+};
 pub use capability::{
     Action, CAPABILITY_PREDICATE, CapabilityClaim, CapabilityError, CapabilityScope, Decision,
     DenyReason, EvalError, Target, build_capability_atom, evaluate, validate_supersession_narrows,
@@ -38,7 +44,7 @@ pub use federation_peers::{
 };
 pub use multibase::MultibaseError;
 pub use multihash::{Multihash, MultihashError};
-pub use predicate::QuarantineSpec;
+pub use predicate::{AttestationSpec, QuarantineSpec};
 pub use quarantine::{
     Candidate, CrossRef, InMemoryQuarantine, IngestQuarantine, Proposal, QuarantineError,
     Resolution, Submission, SubmissionStatus,

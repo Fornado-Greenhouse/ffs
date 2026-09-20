@@ -325,6 +325,7 @@ mod tests {
             path: None,
             ontology: None,
             quarantine: None,
+            attestation: None,
         }
     }
 

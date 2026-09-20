@@ -297,6 +297,7 @@ def collect(config: Dict[str, Any], now: datetime, window_days: Optional[int] = 
             truncated = True
         return rows
 
+    health = _safe_query("health.summary", {}, default={})
     window_atoms = {pred: in_range(list_pred(pred, w_from), w_from, w_to) for pred in WINDOW_PREDICATES}
     prior_atoms = {pred: in_range(list_pred(pred, p_from), p_from, w_from) for pred in PRIOR_PREDICATES}
     all_atoms = {pred: list_pred(pred, None) for pred in ALL_TIME_PREDICATES}
@@ -328,6 +329,7 @@ def collect(config: Dict[str, Any], now: datetime, window_days: Optional[int] = 
         "prior": (p_from, w_from),
         "cadence": config["interval"],
         "window_atoms": window_atoms,
+        "health": health if isinstance(health, dict) else {},
         "prior_atoms": prior_atoms,
         "all_atoms": all_atoms,
         "parents": parents,
@@ -840,6 +842,31 @@ def derive_recent_merges(ctx: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def derive_past_window(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Group the daemon's past-window list by predicate for the briefing.
+    Each item keeps the atom hash so the section can carry the same
+    `attest:` lines the inbox does."""
+    health = data.get("health") or {}
+    att = health.get("attestation_status") if isinstance(health, dict) else None
+    items = (att or {}).get("past_window") or []
+    out: List[Dict[str, Any]] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        out.append(
+            {
+                "entity": _s(it.get("entity")),
+                "predicate": _s(it.get("predicate")),
+                "display": _s(it.get("display")) or _s(it.get("entity")),
+                "atom_hash": _s(it.get("atom_hash")),
+                "last_confirmed": _s(it.get("last_confirmed")) or None,
+                "owner_alone": bool(it.get("owner_alone")),
+            }
+        )
+    out.sort(key=lambda x: (x["predicate"], x["display"]))
+    return out
+
+
 def derive_filing(ctx: Dict[str, Any]) -> Dict[str, int]:
     auto = reviewed = 0
     for pred in BUSINESS_PREDICATES:
@@ -915,6 +942,11 @@ def compute_claim(data: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any
         "possible_duplicates": cap(derive_possible_duplicates(ctx), list_max),
         "recent_merges": cap(derive_recent_merges(ctx), list_max),
         "filing": derive_filing(ctx),
+        # ADR-034 (task_46): facts past their confirmation window, from
+        # the daemon's derived status. The inbox carries the ticks; the
+        # briefing repeats them so the morning read sees the batch.
+        "past_window": cap(derive_past_window(data), list_max),
+        "attestation_status": (data.get("health") or {}).get("attestation_status", {}).get("by_predicate", {}) if isinstance((data.get("health") or {}).get("attestation_status"), dict) else {},
     }
     claim["narrative"] = build_narrative(claim)
     return claim

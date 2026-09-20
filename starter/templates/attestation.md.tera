@@ -1,0 +1,10 @@
+---
+as_of: {{ claim.as_of }}
+basis: {{ claim.basis }}
+{%- if claim.source %}
+source: {{ claim.source }}
+{%- endif %}
+---
+{% if claim.note %}
+{{ claim.note }}
+{% endif -%}

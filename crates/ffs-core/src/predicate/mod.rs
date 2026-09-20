@@ -40,6 +40,36 @@ pub struct PredicateSpec {
     /// this predicate's records are events, not state, so a proposal for
     /// it is always additive and may auto-file under an `Accept` grant.
     pub quarantine: Option<QuarantineSpec>,
+    /// `[attestation]` table (ADR-034): how many independent
+    /// confirmations a fact of this predicate needs to count as
+    /// current, and for how long one lasts. Absent means k = 1 and no
+    /// window.
+    pub attestation: Option<AttestationSpec>,
+}
+
+/// `[attestation]` table (ADR-034 § Decision (2)). A per-substrate
+/// override in `config/attestation.toml` may raise `k`, never lower it.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AttestationSpec {
+    /// Distinct independent confirmations needed for `current`.
+    #[serde(default = "default_k")]
+    pub k: u32,
+    /// Days after the newest confirmation before the fact is `stale`;
+    /// absent means the fact never goes stale on its own.
+    #[serde(default)]
+    pub window_days: Option<u32>,
+    /// Count distinct `(basis, source)` pairs rather than signers.
+    #[serde(default = "default_true")]
+    pub independent: bool,
+}
+
+fn default_k() -> u32 {
+    1
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// `[quarantine]` table (ADR-029, ADR-021 extension).
@@ -148,6 +178,8 @@ pub(crate) mod mod_helpers {
         pub ontology: Option<OntologySpec>,
         #[serde(default)]
         pub quarantine: Option<QuarantineSpec>,
+        #[serde(default)]
+        pub attestation: Option<AttestationSpec>,
     }
 
     /// Parse a TOML predicate-spec string, converting the claim_schema
@@ -179,6 +211,7 @@ pub(crate) mod mod_helpers {
             path: raw.path,
             ontology: raw.ontology,
             quarantine: raw.quarantine,
+            attestation: raw.attestation,
         })
     }
 

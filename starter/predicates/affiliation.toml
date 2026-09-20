@@ -68,3 +68,14 @@ bfo = "role"
 cco = "cco:OccupationRole"
 iao = ""
 note = "bearer = claim.person, context = claim.organization, temporal region = the atom's valid_from..valid_to"
+
+# -------- attestation policy (ADR-034) --------
+#
+# How many independent confirmations a fact needs to count as current
+# and how many days one lasts. The owner's accept is the first
+# confirmation. config/attestation.toml may raise k; never lower it.
+
+[attestation]
+k = 1
+window_days = 90
+independent = true

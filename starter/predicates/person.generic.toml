@@ -110,3 +110,14 @@ bfo = "object"
 cco = "cco:Person"
 iao = ""
 note = "A person referenced in narrative content; roles live in affiliation atoms (ADR-031)."
+
+# -------- attestation policy (ADR-034) --------
+#
+# How many independent confirmations a fact needs to count as current
+# and how many days one lasts. The owner's accept is the first
+# confirmation. config/attestation.toml may raise k; never lower it.
+
+[attestation]
+k = 1
+window_days = 90
+independent = true

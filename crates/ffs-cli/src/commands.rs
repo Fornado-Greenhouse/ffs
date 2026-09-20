@@ -590,3 +590,56 @@ pub async fn capability_revoke(socket: &Path, grant_hash: &str, json: bool) -> O
         Err(e) => map_client_err(e),
     }
 }
+
+/// `ffs attest <subject> --basis <basis> [--source] [--as-of] [--note]`
+/// (ADR-034): calls `attestation.create` with the owner key held by
+/// the daemon. Peers never use this path; they attest through
+/// federation.
+pub async fn attest(
+    socket: &Path,
+    subject: &str,
+    basis: &str,
+    source: Option<String>,
+    as_of: Option<String>,
+    note: Option<String>,
+    json: bool,
+) -> Outcome {
+    const BASES: [&str; 5] = [
+        "re_read_same_source",
+        "independent_source",
+        "primary_source",
+        "owner_knowledge",
+        "contradicted_by",
+    ];
+    if !BASES.contains(&basis) {
+        return Outcome::err(
+            EXIT_USAGE,
+            format!(
+                "--basis must be one of {}; got {basis:?}\n",
+                BASES.join(", ")
+            ),
+        );
+    }
+    let mut params = serde_json::json!({ "subject": subject, "basis": basis });
+    if let Some(s) = source {
+        params["source"] = serde_json::Value::String(s);
+    }
+    if let Some(a) = as_of {
+        params["as_of"] = serde_json::Value::String(a);
+    }
+    if let Some(n) = note {
+        params["note"] = serde_json::Value::String(n);
+    }
+    match client::call(socket, "attestation.create", params).await {
+        Ok(resp) => Outcome::ok(format_result(&resp, json, |v| {
+            Some(format!(
+                "attested: {} as of {} ({})\nattestation: {}\n",
+                v.get("subject").and_then(|x| x.as_str()).unwrap_or("?"),
+                v.get("as_of").and_then(|x| x.as_str()).unwrap_or("?"),
+                v.get("basis").and_then(|x| x.as_str()).unwrap_or("?"),
+                v.get("atom_hash").and_then(|x| x.as_str()).unwrap_or("?"),
+            ))
+        })),
+        Err(e) => map_client_err(e),
+    }
+}

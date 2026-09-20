@@ -18,6 +18,7 @@ const MVP_THREE: &[&str] = &["contact.person", "person.generic", "note"];
 /// The full starter set after task_38 (ADR-028, ADR-030, ADR-031).
 const EXPECTED_PREDICATES: &[&str] = &[
     "affiliation",
+    "attestation",
     "auditor.briefing",
     "contact.person",
     "entity.different_from",
@@ -55,7 +56,7 @@ fn all_starter_specs_load_cleanly() {
     names.sort();
     let mut expected: Vec<String> = EXPECTED_PREDICATES.iter().map(|s| s.to_string()).collect();
     expected.sort();
-    assert_eq!(names, expected, "expected the nine starter predicates");
+    assert_eq!(names, expected, "expected the eleven starter predicates");
 }
 
 #[test]
@@ -173,7 +174,7 @@ fn full_starter_reverse_map_rule_count_is_recorded() {
         .sum();
     assert_eq!(
         total, 55,
-        "expected 55 reverse-map rules across the ten starter specs (the briefing has none)"
+        "expected 55 reverse-map rules across the eleven starter specs (the briefing and attestation have none)"
     );
 }
 

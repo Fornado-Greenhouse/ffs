@@ -95,6 +95,13 @@ pub enum SourceKind {
     /// A supersession that retracts an auto-filed atom by setting
     /// `valid_to` (ADR-029 undo); nothing is erased.
     Retraction,
+    /// The owner's accept of a quarantined proposal (ADR-034): an
+    /// attestation's provenance entry naming the submission.
+    Accept,
+    /// A supersession that corrects its parent (ADR-034 § Decision
+    /// (4)); the `uri` is `correction:world_changed` or
+    /// `correction:never_true`.
+    Correction,
 }
 
 /// Provenance entry pointing back to the source material that produced the atom.

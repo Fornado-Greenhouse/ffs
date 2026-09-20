@@ -1202,3 +1202,384 @@ async fn revoke_turns_auto_filing_off_and_grant_refuses_accept_without_a_cap() {
         "next drop is pending only"
     );
 }
+
+// ---- task_46 (ADR-034): attestations, derived status, staleness ----
+
+fn attestations_for(h: &Harness, subject: &Multihash) -> Vec<ffs_core::AtomEnvelope> {
+    h.store
+        .list_by_entity(
+            &EntityId::new(subject.to_multibase()),
+            Some(&PredicateName::new("attestation")),
+            None,
+        )
+        .unwrap()
+}
+
+#[tokio::test]
+async fn every_accepted_atom_gets_exactly_one_owner_attestation_and_attestations_are_never_attested()
+ {
+    let h = setup();
+    // Owner accept of a proposal with a re-readable source.
+    let mut org = proposal(
+        "org.company",
+        serde_json::json!({"display_name": "Harbor Lights Marina", "industry": "leisure"}),
+        "org-1",
+    );
+    org.provenance.push(ffs_core::Provenance {
+        kind: ffs_core::SourceKind::IngestFile,
+        uri: "https://example.test/news/harbor-lights".into(),
+        hash: Multihash::blake3_of(b"harbor"),
+    });
+    let sub = submit_and_settle(&h, "file:///ingest/harbor.md", vec![org]).await;
+    assert_eq!(sub.status, SubmissionStatus::Extracted, "no grant: pending");
+    let r = unwrap_ok(
+        call(
+            &h,
+            "ingest.accept",
+            serde_json::json!({"submission_id": sub.id}),
+        )
+        .await,
+    );
+    let accepted: Vec<Multihash> = r["accepted_atom_hashes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| Multihash::from_multibase(v.as_str().unwrap()).unwrap())
+        .collect();
+    assert_eq!(accepted.len(), 1);
+    let atts = attestations_for(&h, &accepted[0]);
+    assert_eq!(atts.len(), 1, "exactly one attestation per accepted atom");
+    let a = &atts[0];
+    assert_eq!(a.author, owner_pk());
+    assert_eq!(a.claim["basis"], "re_read_same_source");
+    assert_eq!(a.claim["source"], "https://example.test/news/harbor-lights");
+    assert_eq!(a.provenance[0].kind, ffs_core::SourceKind::Accept);
+    // The attestation itself has no attestation.
+    assert!(attestations_for(&h, &a.content_hash().unwrap()).is_empty());
+
+    // A proposal with no source: owner_knowledge, source person:<owner>.
+    let sub2 = submit_and_settle(
+        &h,
+        "file:///ingest/pat.md",
+        vec![proposal(
+            "person.generic",
+            serde_json::json!({"display_name": "Pat Example", "role": "CEO"}),
+            "p-1",
+        )],
+    )
+    .await;
+    let r = unwrap_ok(
+        call(
+            &h,
+            "ingest.accept",
+            serde_json::json!({"submission_id": sub2.id}),
+        )
+        .await,
+    );
+    let hash = Multihash::from_multibase(r["accepted_atom_hashes"][0].as_str().unwrap()).unwrap();
+    let atts = attestations_for(&h, &hash);
+    assert_eq!(atts.len(), 1);
+    assert_eq!(atts[0].claim["basis"], "owner_knowledge");
+    assert_eq!(
+        atts[0].claim["source"],
+        format!("person:{}", owner_pk().to_multibase())
+    );
+
+    // Auto-filed under a grant: the attestation's provenance names the grant.
+    let grant = grant_accept(&h, "org.company", serde_json::json!(50)).await;
+    let sub3 = submit_and_settle(
+        &h,
+        COURIER,
+        vec![proposal(
+            "org.company",
+            serde_json::json!({"display_name": "Piedmont Solar LLC"}),
+            "org-2",
+        )],
+    )
+    .await;
+    assert_eq!(sub3.status, SubmissionStatus::AutoAccepted);
+    let auto_hash = sub3.auto_accepted_atom_hashes[0].clone();
+    let atts = attestations_for(&h, &auto_hash);
+    assert_eq!(atts.len(), 1);
+    assert_eq!(atts[0].provenance[0].kind, ffs_core::SourceKind::AutoAccept);
+    assert_eq!(atts[0].provenance[0].hash.to_multibase(), grant);
+}
+
+#[tokio::test]
+async fn retract_reason_never_true_marks_the_old_atom_deprecated_and_bogus_reasons_are_refused() {
+    let h = setup();
+    let sub = submit_and_settle(
+        &h,
+        "file:///ingest/a.md",
+        vec![proposal(
+            "org.company",
+            serde_json::json!({"display_name": "Wrong Corp"}),
+            "o",
+        )],
+    )
+    .await;
+    let r = unwrap_ok(
+        call(
+            &h,
+            "ingest.accept",
+            serde_json::json!({"submission_id": sub.id}),
+        )
+        .await,
+    );
+    let hash = r["accepted_atom_hashes"][0].as_str().unwrap().to_string();
+
+    let e = unwrap_err(
+        call(
+            &h,
+            "ingest.retract",
+            serde_json::json!({"atom_hash": hash, "reason": "oops"}),
+        )
+        .await,
+    );
+    assert!(
+        e.message.contains("world_changed or never_true"),
+        "{}",
+        e.message
+    );
+
+    let r = unwrap_ok(
+        call(
+            &h,
+            "ingest.retract",
+            serde_json::json!({"atom_hash": hash, "reason": "never_true"}),
+        )
+        .await,
+    );
+    let child = Multihash::from_multibase(r["superseded_by"].as_str().unwrap()).unwrap();
+    let child_env = h.store.get(&child).unwrap().unwrap();
+    assert!(child_env.provenance.iter().any(|p| p.kind == ffs_core::SourceKind::Correction
+        && p.uri == "correction:never_true"));
+
+    let summary = unwrap_ok(call(&h, "health.summary", serde_json::Value::Null).await);
+    let org = &summary["attestation_status"]["by_predicate"]["org.company"];
+    assert_eq!(org["deprecated"], 1, "{summary}");
+}
+
+#[tokio::test]
+async fn stale_facts_show_in_past_window_and_attestation_create_makes_them_current_and_renders() {
+    let h = setup();
+    // A person filed long ago whose only confirmation is old: inserted
+    // directly (no accept, so no automatic attestation), then attested
+    // with an old as_of through the RPC.
+    let entity = EntityId::mint();
+    let env = ffs_core::AtomTemplate {
+        v: 1,
+        entity: entity.clone(),
+        predicate: PredicateName::new("person.generic"),
+        claim: serde_json::json!({"display_name": "Old Timer", "role": "Founder"}),
+        valid_from: ts("2026-01-01T00:00:00Z"),
+        valid_to: None,
+        tx_time: ts("2026-01-01T00:00:01Z"),
+        classification: ffs_core::Tier::new("existence"),
+        supersedes: None,
+        provenance: vec![],
+    }
+    .sign(&owner_key())
+    .unwrap();
+    let hash = h.store.insert(&env).unwrap();
+    let r = unwrap_ok(
+        call(
+            &h,
+            "attestation.create",
+            serde_json::json!({"subject": format!("ffs://local/atom/{}", hash.to_multibase()), "basis": "owner_knowledge", "as_of": "2026-01-02"}),
+        )
+        .await,
+    );
+    assert_eq!(r["subject"], hash.to_multibase());
+
+    let summary = unwrap_ok(call(&h, "health.summary", serde_json::Value::Null).await);
+    let people = &summary["attestation_status"]["by_predicate"]["person.generic"];
+    assert_eq!(people["stale"], 1, "{summary}");
+    let past = summary["attestation_status"]["past_window"]
+        .as_array()
+        .unwrap();
+    assert_eq!(past.len(), 1);
+    assert_eq!(past[0]["display"], "Old Timer");
+    assert_eq!(past[0]["owner_alone"], true);
+    assert_eq!(past[0]["atom_hash"], hash.to_multibase());
+
+    // The inbox carries the tick lines through the provider.
+    struct P(Arc<Dispatcher>);
+    impl ffs_daemon::inbox::PastWindowProvider for P {
+        fn past_window(&self) -> Vec<ffs_daemon::api::PastWindowItem> {
+            self.0.attestation_status_summary().past_window
+        }
+    }
+    let inbox = ffs_daemon::inbox::InboxMaterializer::new(
+        h.quarantine.clone(),
+        Arc::new(SuppressionRegistry::new()),
+        h.data_dir.clone(),
+    );
+    inbox.set_past_window_provider(Arc::new(P(h.dispatcher.clone())));
+    let path = inbox.refresh().await.unwrap().expect("inbox written");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("### Past their window"), "{text}");
+    assert!(
+        text.contains(&format!(
+            "- [ ] unchanged <!-- attest:{} basis:owner_knowledge -->",
+            hash.to_multibase()
+        )),
+        "{text}"
+    );
+    assert!(
+        text.contains("- [ ] all unchanged <!-- attest-all:"),
+        "{text}"
+    );
+
+    // "unchanged" today: current again, off the past-window list.
+    unwrap_ok(
+        call(
+            &h,
+            "attestation.create",
+            serde_json::json!({"subject": hash.to_multibase(), "basis": "owner_knowledge"}),
+        )
+        .await,
+    );
+    let summary = unwrap_ok(call(&h, "health.summary", serde_json::Value::Null).await);
+    assert_eq!(
+        summary["attestation_status"]["by_predicate"]["person.generic"]["current"],
+        1
+    );
+    assert!(
+        summary["attestation_status"]["past_window"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    // The rendered file carries the standing.
+    let basename = h
+        .dispatcher
+        .renderer
+        .path_index()
+        .assign("people", &entity, "Old Timer", &[])
+        .unwrap();
+    let rendered = h
+        .dispatcher
+        .renderer
+        .render(&ffs_core::projection::ProjectionRequest {
+            path: format!("people/by-name/O/{basename}.md"),
+            as_of: None,
+            agent: owner_pk(),
+        })
+        .unwrap();
+    assert!(
+        rendered.markdown.contains("status: current"),
+        "{}",
+        rendered.markdown
+    );
+    assert!(
+        rendered.markdown.contains("(own knowledge)"),
+        "{}",
+        rendered.markdown
+    );
+    assert!(
+        rendered.markdown.contains("## Confirmed"),
+        "{}",
+        rendered.markdown
+    );
+
+    // An attestation cannot be attested.
+    let att_hash = attestations_for(&h, &hash)[0].content_hash().unwrap();
+    let e = unwrap_err(
+        call(
+            &h,
+            "attestation.create",
+            serde_json::json!({"subject": att_hash.to_multibase(), "basis": "owner_knowledge"}),
+        )
+        .await,
+    );
+    assert!(e.message.contains("cannot itself be attested"));
+}
+
+#[tokio::test]
+async fn two_attestations_from_one_source_count_once_at_k_two_and_an_independent_source_confirms() {
+    let h = setup();
+    // A per-substrate override raises org.company to k = 2 (raise only).
+    std::fs::write(
+        h.data_dir.join("config/attestation.toml"),
+        "[org.company]\nk = 2\n",
+    )
+    .unwrap();
+    // The harness dispatcher has no data_dir; build one that reads the
+    // override from the same substrate directory.
+    let d = Dispatcher {
+        store: h.dispatcher.store.clone(),
+        registry: h.dispatcher.registry.clone(),
+        renderer: h.dispatcher.renderer.clone(),
+        notifier: h.dispatcher.notifier.clone(),
+        owner: owner_pk(),
+        quarantine: h.dispatcher.quarantine.clone(),
+        scribe: h.dispatcher.scribe.clone(),
+        working_set: h.dispatcher.working_set.clone(),
+        signing_key: Some(Arc::new(owner_key())),
+        federation_peers: Arc::new(ffs_core::federation_peers::InMemoryFederationPeerStore::new()),
+        federation_client: None,
+        our_cert_fingerprint: None,
+        peer_mounts: Arc::new(ffs_federation::mount::InMemoryPeerMount::new()),
+        data_dir: Some(h.data_dir.clone()),
+        skill_invoker: None,
+        ingest_agent_identity: Some(COURIER.into()),
+        suppression: None,
+    };
+    let sub = submit_and_settle(
+        &h,
+        "file:///ingest/k2.md",
+        vec![proposal(
+            "org.company",
+            serde_json::json!({"display_name": "Twice Told LLC"}),
+            "org-k2",
+        )],
+    )
+    .await;
+    let r = unwrap_ok(
+        d.handle(req(
+            "ingest.accept",
+            serde_json::json!({"submission_id": sub.id}),
+        ))
+        .await,
+    );
+    let hash = r["accepted_atom_hashes"][0].as_str().unwrap().to_string();
+
+    // The accept's own attestation (owner_knowledge, person:<owner>) is
+    // one (basis, source) pair. Saying it again is still one confirmation.
+    unwrap_ok(
+        d.handle(req(
+            "attestation.create",
+            serde_json::json!({"subject": hash, "basis": "owner_knowledge", "source": format!("person:{}", owner_pk().to_multibase())}),
+        ))
+        .await,
+    );
+    assert_eq!(
+        attestations_for(&h, &Multihash::from_multibase(&hash).unwrap()).len(),
+        2
+    );
+    let summary = unwrap_ok(
+        d.handle(req("health.summary", serde_json::Value::Null))
+            .await,
+    );
+    let orgs = &summary["attestation_status"]["by_predicate"]["org.company"];
+    assert_eq!(orgs["unconfirmed"], 1, "{summary}");
+    assert_eq!(orgs["current"], 0, "{summary}");
+
+    // An independent source is the second confirmation k = 2 asks for.
+    unwrap_ok(
+        d.handle(req(
+            "attestation.create",
+            serde_json::json!({"subject": hash, "basis": "independent_source", "source": "https://sos.example.test/twice-told"}),
+        ))
+        .await,
+    );
+    let summary = unwrap_ok(
+        d.handle(req("health.summary", serde_json::Value::Null))
+            .await,
+    );
+    let orgs = &summary["attestation_status"]["by_predicate"]["org.company"];
+    assert_eq!(orgs["current"], 1, "{summary}");
+    assert_eq!(orgs["unconfirmed"], 0, "{summary}");
+}

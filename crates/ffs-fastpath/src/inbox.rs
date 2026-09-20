@@ -52,9 +52,18 @@ pub enum DecisionAction {
         source: String,
         target: String,
     },
-    /// Undo an auto-filed atom (retract by supersession).
+    /// Undo an auto-filed atom (retract by supersession). `reason` is
+    /// ADR-034's optional correction marker (`world_changed` or
+    /// `never_true`) from `<!-- retract:<hash> reason:<r> -->`.
     Undo {
         atom_hash: String,
+        reason: Option<String>,
+    },
+    /// ADR-034: the owner confirms a fact still holds (`attest:<hash>
+    /// basis:<basis>` under "Past their window").
+    Attest {
+        subject: String,
+        basis: String,
     },
     Unmerge {
         same_as_hash: String,
@@ -231,6 +240,10 @@ pub fn parse_inbox(text: &str) -> ParsedInbox {
     let mut section = Section::Preamble;
     let mut current_source: Option<String> = None;
     let mut accept_all_ticked = false;
+    // ADR-034 "all unchanged": expands over every untouched
+    // `unchanged` line in the Housekeeping section.
+    let mut attest_all_ticked = false;
+    let mut attest_pending: Vec<String> = Vec::new();
     let mut blocks: Vec<Block> = Vec::new();
     let mut block: Option<Block> = None;
 
@@ -321,6 +334,11 @@ pub fn parse_inbox(text: &str) -> ParsedInbox {
             Section::Decided | Section::Preamble => {}
             Section::Housekeeping => {
                 if !ticked {
+                    if let Some(subject) = fields.get("attest")
+                        && fields.get("basis").map(String::as_str) == Some("owner_knowledge")
+                    {
+                        attest_pending.push(subject.clone());
+                    }
                     continue;
                 }
                 if let Some(pair) = fields.get("merge")
@@ -342,6 +360,20 @@ pub fn parse_inbox(text: &str) -> ParsedInbox {
                             same_as_hash: h.clone(),
                         },
                     });
+                } else if let Some(subject) = fields.get("attest") {
+                    parsed.decisions.push(InboxDecision {
+                        submission_id: None,
+                        local_ref: None,
+                        action: DecisionAction::Attest {
+                            subject: subject.clone(),
+                            basis: fields
+                                .get("basis")
+                                .cloned()
+                                .unwrap_or_else(|| "owner_knowledge".into()),
+                        },
+                    });
+                } else if fields.contains_key("attest-all") {
+                    attest_all_ticked = true;
                 }
             }
             Section::AutoFiled => {
@@ -354,6 +386,7 @@ pub fn parse_inbox(text: &str) -> ParsedInbox {
                         local_ref: None,
                         action: DecisionAction::Undo {
                             atom_hash: h.clone(),
+                            reason: fields.get("reason").cloned(),
                         },
                     });
                 } else if let Some(h) = fields.get("unmerge") {
@@ -413,6 +446,18 @@ pub fn parse_inbox(text: &str) -> ParsedInbox {
         &mut blocks,
         &mut block,
     );
+    if attest_all_ticked {
+        for subject in attest_pending {
+            parsed.decisions.push(InboxDecision {
+                submission_id: None,
+                local_ref: None,
+                action: DecisionAction::Attest {
+                    subject,
+                    basis: "owner_knowledge".into(),
+                },
+            });
+        }
+    }
     parsed
 }
 
@@ -474,9 +519,17 @@ pub fn decision_rpc(d: &InboxDecision) -> Result<(&'static str, Value), String> 
             "entity.merge",
             json!({ "source": source, "target": target, "reason": "owner ticked merge in the inbox", "criterion": "inbox" }),
         )),
-        DecisionAction::Undo { atom_hash } => {
-            Ok(("ingest.retract", json!({ "atom_hash": atom_hash })))
-        }
+        DecisionAction::Undo { atom_hash, reason } => Ok((
+            "ingest.retract",
+            match reason {
+                Some(r) => json!({ "atom_hash": atom_hash, "reason": r }),
+                None => json!({ "atom_hash": atom_hash }),
+            },
+        )),
+        DecisionAction::Attest { subject, basis } => Ok((
+            "attestation.create",
+            json!({ "subject": subject, "basis": basis, "note": "ticked in the inbox" }),
+        )),
         DecisionAction::Unmerge { same_as_hash } => {
             Ok(("entity.unmerge", json!({ "same_as_hash": same_as_hash })))
         }
@@ -572,7 +625,8 @@ pending: 3
                     submission_id: None,
                     local_ref: None,
                     action: DecisionAction::Undo {
-                        atom_hash: "zHash1".into()
+                        atom_hash: "zHash1".into(),
+                        reason: None
                     }
                 },
             ]
@@ -681,6 +735,7 @@ pending: 3
             local_ref: None,
             action: DecisionAction::Undo {
                 atom_hash: "zH".into(),
+                reason: None,
             },
         })
         .unwrap();

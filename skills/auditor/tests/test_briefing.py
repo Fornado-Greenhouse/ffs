@@ -547,7 +547,7 @@ def test_briefing_publishes_with_auditor_briefing_predicate(monkeypatch):
     assert claim["recent_merges"][0]["same_as_hash"] == "h-sa"
     assert claim["recent_merges"][0]["target"] == {"entity": "p-1", "display": "Pat Example"}
     # The auditor never writes anything but the briefing.
-    assert {c["method"] for c in sub.calls} <= {"audit.query", "atom.list", "atom.get", "ingest.list_pending", "audit.publish_summary"}
+    assert {c["method"] for c in sub.calls} <= {"audit.query", "atom.list", "atom.get", "ingest.list_pending", "audit.publish_summary", "health.summary"}
     assert result["atom_hash"] == "z-briefing-hash" and result["reason"] is None
     assert result["counts"]["new_people"] == 1 and result["counts"]["events"] == 1
 

@@ -326,3 +326,55 @@ def test_auto_filed_section_absent_on_old_daemon(monkeypatch):
     claim, _ = audit.build_claim(metrics, audit.evaluate_flags(metrics))
     assert claim["auto_filed"] == {"count": 0, "by_predicate": {}, "items": []}
     assert "auto-filed" not in claim["narrative"]
+
+
+def test_attestation_status_counts_and_past_window_flag(monkeypatch):
+    """task_46 / ADR-034: the daemon's derived status flows into the
+    metrics, the narrative, a low-priority flag, and the claim; the
+    auditor never computes it."""
+    import audit
+
+    def fake_query(method, params):
+        if method == "health.summary":
+            return {
+                "proposals": 0,
+                "drift_flags": 0,
+                "atom_count": 4,
+                "attestation_status": {
+                    "by_predicate": {
+                        "person.generic": {"current": 2, "unconfirmed": 0, "stale": 1, "disputed": 0, "deprecated": 0, "ended": 0},
+                        "org.company": {"current": 1, "unconfirmed": 1, "stale": 0, "disputed": 0, "deprecated": 1, "ended": 0},
+                    },
+                    "past_window": [
+                        {"entity": "zA", "predicate": "person.generic", "display": "Old Timer", "atom_hash": "zH", "last_confirmed": "2026-01-02", "owner_alone": True, "status": "stale"},
+                    ],
+                },
+            }
+        raise audit.FfsSkillError("unexpected " + method)
+
+    monkeypatch.setattr(audit, "query", fake_query)
+    metrics = audit.aggregate_metrics()
+    assert metrics["past_window_count"] == 1
+    assert metrics["past_window_owner_alone"] == 1
+    flags = audit.evaluate_flags(metrics)
+    past = [f for f in flags if f["kind"] == "past_window"]
+    assert len(past) == 1 and past[0]["priority"] == 3
+    claim, _panel = audit.build_claim(metrics, flags)
+    assert claim["attestation_status"]["by_predicate"]["org.company"]["deprecated"] == 1
+    assert claim["attestation_status"]["past_window"][0]["display"] == "Old Timer"
+    assert "3 current" in claim["narrative"] and "1 past their window" in claim["narrative"]
+
+
+def test_attestation_status_absent_on_old_daemon(monkeypatch):
+    import audit
+
+    def fake_query(method, params):
+        if method == "health.summary":
+            return {"proposals": 0, "drift_flags": 0, "atom_count": 0}
+        raise audit.FfsSkillError("unexpected " + method)
+
+    monkeypatch.setattr(audit, "query", fake_query)
+    metrics = audit.aggregate_metrics()
+    assert metrics["status_counts"] == {} and metrics["past_window_count"] == 0
+    assert audit.attestation_status_line(metrics) is None
+    assert not [f for f in audit.evaluate_flags(metrics) if f["kind"] == "past_window"]

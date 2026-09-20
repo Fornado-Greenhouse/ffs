@@ -221,6 +221,9 @@ impl AtomStore for MemAtomStore {
             .atoms
             .values()
             .filter(|a| a.tx_time.as_str() >= since.as_str())
+            // Attestations minted alongside an auto-accepted atom carry the
+            // grant's provenance but are not themselves filings (ADR-034).
+            .filter(|a| a.predicate.as_str() != crate::attestation::ATTESTATION_PREDICATE)
             .filter(|a| {
                 a.provenance
                     .iter()

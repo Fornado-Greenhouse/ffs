@@ -71,6 +71,15 @@ pub struct Housekeeping {
     pub warnings: Vec<ParseWarning>,
     /// Active merges the owner may undo: (same_as atom hash, what).
     pub unmerges: Vec<(Multihash, String)>,
+    /// ADR-034: facts whose confirmation window elapsed, each with an
+    /// "unchanged" and a "re-read source" line the owner may tick.
+    pub past_window: Vec<crate::api::PastWindowItem>,
+}
+
+/// Supplies the "Past their window" list at render time (the daemon's
+/// dispatcher computes it from the store; nothing is stored).
+pub trait PastWindowProvider: Send + Sync {
+    fn past_window(&self) -> Vec<crate::api::PastWindowItem>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -416,6 +425,30 @@ pub fn render_inbox(
             hash.to_multibase()
         ));
     }
+    if !housekeeping.past_window.is_empty() {
+        wrote = true;
+        out.push_str("\n### Past their window\n\n");
+        out.push_str(
+            "Facts whose confirmation window elapsed (ADR-034). Tick `unchanged` when you know it still holds, or `re-read source` after checking the source. Nothing here changes a fact on its own.\n\n",
+        );
+        for item in &housekeeping.past_window {
+            let who = if item.owner_alone {
+                ", confirmed by you alone"
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "- {} ({}): last confirmed {}{}\n  - [ ] unchanged <!-- attest:{} basis:owner_knowledge -->\n  - [ ] re-read source <!-- attest:{} basis:re_read_same_source -->\n",
+                item.display,
+                item.predicate.as_str(),
+                item.last_confirmed.as_deref().unwrap_or("never"),
+                who,
+                item.atom_hash,
+                item.atom_hash,
+            ));
+        }
+        out.push_str(&format!("- [ ] all unchanged <!-- attest-all:{date} -->\n"));
+    }
     let orphan_warnings: Vec<&ParseWarning> = housekeeping
         .warnings
         .iter()
@@ -482,6 +515,7 @@ pub struct InboxMaterializer {
     data_dir: PathBuf,
     warnings: Mutex<Vec<ParseWarning>>,
     merges: Mutex<Vec<MergeSuggestion>>,
+    past_window: Mutex<Option<Arc<dyn PastWindowProvider>>>,
 }
 
 impl InboxMaterializer {
@@ -496,7 +530,14 @@ impl InboxMaterializer {
             data_dir,
             warnings: Mutex::new(Vec::new()),
             merges: Mutex::new(Vec::new()),
+            past_window: Mutex::new(None),
         }
+    }
+
+    /// Who computes the "Past their window" list (ADR-034). Set once
+    /// the dispatcher exists; the inbox renders without it otherwise.
+    pub fn set_past_window_provider(&self, provider: Arc<dyn PastWindowProvider>) {
+        *self.past_window.lock().unwrap() = Some(provider);
     }
 
     /// Replace the parse warnings rendered into the next file. The fast
@@ -591,6 +632,13 @@ impl InboxMaterializer {
             merges: self.merges.lock().unwrap().clone(),
             warnings: self.warnings.lock().unwrap().clone(),
             unmerges: Vec::new(),
+            past_window: self
+                .past_window
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|p| p.past_window())
+                .unwrap_or_default(),
         };
         Ok(render_inbox(
             date,
@@ -799,6 +847,7 @@ mod tests {
         done.status = SubmissionStatus::Accepted;
         done.accepted_atom_hashes = vec![Multihash::blake3_of(b"atom")];
         let hk = Housekeeping {
+            past_window: Vec::new(),
             merges: vec![MergeSuggestion {
                 a: EntityId::new("zA"),
                 a_display: "Acme Corp".into(),
@@ -838,6 +887,7 @@ mod tests {
     #[test]
     fn parse_warnings_render_under_their_section() {
         let hk = Housekeeping {
+            past_window: Vec::new(),
             warnings: vec![ParseWarning {
                 section: "sub-1".into(),
                 message: "two ticks in one block".into(),
