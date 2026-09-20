@@ -1,0 +1,520 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2ZMPR795JES1PTGND6ACGA3",
+  "session_id": "af7c00f1-b4ce-4505-8d35-b5ec4e0c9341",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T14:49:48.253207Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [
+    "crates/ffs-core/src/lib.rs",
+    "crates/ffs-core/src/quarantine.rs",
+    "crates/ffs-core/src/quarantine_sqlite.rs",
+    "crates/ffs-core/src/resolution.rs",
+    "crates/ffs-core/src/store/mem.rs",
+    "crates/ffs-core/src/store/migrations.rs",
+    "crates/ffs-core/src/store/mod.rs",
+    "crates/ffs-core/src/store/schema.rs",
+    "crates/ffs-core/src/store/sqlite.rs",
+    "skills/scribe/SKILL.md",
+    "skills/scribe/engine.py",
+    "skills/scribe/llm.py",
+    "skills/scribe/prompt.py",
+    "skills/scribe/tests/corpus/README.md",
+    "skills/scribe/tests/corpus_scorer.py",
+    "skills/scribe/tests/test_corpus.py",
+    "skills/scribe/tests/test_hint.py",
+    "skills/scribe/tests/test_llm.py",
+    "skills/scribe/tests/test_multi_entity.py",
+    "skills/scribe/tests/test_prompt.py",
+    "starter/config/resolution.toml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-7",
+  "turn_id": "a82e13b76c0f",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5182,
+    "cache_creation_tokens": 3139414,
+    "cache_read_tokens": 90228213,
+    "output_tokens": 282947,
+    "api_call_count": 215
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-goal-2026-09-14T01:32:22.806698Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "3a0c281baba0",
+      "timestamp": "2026-09-14T01:32:22.806698Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01W1FjK8eYw6scz7kqwtatCt",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a82e13b76c0f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30,
+        "end": 31,
+        "entry_ids": [
+          "e9ee3f4f-b247-46e0-b362-d7be417895b7"
+        ],
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JEz9snmjRR7fayyfWwfKTf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a82e13b76c0f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1428,
+        "end": 1429,
+        "entry_ids": [
+          "acc22cd1-0f7a-48b2-b339-32a26fa9ce71"
+        ],
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01AtFqmqtwyuW5QTAY3MianU",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a82e13b76c0f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1826,
+        "end": 1827,
+        "entry_ids": [
+          "d6ba85b3-ffab-4cf8-a7ce-f82b1cec09f0"
+        ],
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Y6DyeARd37HStrSeobkJFp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a82e13b76c0f",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2105,
+        "end": 2106,
+        "entry_ids": [
+          "4e89967d-eadf-41b9-9e14-0515d6140bb4"
+        ],
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 51
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T14:49:47.957515Z",
+    "agent_lines": 150,
+    "agent_removed": 2,
+    "human_added": 10774,
+    "human_modified": 81,
+    "human_removed": 0,
+    "total_committed": 11003,
+    "total_lines_changed": 11078,
+    "agent_percentage": 1.3720888246975989,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 1826,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4020,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 5090,
+      "user_lines_removed": 26,
+      "agent_lines_added": 4020,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "crates/ffs-core/src/lib.rs": 11,
+        "crates/ffs-core/src/quarantine.rs": 230,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 90,
+        "crates/ffs-core/src/resolution.rs": 59,
+        "crates/ffs-core/src/resolve.rs": 77,
+        "crates/ffs-core/src/store/mem.rs": 60,
+        "crates/ffs-core/src/store/migrations.rs": 61,
+        "crates/ffs-core/src/store/mod.rs": 116,
+        "crates/ffs-core/src/store/schema.rs": 33,
+        "crates/ffs-core/src/store/sqlite.rs": 75,
+        "crates/ffs-core/tests/identity_helpers_task45.rs": 218,
+        "skills/scribe/engine.py": 190,
+        "skills/scribe/llm.py": 64,
+        "skills/scribe/prompt.py": 40,
+        "skills/scribe/tests/corpus/21-exec-hire/expected.json": 59,
+        "skills/scribe/tests/corpus/21-exec-hire/input.md": 11,
+        "skills/scribe/tests/corpus/21-exec-hire/model_output.json": 134,
+        "skills/scribe/tests/corpus/22-funding-round/expected.json": 58,
+        "skills/scribe/tests/corpus/22-funding-round/input.md": 11,
+        "skills/scribe/tests/corpus/22-funding-round/model_output.json": 150,
+        "skills/scribe/tests/corpus/23-acquisition/expected.json": 48,
+        "skills/scribe/tests/corpus/23-acquisition/input.md": 11,
+        "skills/scribe/tests/corpus/23-acquisition/model_output.json": 120,
+        "skills/scribe/tests/corpus/24-real-estate-opening/expected.json": 37,
+        "skills/scribe/tests/corpus/24-real-estate-opening/input.md": 11,
+        "skills/scribe/tests/corpus/24-real-estate-opening/model_output.json": 92,
+        "skills/scribe/tests/corpus/25-profile-piece/expected.json": 49,
+        "skills/scribe/tests/corpus/25-profile-piece/input.md": 11,
+        "skills/scribe/tests/corpus/25-profile-piece/model_output.json": 89,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/expected.json": 27,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/expected_identity.json": 46,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input-b.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input-c.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output-b.json": 44,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output-c.json": 60,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output.json": 58,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/expected.json": 20,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/expected_identity.json": 25,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/input-b.md": 9,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/input.md": 9,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/model_output-b.json": 58,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/model_output.json": 58,
+        "skills/scribe/tests/corpus/33-rename-announced/expected.json": 26,
+        "skills/scribe/tests/corpus/33-rename-announced/expected_identity.json": 36,
+        "skills/scribe/tests/corpus/33-rename-announced/input-b.md": 9,
+        "skills/scribe/tests/corpus/33-rename-announced/input.md": 9,
+        "skills/scribe/tests/corpus/33-rename-announced/model_output-b.json": 48,
+        "skills/scribe/tests/corpus/33-rename-announced/model_output.json": 86,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/expected.json": 20,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/expected_identity.json": 31,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/input-b.md": 9,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/input.md": 9,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/model_output-b.json": 58,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/model_output.json": 58,
+        "skills/scribe/tests/test_llm.py": 173,
+        "skills/scribe/tests/test_prompt.py": 24,
+        "starter/config/resolution.toml": 12
+      },
+      "user_removed_per_file": {
+        "crates/ffs-core/src/lib.rs": 3,
+        "crates/ffs-core/src/quarantine.rs": 3,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 4,
+        "crates/ffs-core/src/store/mem.rs": 2,
+        "crates/ffs-core/src/store/migrations.rs": 1,
+        "crates/ffs-core/src/store/mod.rs": 1,
+        "crates/ffs-core/src/store/sqlite.rs": 1,
+        "skills/scribe/engine.py": 8,
+        "skills/scribe/llm.py": 2,
+        "skills/scribe/prompt.py": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 3927,
+      "user_lines_removed": 0,
+      "agent_lines_added": 5497,
+      "agent_lines_removed": 30,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "crates/ffs-core/src/resolve.rs": 77,
+        "crates/ffs-core/tests/identity_helpers_task45.rs": 218,
+        "skills/scribe/SKILL.md": 34,
+        "skills/scribe/tests/corpus/21-exec-hire/expected.json": 59,
+        "skills/scribe/tests/corpus/21-exec-hire/input.md": 11,
+        "skills/scribe/tests/corpus/21-exec-hire/model_output.json": 134,
+        "skills/scribe/tests/corpus/22-funding-round/expected.json": 58,
+        "skills/scribe/tests/corpus/22-funding-round/input.md": 11,
+        "skills/scribe/tests/corpus/22-funding-round/model_output.json": 150,
+        "skills/scribe/tests/corpus/23-acquisition/expected.json": 48,
+        "skills/scribe/tests/corpus/23-acquisition/input.md": 11,
+        "skills/scribe/tests/corpus/23-acquisition/model_output.json": 120,
+        "skills/scribe/tests/corpus/24-real-estate-opening/expected.json": 37,
+        "skills/scribe/tests/corpus/24-real-estate-opening/input.md": 11,
+        "skills/scribe/tests/corpus/24-real-estate-opening/model_output.json": 92,
+        "skills/scribe/tests/corpus/25-profile-piece/expected.json": 49,
+        "skills/scribe/tests/corpus/25-profile-piece/input.md": 11,
+        "skills/scribe/tests/corpus/25-profile-piece/model_output.json": 89,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/expected.json": 27,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/expected_identity.json": 46,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input-b.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input-c.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output-b.json": 44,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output-c.json": 60,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output.json": 58,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/expected.json": 20,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/expected_identity.json": 25,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/input-b.md": 9,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/input.md": 9,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/model_output-b.json": 58,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/model_output.json": 58,
+        "skills/scribe/tests/corpus/33-rename-announced/expected.json": 26,
+        "skills/scribe/tests/corpus/33-rename-announced/expected_identity.json": 36,
+        "skills/scribe/tests/corpus/33-rename-announced/input-b.md": 9,
+        "skills/scribe/tests/corpus/33-rename-announced/input.md": 9,
+        "skills/scribe/tests/corpus/33-rename-announced/model_output-b.json": 48,
+        "skills/scribe/tests/corpus/33-rename-announced/model_output.json": 86,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/expected.json": 20,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/expected_identity.json": 31,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/input-b.md": 9,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/input.md": 9,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/model_output-b.json": 58,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/model_output.json": 58,
+        "skills/scribe/tests/corpus/README.md": 22,
+        "skills/scribe/tests/test_hint.py": 19
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 7306,
+      "user_lines_removed": 53,
+      "agent_lines_added": 5572,
+      "agent_lines_removed": 30,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "crates/ffs-core/src/resolve.rs": 77,
+        "crates/ffs-core/tests/identity_helpers_task45.rs": 218,
+        "crates/ffs-daemon/src/api.rs": 9,
+        "crates/ffs-daemon/src/dispatch.rs": 395,
+        "crates/ffs-daemon/src/ingest_watcher.rs": 6,
+        "crates/ffs-daemon/src/lib.rs": 3,
+        "crates/ffs-daemon/src/main.rs": 12,
+        "crates/ffs-daemon/src/resolver.rs": 1333,
+        "crates/ffs-daemon/src/scribe.rs": 241,
+        "crates/ffs-daemon/tests/filing_cabinet_task38.rs": 8,
+        "crates/ffs-daemon/tests/resolver_task45.rs": 1261,
+        "crates/ffs-daemon/tests/scribe_integration.rs": 8,
+        "crates/ffs-daemon/tests/summary_panel_integration.rs": 24,
+        "docs/onboarding/first-use-guide.md": 9,
+        "obsidian-plugin/src/main.ts": 19,
+        "obsidian-plugin/src/summary.ts": 58,
+        "obsidian-plugin/tests/summary.test.ts": 58,
+        "skills/scribe/tests/corpus/21-exec-hire/expected.json": 59,
+        "skills/scribe/tests/corpus/21-exec-hire/input.md": 11,
+        "skills/scribe/tests/corpus/21-exec-hire/model_output.json": 134,
+        "skills/scribe/tests/corpus/22-funding-round/expected.json": 58,
+        "skills/scribe/tests/corpus/22-funding-round/input.md": 11,
+        "skills/scribe/tests/corpus/22-funding-round/model_output.json": 150,
+        "skills/scribe/tests/corpus/23-acquisition/expected.json": 48,
+        "skills/scribe/tests/corpus/23-acquisition/input.md": 11,
+        "skills/scribe/tests/corpus/23-acquisition/model_output.json": 120,
+        "skills/scribe/tests/corpus/24-real-estate-opening/expected.json": 37,
+        "skills/scribe/tests/corpus/24-real-estate-opening/input.md": 11,
+        "skills/scribe/tests/corpus/24-real-estate-opening/model_output.json": 92,
+        "skills/scribe/tests/corpus/25-profile-piece/expected.json": 49,
+        "skills/scribe/tests/corpus/25-profile-piece/input.md": 11,
+        "skills/scribe/tests/corpus/25-profile-piece/model_output.json": 89,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/expected.json": 27,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/expected_identity.json": 46,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input-b.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input-c.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/input.md": 9,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output-b.json": 44,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output-c.json": 60,
+        "skills/scribe/tests/corpus/31-nickname-three-articles/model_output.json": 58,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/expected.json": 20,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/expected_identity.json": 25,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/input-b.md": 9,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/input.md": 9,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/model_output-b.json": 58,
+        "skills/scribe/tests/corpus/32-same-name-two-orgs/model_output.json": 58,
+        "skills/scribe/tests/corpus/33-rename-announced/expected.json": 26,
+        "skills/scribe/tests/corpus/33-rename-announced/expected_identity.json": 36,
+        "skills/scribe/tests/corpus/33-rename-announced/input-b.md": 9,
+        "skills/scribe/tests/corpus/33-rename-announced/input.md": 9,
+        "skills/scribe/tests/corpus/33-rename-announced/model_output-b.json": 48,
+        "skills/scribe/tests/corpus/33-rename-announced/model_output.json": 86,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/expected.json": 20,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/expected_identity.json": 31,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/input-b.md": 9,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/input.md": 9,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/model_output-b.json": 58,
+        "skills/scribe/tests/corpus/34-wrong-merge-undo/model_output.json": 58,
+        "starter/config/resolution.toml": 10
+      },
+      "user_removed_per_file": {
+        "crates/ffs-daemon/src/dispatch.rs": 29,
+        "crates/ffs-daemon/src/ingest_watcher.rs": 8,
+        "crates/ffs-daemon/src/lib.rs": 1,
+        "crates/ffs-daemon/src/main.rs": 4,
+        "crates/ffs-daemon/src/scribe.rs": 9,
+        "starter/config/resolution.toml": 2
+      }
+    }
+  ]
+}

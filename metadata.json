@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2ZMPR795JES1PTGND6ACGA3",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "crates/ffs-core/src/lib.rs",
+    "crates/ffs-core/src/quarantine.rs",
+    "crates/ffs-core/src/quarantine_sqlite.rs",
+    "crates/ffs-core/src/resolution.rs",
+    "crates/ffs-core/src/store/mem.rs",
+    "crates/ffs-core/src/store/migrations.rs",
+    "crates/ffs-core/src/store/mod.rs",
+    "crates/ffs-core/src/store/schema.rs",
+    "crates/ffs-core/src/store/sqlite.rs",
+    "skills/scribe/SKILL.md",
+    "skills/scribe/engine.py",
+    "skills/scribe/llm.py",
+    "skills/scribe/prompt.py",
+    "skills/scribe/tests/corpus/README.md",
+    "skills/scribe/tests/corpus_scorer.py",
+    "skills/scribe/tests/test_corpus.py",
+    "skills/scribe/tests/test_hint.py",
+    "skills/scribe/tests/test_llm.py",
+    "skills/scribe/tests/test_multi_entity.py",
+    "skills/scribe/tests/test_prompt.py",
+    "starter/config/resolution.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5182,
+    "cache_creation_tokens": 3139414,
+    "cache_read_tokens": 90228213,
+    "output_tokens": 282947,
+    "api_call_count": 215
+  }
+}
