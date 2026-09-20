@@ -1185,3 +1185,112 @@ Noted, outside my scope: `skill/ffs-memory/SKILL.md` and `task_39.md` cite the c
 **Notes outside scope**: `skills/_lib/urlnorm.py` was not needed here, so the lazy import was not added; URLs pass through unchanged and the tests assert the raw url. Frontmatter `fetch` is only recorded in the rationale, as directed. The digest note's title convention and the `## References` link targets are consumed as written by the courier fork.</result>
 <usage><subagent_tokens>781517</subagent_tokens><tool_uses>10</tool_uses><duration_ms>260300</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a59e7cbc9ee92c528</task-id>
+<tool-use-id>toolu_01XYYUJptwDgU2muHit65XTY</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a59e7cbc9ee92c528.output</output-file>
+<status>completed</status>
+<summary>Agent "task_40 F1: courier bundle + adapters" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: built the `skills/courier/` bundle, `skills/_lib/urlnorm.py` with the shared fixture, the keychain helper, and the two starter TOMLs, with tests. Nothing committed; nothing outside my ownership touched.
+
+**Result**: `.venv/bin/python -m pytest skills/` → `224 passed in 0.74s` (168 before; 9 new `_lib` tests, 47 new courier tests). Every module compiles; a standalone `python courier.py run --dry-run` against the starter configs exits 0 and reports a clear `last_error` about the missing keychain secret.
+
+**Files**
+- `skills/_lib/urlnorm.py` (`normalize_url`, `decode_tracking_url`, `slug`, `article_basename`, `content_hash_multibase` with a self-written base58btc), `skills/_lib/fixtures/urlnorm.json` (14 raw→normalized pairs incl. one wrapper-decoded and one non-decodable wrapper), `skills/_lib/tests/{conftest,test_urlnorm,test_keychain}.py`.
+- `skills/_lib/ffs_skill.py`: `keychain_secret(service, account=None)` (env override `FFS_KEYCHAIN_&lt;SERVICE&gt;` first, then macOS `security`; never raises).
+- `skills/courier/`: `SKILL.md` (name/kind courier, entry_point courier.py, timeout_ms 300000, schedule "0 7,17 * * *"), `definition.atom.json`, `courier.py` (host entry + standalone `run|status`), `config.py`, `ledger.py`, `writer.py`, `mailbox.py` (IMAP tick, `FakeImap`, HTML/text digest parsers, article-shape filter with a per-source `path_filter` override), `fetch.py` (scheduled fetch), `adapters/{__init__,meck_permits,charlotte_legistar,sec_edgar,rss}.py`, `tests/{conftest,helpers,test_config,test_mailbox,test_adapters,test_fetch,test_courier}.py`, `tests/fixtures/` (4 synthetic .eml, permits/Legistar/EDGAR JSON, RSS and Atom samples).
+- `starter/config/courier.toml`, `starter/config/sources.toml`.
+
+**Tick-result keys** (exactly): `tick, dry_run, items_seen, files_written, files, would_submit, fetch_requests, fetch_failures, skipped_seen, warnings, last_error`. The host reply is `{"results": [&lt;one per tick&gt;], "dry_run", "last_error"}`; `{"op": "status"}` returns `ingest/.courier/last_run.json` (`last_run, tick, items_seen, files_written, fetch_failures, last_error`).
+
+**Starter TOMLs**: `courier.toml` has a Gmail IMAP `[mailbox]` (app_password, empty user), two `[[mailbox.source]]` rows (bizjournals digest sender, clttoday), the four feeds commented out with realistic endpoints, `[edgar]` with an empty required `user_agent`, `[[tracking.wrapper]]` for `link.bizjournals.com` at segment 2, `[scribe] body_limit = 4000`. `sources.toml` has bizjournals / charlotteobserver / axios at pointer/session (with the terms pointer comment), clttoday at clip/off, and meck_permits, charlotte_legistar, sec_edgar, duke_energy_news at clip/scheduled. The loader has no domain list; a test walks the bundle's code and asserts none of the three domains or the words denylist/blocklist/allowlist appear.
+
+**Expected-output fixtures** (byte-for-byte asserted): `skills/courier/tests/fixtures/expected/example-ledger-2026-09-14-widget-maker-breaks-ground-on-second-plant.md` and `.../expected/example-ledger-digest-2026-09-14.md`, produced from `tests/fixtures/pointer_digest.eml` under the test `sources.toml` (Example Ledger at pointer/session).
+
+**Decisions worth the parent's eye**
+- Digests carry in-domain non-article links (digital edition, account pages), so items must also pass `looks_like_article` (a year path segment, an `.html` suffix, or a path four segments deep) unless the source sets `path_filter`; anchors with empty text are dropped, which removes sponsored listings.
+- `auth = "oauth"` loads but connecting returns the documented "not implemented; use app_password" error.
+- A message whose items were all already known is still marked seen.
+- Feed watermarks advance to the newest record date only when every file was written; `rss` also filters by `since`, so a re-tick after the watermark advances sees fewer records (tested).
+
+Outside my scope, noted: `skills/_lib/urlnorm.py` carries `link.bizjournals.com` in `DEFAULT_WRAPPERS` (the wrapper table the Rust helper must mirror to agree with the fixture); the plugin and daemon do not yet read `last_run.json` or expose `courier.run`.</result>
+<usage><subagent_tokens>841531</subagent_tokens><tool_uses>17</tool_uses><duration_ms>936204</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a82233914ae5d0c5a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a82233914ae5d0c5a.output</output-file>
+<status>completed</status>
+<summary>Agent "task_40 F3: entity.search v2, resolver, CLI, MCP" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: Rust slice of task_40 done (urlnorm, resolver article dedup, `entity.search` v2, `ffs_search` MCP, courier RPCs and health, CLI verbs, auditor line, installer). Nothing committed.
+
+**Verification (fresh, after the last change)**
+- `cargo nextest run --workspace --all-features`: 538 tests run, 538 passed, 0 skipped.
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: 0 warnings.
+- `.venv/bin/python -m pytest skills/auditor/tests/`: 14 passed.
+- `bash -n installer/install.sh`: parses.
+
+**Files**
+- New: `crates/ffs-core/src/urlnorm.rs` (+ `lib.rs` exports `normalize_url`, `article_basename`, `same_content_hash`), `crates/ffs-daemon/tests/courier_task40.rs` (9 tests).
+- Changed: `crates/ffs-daemon/src/{resolver.rs, dispatch.rs, api.rs, scribe.rs, main.rs, lib.rs}`, `crates/ffs-mcp/src/tools.rs`, `crates/ffs-mcp/tests/mcp_integration.rs`, `crates/ffs-cli/src/{lib.rs, commands.rs}`, `crates/ffs-cli/Cargo.toml` (dev-dep `async-trait`), `crates/ffs-cli/tests/cli_integration.rs`, `skills/auditor/audit.py`, `skills/auditor/tests/test_audit.py`, `installer/install.sh`, `installer/install.ps1`, and every test file with a `Dispatcher { .. }` literal (two new fields).
+
+**urlnorm** matches the shared fixture `skills/_lib/fixtures/urlnorm.json` (14 pairs, test passes). The fixture pins more than the brief: default-port stripping, `/` for a bare host, Python quote-plus re-encoding of query values, and decoding of the `link.bizjournals.com/click/&lt;a&gt;/&lt;base64url&gt;/&lt;b&gt;` wrapper (inline base64url decoder, no new dependency). `same_content_hash` accepts blake3-256 (`1e 20`) and blake2b-256 (`a0 e4 02 20`) multihash prefixes.
+
+**Resolver**: for any proposal with a `url` claim, `CandidateLookup::candidates_by_url` (normalized equality) then `candidates_by_content_hash` decide `existing` on their own with `matched_on: ["url"|"content_hash"]`; both trait methods have empty defaults. New `apply_bound_refs` pre-fills `entity` on mentions and participants for existing outcomes at resolve time (accept still rewrites every ref). Accept uses a new `merge_refresh` for URL- or hash-keyed re-reads so a changed title supersedes the head (scalars refresh, arrays merge). Digest notes resolve by exact title through the existing path (test added).
+
+**`entity.search` v2 params**: `{ query, limit?, predicate?, family?, context_entity? }`. **Hit**: `{ entity, predicate, display_name, basename?, path?, matched_on: ["display_name"|"alias"|"other"|"fts"], score: f64, tx_time? }`. Fields come from each predicate's `claim_schema` (string and string-array properties; no field names in code), plus an FTS tier via `store.search_fts` (plain words unquoted, MATCH-syntax queries quoted). Ordering: tier, then score (tier base 100/80/40/20 + 5 exact + `ln(1 + prior)`), then `tx_time` desc. `same_as` chains are followed to the winner (deduped, winner's head used for display, classification, path); `context_entity`'s `different_from` set is excluded; capability-checked per hit.
+
+**RPCs**: `courier.run { dry_run?: bool }` invokes skill `courier` with `{"op":"tick","dry_run":bool}` through the new `SkillInvoker` trait (`ffs_daemon::SkillsHostInvoker` in production; `Dispatcher.skill_invoker: Option&lt;Arc&lt;dyn SkillInvoker&gt;&gt;`, `ERR_NOT_IMPLEMENTED` when unwired); `courier.status` returns `CourierStatus | null`; `health.summary` gains `courier: CourierStatus | null` read from `$FFS_DATA_DIR/ingest/.courier/last_run.json` via the new `Dispatcher.data_dir: Option&lt;PathBuf&gt;`.
+
+**CLI**: `ffs courier run [--dry-run]` (prints `would submit: N` or `submitted: N`, the file list, `items_seen`/`files_written`/`fetch_failures`; exit 1 with `courier error: ...` when `last_error` is set; `--json` passes the result through) and `ffs courier status` (`courier has not run` when null). **MCP**: `ffs_search` schema gains `predicate`, `family`, `context_entity`; translator forwards them; description states the reconciliation shape; three unit tests plus `ffs_search_finds_org_by_alias_end_to_end` (matched_on alias, path `orgs/by-name/A/Acme_Widgets.md`). **Auditor**: `metrics["courier"]` when the key exists; narrative line `courier ran &lt;last_run&gt;: N items, M files` (or `courier has not run`); priority-3 flag `courier_missed` when older than 36 h or null. **Installer**: both scripts copy `skills/courier` and seed `courier.toml` / `sources.toml` without overwriting.
+
+**Deviations, stated**: the two URL-dedup e2e tests and `resolver_fills_entity_on_mentions_and_participants` live in `courier_task40.rs` and `resolver.rs` (dispatcher plus a stub scribe through `ResolvingExtractor`), not in `ingest_pipeline_e2e.rs`, since the real Python scribe there cannot emit the canned sets; nothing in `crates/ffs-core/src` beyond the new `urlnorm.rs` and its export was changed; `source_article` provenance kind remains mapped to `IngestFile` (no core `SourceKind` change). Out of scope, noticed: the `[This command modified 4 files]` notice was `cargo fmt` reflowing; and the resolver's own `StoreLookup` still generates candidates independently of the RPC, which is fine at personal scale but is two code paths for one job.</result>
+<usage><subagent_tokens>879125</subagent_tokens><tool_uses>58</tool_uses><duration_ms>943117</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a82233914ae5d0c5a</task-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a82233914ae5d0c5a.output</output-file>
+<status>completed</status>
+<summary>Agent "task_40 F3: entity.search v2, resolver, CLI, MCP" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task: Rust slice of task_40 (urlnorm, resolver article dedup, entity.search v2, ffs_search MCP, courier RPCs and health, CLI courier verbs, auditor courier line, installer wiring). Done; nothing committed.
+
+**Verification (fresh, after the last change)**
+- `cargo nextest run --workspace --all-features`: 538 tests run, 538 passed, 0 skipped (was 523; 15 new: 6 urlnorm, 4 resolver, 9 courier_task40 integration, 3 MCP unit, 1 MCP integration, 2 CLI, counted across crates).
+- `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets --all-features -- -D warnings`: 0 warnings.
+- `.venv/bin/python -m pytest skills/auditor/tests/`: 14 passed.
+- Coordinator's fixture note: already handled. The Rust test reads the `pairs` object form, decodes the `link.bizjournals.com` base64url wrapper at non-empty segment index 2 (with padding fix, only when the result is an http(s) URL), and asserts all 14 pairs; the `urlnorm` test group is 6/6 green. Also mirrored from the fixture: default-port stripping, bare host gets `/`, `quote_plus` re-encoding of query values.
+
+**Files**
+- New: `crates/ffs-core/src/urlnorm.rs` (+ `lib.rs` exports `normalize_url`, `article_basename`, `same_content_hash`), `crates/ffs-daemon/tests/courier_task40.rs`.
+- Changed: `crates/ffs-daemon/src/{resolver.rs, dispatch.rs, api.rs, scribe.rs, main.rs, lib.rs}`, `crates/ffs-mcp/src/tools.rs`, `crates/ffs-mcp/tests/mcp_integration.rs`, `crates/ffs-cli/src/{lib.rs, commands.rs}`, `crates/ffs-cli/tests/cli_integration.rs`, `crates/ffs-cli/Cargo.toml` (dev-dep `async-trait`), every test file holding a `Dispatcher { .. }` literal (two new fields), `skills/auditor/audit.py` + `tests/test_audit.py`, `installer/install.sh`, `installer/install.ps1`.
+
+**Resolver**: `CandidateLookup` gained default-impl `candidates_by_url(family, normalized_url)` and `candidates_by_content_hash(family, hash)`; `resolve_set` tries normalized-URL equality first, then `same_content_hash`, for any proposal whose claim carries `url`, binding `existing` on that alone (`matched_on: ["url"]` or `["content_hash"]`). New `apply_bound_refs` pre-fills `entity` on `mentions[]`/`participants[]` for `existing` targets (test `resolver_fills_entity_on_mentions_and_participants`). Digest notes resolve by exact normalized title through the existing name path. Accept path: a URL- or hash-keyed re-read uses new `merge_refresh` (proposal scalars win, arrays merge) so a changed title supersedes; e2e tests confirm one entity, `supersedes` set, both provenance entries on the chain.
+
+**`entity.search` v2**
+- Params: `{ query, limit?, predicate?, family?, context_entity? }`.
+- Hit: `{ entity, predicate, display_name, basename?, path?, matched_on: ["display_name"|"alias"|"other"|"fts"], score: f64, tx_time? }`.
+- Matching reads the claim schema's string and string-array properties (`schema_string_fields`); no field names in code beyond `aliases` as the tier-1 key. Ordering: tier (exact canonical 100, alias 80, other 40, fts 20) plus 5 for an exact match plus `ln(1 + prior_count)`, then `tx_time` desc. Follows `follow_same_as` (two-hop test), excludes `different_from(context_entity)`, capability-filters the winner's head. FTS: plain words unquoted (FTS5 ANDs tokens), anything else phrase-quoted.
+
+**RPCs and CLI**
+- `courier.run { dry_run?: bool }` → invokes skill `courier` with `{"op": "tick", "dry_run": bool}` and returns its JSON verbatim; `ERR_NOT_IMPLEMENTED` when no skills host is wired or the bundle is missing. `courier.status` → the `CourierStatus` object or `null`. `health.summary` gains `courier: {last_run, items_seen, files_written, fetch_failures, last_error} | null`, read from `$FFS_DATA_DIR/ingest/.courier/last_run.json`.
+- `Dispatcher` gained `data_dir: Option&lt;PathBuf&gt;` and `skill_invoker: Option&lt;Arc&lt;dyn SkillInvoker&gt;&gt;`; `SkillsHostInvoker` wraps the skills host in `main.rs`.
+- CLI: `ffs courier run [--dry-run]` (prints `would submit: N` / `submitted: N`, the file list, counters; exit non-zero on `last_error`) and `ffs courier status` ("courier has not run" when null). `--json` passes the raw object.
+- Auditor: `courier_line` narrative ("courier ran &lt;ts&gt;: N items, M files" / "courier has not run") and a priority-3 `courier_missed` flag when `last_run` is older than 36 h or null while the key is present.
+- Installer: copies `skills/courier`, seeds `starter/config/{courier,sources}.toml` without overwriting.
+
+Deviations, stated: `ffs_search` hit assertions use the in-process dispatcher rather than a spawned socket (same as the existing MCP integration test). No file under `crates/ffs-core/src` other than the new `urlnorm.rs` and its `lib.rs` export was touched; `skills/courier`, `skills/scribe`, `skills/_lib`, docs, and the plugin were not touched.</result>
+<usage><subagent_tokens>793221</subagent_tokens><tool_uses>59</tool_uses><duration_ms>1021981</duration_ms></usage>
+</task-notification>
