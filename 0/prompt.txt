@@ -1592,3 +1592,74 @@ An accept grant without `--max-per-day` or `--unlimited` exits 64 before any RPC
 ---
 
 Please continue -- I've raised your usage limits, but you it will be expensive to continue.  please wisely continue using subagents to execute our plan
+
+---
+
+<task-notification>
+<task-id>add19ba98fb578e36</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/add19ba98fb578e36.output</output-file>
+<status>completed</status>
+<summary>Agent "task_46: finish attestations from the partial" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task_46 is finished and verified. Nothing is committed.
+
+**Verification (run just now, after all changes)**
+
+```
+cargo nextest run --workspace --all-features   Summary [17.311s] 638 tests run: 638 passed, 0 skipped
+cargo fmt --all -- --check                      clean (exit 0)
+cargo clippy --workspace --all-targets --all-features -- -D warnings   0 warnings
+.venv/bin/python -m pytest skills/              260 passed
+compozy tasks validate --name ffs-mvp           all tasks valid (49 scanned)
+```
+
+**What was left broken and how it was fixed**
+- Clippy "items after a test module": the store-backed helpers in the core attestation module now sit above the test module.
+- The two task_39 daily-cap tests double-counted because an auto-filed atom's attestation carries the grant's provenance. Both stores now exclude attestation atoms from the count in `count_auto_accepted_since`.
+- My new accept-attestation test prefixed the courier id twice, so the grant never matched. Fixed the test.
+- Added the missing integration test from the task spec: two attestations sharing a source count once at k=2 (via a `config/attestation.toml` override), and an independent source makes the fact current.
+- Dropped the untracked proptest regression file since the repo tracks none.
+
+**RPC and CLI shapes**
+- `attestation.create { subject, basis, source?, as_of?, note? }` returns `{ atom_hash, subject, basis, as_of }`. Subject accepts a bare multihash or an `ffs://local/atom/&lt;hash&gt;` url. Attestations cannot be attested.
+- `ingest.retract { atom_hash, reason? }` with reason `world_changed` or `never_true`; other values are refused.
+- `health.summary` gained `attestation_status { by_predicate, past_window }`.
+- `ffs attest &lt;subject&gt; --basis &lt;b&gt; [--source] [--as-of] [--note]`, exit 64 on a bad basis.
+
+**Task bookkeeping**: task_46.md is `status: completed` with every box checked and a "## Result (2026-09-20)" section before Subtasks. Row 46 in _tasks.md is completed.
+
+**Files to stage explicitly**
+
+New:
+```
+crates/ffs-core/src/attestation.rs
+crates/ffs-core/tests/attestation_task46.rs
+crates/ffs-daemon/tests/  (no new file; tests appended to autofile_task39.rs)
+crates/ffs-fastpath/tests/inbox_attest_task46.rs
+crates/ffs-cli/tests/attest_task46.rs
+starter/predicates/attestation.toml
+starter/templates/attestation.md.tera
+starter/config/attestation.toml
+```
+
+Modified:
+```
+crates/ffs-core/src/{atom.rs,lib.rs,predicate/mod.rs,projection/render.rs,store/mem.rs,store/sqlite.rs}
+crates/ffs-core/tests/starter_predicates.rs
+crates/ffs-daemon/src/{api.rs,dispatch.rs,inbox.rs,main.rs}
+crates/ffs-daemon/tests/autofile_task39.rs
+crates/ffs-fastpath/src/{classifier.rs,inbox.rs}
+crates/ffs-cli/src/{commands.rs,lib.rs}
+skills/auditor/{audit.py,briefing.py,tests/test_audit.py,tests/test_briefing.py}
+starter/predicates/{affiliation,org.company,person.generic,auditor.briefing}.toml
+starter/templates/{auditor-briefing,contact-person,note,org-company,person-generic}.md.tera
+docs/agent-memory/CONVENTION.md
+docs/onboarding/first-use-guide.md
+.compozy/tasks/ffs-mvp/task_46.md
+.compozy/tasks/ffs-mvp/_tasks.md
+```
+
+Cargo.lock, .agents/, .claude/, and .entire/ remain untracked as before. Next in the owner's build order is task_48, the morning read skill.</result>
+<usage><subagent_tokens>88521</subagent_tokens><tool_uses>102</tool_uses><duration_ms>1560468</duration_ms></usage>
+</task-notification>
