@@ -53,15 +53,15 @@
 | 47 | Shared intake and shared accuracy over federation (ADR-034 federation half) | pending | high | task_15, task_40, task_45, task_46 |
 | 48 | Morning read: the owner-present reading session skill (ADR-035) | pending | medium | task_37, task_40, task_46 |
 
-## Build order (as of 2026-09-14)
+## Build order (as of 2026-09-20)
 
-1. **Tasks 42, 43, 44 in parallel** (one to two days). Spikes that gate everything below: extraction quality decides whether the LLM engine can carry the pipeline, intake reality decides the courier's shape, review load decides the review surface and the auto-file cap. Findings notes only, no production code.
+1. **Tasks 42, 43, 44** (done 2026-09-14 to 2026-09-20). Spikes that gated everything below: extraction quality decides whether the LLM engine can carry the pipeline, intake reality decides the courier's shape, review load decides the review surface and the auto-file cap. Findings notes only, no production code.
 2. **Task 36, slim.** The tracer bullet: the `llm` engine against the three existing predicates, so a readable daily digest lands in the vault before any refactor. No dependency on task_38.
 3. **Task 38.** Filing cabinet and identity (ADR-028, ADR-030, ADR-031): registry-declared path families, opaque ids, the business-graph predicates, wikilinked templates. The big refactor, now informed by real extraction output from task_36.
 4. **Task 45.** Scribe v3: multi-entity proposals and the three-outcome resolver, split out of task_36 because it needs both the LLM engine and the new predicates.
-5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule: mailbox pointers and blurbs plus the county permit, Council, EDGAR, and RSS feeds; never a fetch of a terms-restricted publisher (ADR-035); `ffs_search` v2 and URL dedup.
+5. **Task 40.** The courier as a deterministic stdlib skill bundle on a daemon schedule: mailbox pointers and clips plus the county permit, Council, EDGAR, and RSS feeds; per-publisher fetch and clip policy in `sources.toml`, owner-set, default pointer/session for terms-restricted publishers (ADR-035 as amended); `ffs_search` v2 and URL dedup.
 5b. **Task 48.** The morning read, as soon as the courier files its first agenda: the owner-present session that opens articles one at a time and files the owner's notes (ADR-035).
-6. **Task 39.** Auto-file policy (ADR-029) with the review surface chosen by ADR-032's outcome from task_44, which now measures the read (ADR-035 § 3), not a solo review pass.
+6. **Task 39.** Auto-file policy (ADR-029) with the review surface ADR-032 accepted from task_44: the inbox file grouped by source article, panel counts and link only; max_per_day default 50.
 7. **Task 41.** The morning briefing, last, because it reads everything the others write.
 8. **Task 46.** Attestations and staleness, local (ADR-034 local half): makes "is it still accurate" a question the substrate answers before any peer exists; the owner's accept is the first attestation, windows per predicate, the briefing nags about facts past their window.
 9. **Task 47.** Shared intake and shared accuracy over federation (ADR-034 federation half), when ADR-033 lifts: subscriptions, article dedup by key, peer-derived atoms as proposals, peer attestations counted with source independence.
