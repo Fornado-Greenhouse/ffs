@@ -978,3 +978,34 @@ Out of scope, noted: `main.ts`'s `openHit` still cannot resolve a qualified base
 Noted outside scope: `link_for` scans every family per referenced id (a handful of `head_of_chain` calls at personal scale); if the affiliation reverse lookup ever grows past tens of thousands of atoms it needs a `person`/`organization` index rather than `list_by_predicate(.., 10_000)`.</result>
 <usage><subagent_tokens>731613</subagent_tokens><tool_uses>21</tool_uses><duration_ms>592305</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a786e03649a1c6d7c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-midnightblue-Entire-ffs/af7c00f1-b4ce-4505-8d35-b5ec4e0c9341/tasks/a786e03649a1c6d7c.output</output-file>
+<status>completed</status>
+<summary>Agent "task_38 A2: daemon + fastpath consumers" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Consumer half of task_38 done: ffs-daemon and ffs-fastpath adapted to the registry-backed projection API, opaque ids on accept, path index wired, `path.families` RPC, stub handling, spec-count tests updated. Nothing committed.
+
+**Verification (all fresh, after the last change)**
+- `cargo nextest run --workspace --all-features`: 482 tests run, 482 passed, 0 skipped (was 471 before the 11 new tests).
+- `cargo fmt --all -- --check`: clean (`cargo fmt --all` was applied once).
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: 0 warnings.
+- Byte-identity gate: `ffs-core starter_templates` 8 passed; daemon materializer tests 5 passed, existing expected outputs unchanged (contacts/people/notes paths identical because `assign("Sara Chen")` yields `Sara_Chen`).
+
+**Changes**
+- `crates/ffs-daemon/src/materializer.rs`: `WorkingSetMaterializer::new(renderer, store, working_set, suppression, data_dir, owner)` (store added); `materialize_entity(&amp;PathFamily, &amp;EntityId)` reads the head atom, derives display from the family's `name_field`, computes collision qualifiers (organization resolved to a display name when it is an entity id, role, year of `valid_from`), assigns or renames through `renderer.path_index()`, materializes to `path_for_basename`, writes `Moved to [[&lt;new&gt;|&lt;display&gt;]]\n` at the old basename on rename (suppression-recorded), and writes the renderer's merged stub for `entity.same_as` heads; `handle_commit` snapshots the family table per call. New `REDIRECT_STUB_PREFIX`, `MaterializeError::{Store, Index}`.
+- `crates/ffs-daemon/src/dispatch.rs`: `ingest_accept` uses `EntityId::mint()`; `slug_for_proposal`, `slugify`, `format_tx_time_slug` and their tests deleted (205 lines); `entity_search` iterates `registry.families()` and uses each family's `name_field` (no predicate name in code), hits gain `basename` from the path index; new RPC **`path.families`** returning `registry.families()` as a bare JSON array.
+- `crates/ffs-daemon/src/api.rs`: `EntitySearchHit.basename: Option&lt;String&gt;` (serde default, skipped when None).
+- `crates/ffs-daemon/src/main.rs`: keeps `Arc&lt;SqliteAtomStore&gt;`, coerces it to both `Arc&lt;dyn AtomStore&gt;` and `Arc&lt;dyn PathIndex&gt;`, renderer `.with_path_index(...)`, materializer gets the store, `config/resolution.toml` loaded at boot with info on success and warn on missing/invalid.
+- `crates/ffs-fastpath/src/watcher.rs`: `FastPathContext.path_index: Arc&lt;dyn PathIndex&gt;`; parse via `FamilyTable::from_registry`; basename resolved through the index (no row means slug id); new `pub fn is_projection_stub` ignores `Moved to [[..]]` / `Merged into [[..]]` files, with unit tests. `classifier.rs`: only the misplaced `path/ontology` fields in the test helper moved to the right struct.
+- Tests: new `crates/ffs-daemon/tests/filing_cabinet_task38.rs` (7 tests: `path.families` folders, `entity.search` title-for-note/display_name-for-others plus basename, accept mints a `z…` 16-byte id and the file is still `contacts/by-name/A/Acme_Person.md`, `orgs/by-name/A/Acme.md` plus events recency listing, two Sara Chens as `Sara_Chen.md` and `Sara_Chen_(City_Council).md`, rename leaves the exact stub, merged entity writes a one-line stub); new `crates/ffs-fastpath/tests/task38_sections.rs` (4 tests: Notes/Mentions/Tags additive via spec rules with no classifier change; Affiliations/People/Participants route to ingest). `starter_predicates.rs`: nine `EXPECTED_PREDICATES`, `MVP_THREE` keeps the 15 to 25 envelope, total asserted at 56, family table asserted, every spec has an `[ontology]` row, person.generic v1 claim validates under v2; the whole-section resolver now matches the loader's rule. Nine test fixture specs across cli, perf, summary_panel, dispatch, fastpath, scribe (2), mcp, librarian gained `[path]` tables (the only reason they failed).
+
+**Deviation, stated**: item 6 asked for the org-note e2e in `ingest_pipeline_e2e.rs`; that file drives the real Python scribe, which cannot emit `org.company`, so the accept-to-`orgs/` path with an opaque id is covered in `filing_cabinet_task38.rs` through the dispatcher and materializer instead. No file under `crates/ffs-core/src` was changed by me (the parent's foundation edits there predate this work).
+
+Noted outside scope: `entity.search` still scans `list_by_predicate` per family; and the `EntitySearchHit.basename` is only present once the materializer has assigned a row, so unmaterialized entities open by slugified display name in the plugin.</result>
+<usage><subagent_tokens>741038</subagent_tokens><tool_uses>36</tool_uses><duration_ms>634997</duration_ms></usage>
+</task-notification>
