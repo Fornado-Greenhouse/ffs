@@ -360,6 +360,7 @@ async fn run() -> Result<(), StartupError> {
             skills_host.clone(),
         ))),
         ingest_agent_identity: ingest_agent_identity.clone(),
+        suppression: Some(suppression.clone()),
     };
     let dispatcher = Arc::new(dispatcher);
 
@@ -386,8 +387,55 @@ async fn run() -> Result<(), StartupError> {
         suppression.clone(),
         data_dir.clone(),
     ));
-    let _inbox_handle = inbox.spawn(publisher.clone());
+    let _inbox_handle = inbox.clone().spawn(publisher.clone());
     tracing::info!("inbox materializer subscribed to event.quarantine.changed");
+
+    // Fast-path watcher (ADR-014; wired by task_49 / ADR-036). Absorbs
+    // editor edits to projection files as supersession atoms or routes
+    // them to ingest, and applies ticks in inbox/<date>.md (ADR-032)
+    // through a DispatcherSink over this same dispatcher. Shares the
+    // one suppression registry with both materializers so daemon-
+    // induced writes never re-enter as edits (concurrency rule 3).
+    let _fastpath_handle = match dispatcher.signing_key.clone() {
+        Some(key) => {
+            let roots: Vec<String> = registry.families().into_iter().map(|f| f.family).collect();
+            let sink = Arc::new(ffs_daemon::DispatcherSink::new(
+                dispatcher.clone(),
+                publisher.clone(),
+                Some(inbox.clone()),
+            ));
+            let ctx = ffs_fastpath::FastPathContext {
+                store: store.clone(),
+                registry: registry.clone(),
+                path_index: path_index.clone(),
+                notifier: publisher.clone(),
+                signing_key: key,
+                working_set_dir: data_dir.clone(),
+                ingest_dir: data_dir.join("ingest"),
+                suppression: suppression.clone(),
+                decision_sink: Some(sink),
+            };
+            match ffs_fastpath::FastPathWatcher::start(ctx) {
+                Ok(handle) => {
+                    tracing::info!(
+                        roots = ?roots,
+                        inbox = "inbox/",
+                        data_dir = %data_dir.display(),
+                        "fast-path watcher started"
+                    );
+                    Some(handle)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "fast-path watcher failed to start; editor edits and inbox ticks will not be absorbed");
+                    None
+                }
+            }
+        }
+        None => {
+            tracing::warn!("no signing key configured; fast-path watcher not started");
+            None
+        }
+    };
 
     // Socket path computation: Unix daemons bind a UDS at
     // `$FFS_DATA_DIR/run/ffs.sock` so the path respects the

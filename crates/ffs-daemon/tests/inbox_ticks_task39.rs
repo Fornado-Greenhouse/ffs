@@ -6,8 +6,8 @@
 //! `resolved_entity`; "accept all under this article" over an untouched
 //! ambiguous child is refused with a parse warning.
 //!
-//! Lives in `ffs-fastpath` because the parser is here and the daemon
-//! cannot depend on this crate.
+//! Lives in `ffs-daemon` since task_49 (ADR-036): the daemon depends on
+//! the fast path and owns the `DispatcherSink`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,9 +27,10 @@ use ffs_core::{
     Provenance, PublicKey, SourceKind, SuppressionRegistry, Tier,
 };
 use ffs_daemon::Dispatcher;
+use ffs_daemon::DispatcherSink;
 use ffs_daemon::inbox::{InboxMaterializer, today_utc};
 use ffs_daemon::notify::EventPublisher;
-use ffs_fastpath::inbox::{DecisionAction, DispatcherSink, apply_decisions, parse_inbox};
+use ffs_fastpath::inbox::{DecisionAction, apply_decisions, parse_inbox};
 
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -109,6 +110,7 @@ fn setup() -> Harness {
         data_dir: Some(data_dir.clone()),
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
     let inbox = Arc::new(InboxMaterializer::new(
         quarantine.clone(),

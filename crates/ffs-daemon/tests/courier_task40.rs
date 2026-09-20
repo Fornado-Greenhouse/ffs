@@ -154,6 +154,7 @@ fn setup() -> Harness {
         data_dir: Some(data_dir.clone()),
         skill_invoker: Some(invoker.clone()),
         ingest_agent_identity: None,
+        suppression: None,
     });
     Harness {
         _dir: dir,

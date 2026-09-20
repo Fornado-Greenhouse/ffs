@@ -26,11 +26,14 @@ pub use dispatch::{
     route_to_ingest,
 };
 pub use inbox::{
-    DecisionAction, DecisionSink, DispatcherSink, InboxDecision, ParsedInbox, apply_decisions,
+    DecisionAction, DecisionSink, InboxDecision, ParseWarning, ParsedInbox, apply_decisions,
     decision_rpc, is_inbox_path, parse_inbox,
 };
 pub use suppress::SuppressionRegistry;
-pub use watcher::{DEFAULT_DEBOUNCE, FastPathContext, FastPathWatcher, PollingFastPathWatcher};
+pub use watcher::{
+    DEFAULT_DEBOUNCE, EditOutcome, FastPathContext, FastPathWatcher, PollingFastPathWatcher,
+    is_watched_root, process_edit,
+};
 
 /// Workspace marker exposed so smoke tests can confirm the crate links.
 pub const CRATE_NAME: &str = "ffs-fastpath";

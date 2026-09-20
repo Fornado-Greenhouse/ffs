@@ -107,6 +107,7 @@ fn setup() -> Harness {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
     let materializer = Arc::new(WorkingSetMaterializer::new(
         renderer.clone(),

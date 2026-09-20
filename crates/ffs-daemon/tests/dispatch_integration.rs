@@ -129,6 +129,7 @@ fn setup() -> Harness {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
     Harness {
         _dir: dir,
@@ -474,6 +475,7 @@ async fn spawn_server() -> (
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
 
     let socket = run_dir.join("ffs.sock");

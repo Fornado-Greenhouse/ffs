@@ -184,6 +184,7 @@ fn make_side(name: &'static str, seed: u8) -> Side {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     };
     Side {
         _name: name,

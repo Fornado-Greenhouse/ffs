@@ -157,6 +157,7 @@ async fn spawn_with_atoms(n_atoms: usize) -> Bench {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
 
     let socket = run_dir.join("ffs.sock");

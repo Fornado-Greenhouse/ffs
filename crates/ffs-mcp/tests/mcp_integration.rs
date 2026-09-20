@@ -177,6 +177,7 @@ fn make_dispatcher(grant_owner_caps: bool) -> (Arc<Dispatcher>, Arc<dyn AtomStor
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
 
     // Leak the tempdir so the test data files stay valid for the

@@ -62,15 +62,7 @@ pub struct MergeSuggestion {
     pub reason: String,
 }
 
-/// A parse warning the fast path raised on the last edit of the file.
-/// Rendered under the section it belongs to (by submission id) or
-/// under Housekeeping when it has no section.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseWarning {
-    /// The submission id the warning belongs to, or empty.
-    pub section: String,
-    pub message: String,
-}
+pub use ffs_fastpath::inbox::ParseWarning;
 
 /// Cross-source items for the Housekeeping section.
 #[derive(Debug, Clone, Default)]

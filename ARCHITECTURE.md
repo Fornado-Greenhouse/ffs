@@ -73,6 +73,10 @@ The primary technical trade-off is heterogeneity for predictability: three toolc
 
 The seven Rust crates and their responsibilities are documented in [TechSpec § System Architecture](.compozy/tasks/ffs-mvp/_techspec.md) and [ADR-015](.compozy/tasks/ffs-mvp/adrs/adr-015.md).
 
+The crate graph flows one way from `ffs-core` outward (ADR-036): `ffs-core` has no workspace dependencies and owns the atom store, the capability evaluator, the projection renderer, the notification event types (`ffs_core::events`), the suppression registry, and the path index. `ffs-fastpath` depends only on `ffs-core`. `ffs-daemon` depends on `ffs-core`, `ffs-fastpath`, `ffs-skills-host`, and `ffs-federation`, and is the one process: it starts the working-set materializer, the inbox materializer, and the fast-path watcher, and serves the JSON-RPC dispatcher. `ffs-cli` and `ffs-mcp` are clients of the daemon over the socket.
+
+The fast-path watcher runs inside the daemon binary. It watches the data dir root and acts on files under the registry's projection families plus `inbox/` (dotfiles, `ingest/`, `run/`, `log/`, `skills/`, and `config/` are ignored). An edit to a projection file is diffed against the head atom, classified by the predicate's reverse-map rules, and either authored as a supersession atom or written to `ingest/` as a correction; a tick in `inbox/<date>.md` is applied as a quarantine decision through the same dispatcher the socket serves (ADR-032). The watcher shares one suppression registry with both materializers, so the daemon's own re-renders never re-enter as edits. `fastpath.submit` runs the same classification for a caller-supplied edit and reports the outcome (`ignored`, `applied`, `routed_to_ingest`, or `inbox_decisions`).
+
 ---
 
 ## Core abstractions

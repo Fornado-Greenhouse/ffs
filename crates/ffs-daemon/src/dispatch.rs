@@ -93,6 +93,11 @@ pub struct Dispatcher {
     /// `None` means filesystem drops have no grantee and never
     /// auto-file. MCP submissions carry their own `mcp:agent/<id>`.
     pub ingest_agent_identity: Option<String>,
+    /// The suppression registry shared with the working-set and inbox
+    /// materializers and the fast-path watcher (task_49), so a
+    /// `fastpath.submit` re-render is not re-read as an edit. `None`
+    /// in read-only test dispatchers.
+    pub suppression: Option<Arc<ffs_core::SuppressionRegistry>>,
 }
 
 /// Invoke a daemon-hosted skill by bundle name with a JSON input and
@@ -552,6 +557,53 @@ impl Dispatcher {
             signing_key: self.signing_key.clone(),
             ingest_agent_identity: self.ingest_agent_identity.clone(),
         }
+    }
+
+    // ---- task_49: fastpath.submit ----
+
+    /// Classify and apply one projection edit through the same path the
+    /// fast-path watcher runs on a filesystem event (ADR-014): a
+    /// supersession atom when the diff is safe, a routed correction
+    /// otherwise. `projection_path` is data-dir-relative; `new_content`
+    /// is the whole file as the editor would have saved it. The file on
+    /// disk is rewritten with the re-render on the applied path.
+    async fn fastpath_submit(&self, params: Value) -> Result<Value, ApiError> {
+        let p: FastpathSubmitParams = parse_params(params)?;
+        let key = self.owner_signing_key("fastpath.submit")?;
+        let Some(data_dir) = self.data_dir.clone() else {
+            return Err(ApiError {
+                code: ERR_NOT_IMPLEMENTED,
+                message: "fastpath.submit requires a configured data dir".into(),
+                data: None,
+            });
+        };
+        let rel = ffs_core::projection::path::normalize_separators(&p.projection_path).into_owned();
+        let rel = rel.trim_start_matches('/').to_string();
+        if rel.is_empty() || rel.split('/').any(|seg| seg == "..") {
+            return Err(ApiError {
+                code: ERR_INVALID_PARAMS,
+                message: "projection_path must be a relative path without `..`".into(),
+                data: None,
+            });
+        }
+        let ctx = ffs_fastpath::FastPathContext {
+            store: self.store.clone(),
+            registry: self.registry.clone(),
+            path_index: self.renderer.path_index(),
+            notifier: self.notifier.clone(),
+            signing_key: key,
+            working_set_dir: data_dir.clone(),
+            ingest_dir: data_dir.join("ingest"),
+            suppression: self
+                .suppression
+                .clone()
+                .unwrap_or_else(|| Arc::new(ffs_core::SuppressionRegistry::new())),
+            decision_sink: None,
+        };
+        let target = data_dir.join(&rel);
+        let outcome =
+            ffs_fastpath::process_edit(&ctx, &rel, &target, p.new_content.as_bytes()).await;
+        to_value(&outcome)
     }
 
     // ---- task_39: auto-filing, retraction, identity assertions, capability admin ----
@@ -1127,7 +1179,7 @@ impl Dispatcher {
             "path.list" => self.path_list(req.params).await,
             "path.families" => self.path_families().await,
             "ingest.submit" => self.ingest_submit(req.params).await,
-            "fastpath.submit" => stub_not_implemented("task_09"),
+            "fastpath.submit" => self.fastpath_submit(req.params).await,
             "capability.evaluate" => self.capability_evaluate(req.params).await,
             "federation.peer.add" => self.federation_peer_add(req.params).await,
             "federation.peer.list" => self.federation_peer_list().await,
@@ -2409,14 +2461,6 @@ impl Dispatcher {
 }
 
 // ---- helpers ----
-
-fn stub_not_implemented(implementing_task: &str) -> Result<Value, ApiError> {
-    Err(ApiError {
-        code: ERR_NOT_IMPLEMENTED,
-        message: format!("method not yet implemented; implementing task: {implementing_task}"),
-        data: Some(serde_json::json!({ "implementing_task": implementing_task })),
-    })
-}
 
 fn parse_params<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, ApiError> {
     serde_json::from_value(params).map_err(|e| ApiError {

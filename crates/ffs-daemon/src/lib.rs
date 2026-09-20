@@ -13,6 +13,7 @@ pub mod api;
 pub mod autofile;
 pub mod dispatch;
 pub mod inbox;
+pub mod inbox_sink;
 pub mod ingest_watcher;
 pub mod materializer;
 pub mod notify;
@@ -28,6 +29,7 @@ pub use inbox::{
     AutoFiledRow, Housekeeping, InboxError, InboxMaterializer, MergeSuggestion, ParseWarning,
     inbox_relative_path, render_inbox, today_utc,
 };
+pub use inbox_sink::DispatcherSink;
 pub use ingest_watcher::{IngestWatcher, IngestWatcherConfig};
 pub use materializer::{MaterializeError, Materialized, WorkingSetMaterializer};
 pub use notify::{Event, EventPublisher};

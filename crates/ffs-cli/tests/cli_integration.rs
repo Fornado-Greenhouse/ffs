@@ -148,6 +148,7 @@ async fn spawn_full(
         data_dir: Some(dir.path().to_path_buf()),
         skill_invoker: invoker,
         ingest_agent_identity: None,
+        suppression: None,
     });
 
     let socket = run_dir.join("ffs.sock");
@@ -333,6 +334,7 @@ async fn cli_capability_denied_exits_with_code_two() {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     });
     let socket = run_dir.join("ffs.sock");
     let cancel = CancellationToken::new();

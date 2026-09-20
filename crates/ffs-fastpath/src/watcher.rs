@@ -11,11 +11,11 @@ use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode,
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
+use ffs_core::events::EventPublisher;
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::projection::path as projection_path;
 use ffs_core::store::AtomStore;
 use ffs_core::working_set::PathIndex;
-use ffs_daemon::notify::EventPublisher;
 
 use crate::classifier::{classify, is_federated_path};
 use crate::dispatch::dispatch;
@@ -94,13 +94,19 @@ pub struct FastPathContext {
 impl FastPathWatcher {
     /// Start watching `working_set_dir` recursively. Returns a handle that
     /// keeps the watcher alive until dropped.
-    pub fn start(ctx: FastPathContext) -> Result<Self, notify::Error> {
+    pub fn start(mut ctx: FastPathContext) -> Result<Self, notify::Error> {
         let (tx, rx) = mpsc::unbounded_channel::<NotifyEvent>();
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<NotifyEvent>| {
             if let Ok(event) = res {
                 let _ = tx.send(event);
             }
         })?;
+        // Canonicalize the watched directory so event paths (canonical on
+        // macOS FSEvents, e.g. `/private/var/...` for a `/var/...` data
+        // dir) strip against the root we hold (task_49).
+        if let Ok(canon) = std::fs::canonicalize(&ctx.working_set_dir) {
+            ctx.working_set_dir = canon;
+        }
         watcher.watch(&ctx.working_set_dir, RecursiveMode::Recursive)?;
 
         let task = tokio::spawn(event_loop(ctx, rx));
@@ -180,6 +186,42 @@ async fn reconcile_working_set(ctx: &FastPathContext) {
     }
 }
 
+/// What the fast path did with one edit. Returned by [`process_edit`]
+/// so the daemon's `fastpath.submit` RPC can report it (task_49).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum EditOutcome {
+    /// Not a projection edit: outside every family folder and `inbox/`,
+    /// a dotfile, a daemon-induced write, a stub, or unchanged content.
+    Ignored { reason: String },
+    /// A supersession atom was authored and the file re-rendered.
+    Applied { atom_hash: ffs_core::Multihash },
+    /// The edit could not be applied safely and was written to the
+    /// ingest folder as a correction.
+    RoutedToIngest { submission_path: String },
+    /// An inbox file: ticks were applied through the decision sink.
+    InboxDecisions { applied: usize, errors: Vec<String> },
+}
+
+/// True when `rel` (forward-slash, data-dir-relative) lives under a
+/// projection family folder from the registry or under `inbox/`, and
+/// no path segment is a dotfile. Everything else under the data dir
+/// (`ingest/`, `run/`, `log/`, `skills/`, `config/`, `.obsidian/`,
+/// `.courier/`) is not the fast path's business.
+pub fn is_watched_root(rel: &str, table: &projection_path::FamilyTable) -> bool {
+    let mut segs = rel.split('/').filter(|s| !s.is_empty());
+    let Some(first) = segs.next() else {
+        return false;
+    };
+    if rel.split('/').any(|s| s.starts_with('.')) {
+        return false;
+    }
+    if first == crate::inbox::INBOX_DIR {
+        return true;
+    }
+    table.for_folder(first).is_some()
+}
+
 async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::Result<()> {
     let new_content = match std::fs::read(path) {
         Ok(b) => b,
@@ -193,27 +235,17 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
         Ok(r) => r,
         Err(_) => return Ok(()),
     };
-    // Normalize OS-native backslashes to forward slashes so the
-    // string we hand to the path parser + every downstream event
-    // payload is substrate-canonical on every host. Without this,
-    // Windows ships `contacts\\by-name\\S\\Sarah_Chen.md` into
-    // event.projection.invalidated.params.path and the fast-path
-    // classifier silently falls through to slow-path because
-    // `parse()` can't decompose a `\`-separated string.
-    // See projection::path::normalize_separators + task_34.
     let rel_str = projection_path::normalize_separators(&rel.to_string_lossy()).into_owned();
-
-    // An inbox file (ADR-032) is a decision surface: ticks become
-    // quarantine decisions through the sink, and the file is neither a
-    // projection edit nor an ingest submission.
-    if crate::inbox::is_inbox_path(&rel_str) {
-        if let Some(sink) = &ctx.decision_sink {
-            let parsed = crate::inbox::parse_inbox(&String::from_utf8_lossy(&new_content));
-            let (applied, errors) = crate::inbox::apply_decisions(sink.as_ref(), &parsed).await;
+    match process_edit(ctx, &rel_str, path, &new_content).await {
+        EditOutcome::Ignored { reason } => debug!(?path, reason, "fast path ignored edit"),
+        EditOutcome::Applied { atom_hash } => debug!(?path, ?atom_hash, "fast path applied"),
+        EditOutcome::RoutedToIngest { submission_path } => {
+            debug!(?path, submission_path, "fast path routed edit to ingest")
+        }
+        EditOutcome::InboxDecisions { applied, errors } => {
             debug!(
                 ?path,
                 applied,
-                warnings = parsed.warnings.len(),
                 errors = errors.len(),
                 "inbox decisions applied"
             );
@@ -221,56 +253,89 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
                 warn!(?path, error = %e, "inbox decision failed");
             }
         }
-        return Ok(());
+    }
+    Ok(())
+}
+
+/// Classify and apply one edit to a data-dir-relative projection path.
+/// This is the single entry point for both the watcher (a filesystem
+/// event) and the daemon's `fastpath.submit` RPC (task_49). `rel_str`
+/// is forward-slash, relative to the data dir; `target_file` is the
+/// absolute on-disk path the re-render is written to.
+pub async fn process_edit(
+    ctx: &FastPathContext,
+    rel_str: &str,
+    target_file: &std::path::Path,
+    new_content: &[u8],
+) -> EditOutcome {
+    let path = target_file;
+    // Normalize OS-native backslashes to forward slashes so the
+    // string we hand to the path parser + every downstream event
+    // payload is substrate-canonical on every host (task_34).
+    let rel_str = projection_path::normalize_separators(rel_str).into_owned();
+    // Families come from the registry's `[path]` tables (ADR-028),
+    // snapshotted per event so hot-reloaded specs take effect.
+    let table = projection_path::FamilyTable::from_registry(&ctx.registry);
+    if !is_watched_root(&rel_str, &table) {
+        return EditOutcome::Ignored {
+            reason: "outside every projection family folder and inbox/".into(),
+        };
+    }
+
+    // An inbox file (ADR-032) is a decision surface: ticks become
+    // quarantine decisions through the sink, and the file is neither a
+    // projection edit nor an ingest submission.
+    if crate::inbox::is_inbox_path(&rel_str) {
+        let Some(sink) = &ctx.decision_sink else {
+            return EditOutcome::Ignored {
+                reason: "inbox edit but no decision sink configured".into(),
+            };
+        };
+        let parsed = crate::inbox::parse_inbox(&String::from_utf8_lossy(new_content));
+        let (applied, errors) = crate::inbox::apply_decisions(sink.as_ref(), &parsed).await;
+        return EditOutcome::InboxDecisions { applied, errors };
     }
 
     if is_federated_path(&rel_str) {
-        let _ = crate::dispatch::route_to_ingest(
-            &ctx.notifier,
-            &ctx.ingest_dir,
+        return routed(
+            ctx,
             &rel_str,
-            &new_content,
-            &crate::classifier::SlowPathReason::FederatedProjection,
+            new_content,
+            crate::classifier::SlowPathReason::FederatedProjection,
         );
-        return Ok(());
     }
 
     // Redirect and merged stubs (ADR-030) are projection bookkeeping
     // the materializer writes, never user edits; a file whose whole
     // content is one such line is ignored.
-    if is_projection_stub(&new_content) {
-        return Ok(());
+    if is_projection_stub(new_content) {
+        return EditOutcome::Ignored {
+            reason: "redirect or merged stub".into(),
+        };
     }
 
     // Parse path into (family, basename); listings + unsupported
-    // subpaths route to ingest. Families come from the registry's
-    // `[path]` tables (ADR-028), snapshotted per event so hot-reloaded
-    // specs take effect.
-    let table = projection_path::FamilyTable::from_registry(&ctx.registry);
+    // subpaths route to ingest.
     let parsed = match projection_path::parse(&rel_str, &table) {
         Ok(p) => p,
         Err(_) => {
-            let _ = crate::dispatch::route_to_ingest(
-                &ctx.notifier,
-                &ctx.ingest_dir,
+            return routed(
+                ctx,
                 &rel_str,
-                &new_content,
-                &crate::classifier::SlowPathReason::PathOrHeadUnavailable,
+                new_content,
+                crate::classifier::SlowPathReason::PathOrHeadUnavailable,
             );
-            return Ok(());
         }
     };
     let (family, basename) = match parsed {
         projection_path::ParsedPath::SingleEntity { family, basename } => (family, basename),
         _ => {
-            let _ = crate::dispatch::route_to_ingest(
-                &ctx.notifier,
-                &ctx.ingest_dir,
+            return routed(
+                ctx,
                 &rel_str,
-                &new_content,
-                &crate::classifier::SlowPathReason::PathOrHeadUnavailable,
+                new_content,
+                crate::classifier::SlowPathReason::PathOrHeadUnavailable,
             );
-            return Ok(());
         }
     };
     // Basename to entity id through the index; a basename with no row
@@ -279,40 +344,34 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
         Ok(Some(e)) => e,
         Ok(None) => ffs_core::EntityId::new(basename.as_str()),
         Err(_) => {
-            let _ = crate::dispatch::route_to_ingest(
-                &ctx.notifier,
-                &ctx.ingest_dir,
+            return routed(
+                ctx,
                 &rel_str,
-                &new_content,
-                &crate::classifier::SlowPathReason::PathOrHeadUnavailable,
+                new_content,
+                crate::classifier::SlowPathReason::PathOrHeadUnavailable,
             );
-            return Ok(());
         }
     };
     let predicate = family.primary_predicate();
     let Some(spec) = ctx.registry.get(predicate.as_str()) else {
-        let _ = crate::dispatch::route_to_ingest(
-            &ctx.notifier,
-            &ctx.ingest_dir,
+        return routed(
+            ctx,
             &rel_str,
-            &new_content,
-            &crate::classifier::SlowPathReason::NoReverseMapRules,
+            new_content,
+            crate::classifier::SlowPathReason::NoReverseMapRules,
         );
-        return Ok(());
     };
 
     // Fetch head atom + render its current projection for diffing.
     let head = match ctx.store.head_of_chain(&entity, &predicate, None) {
         Ok(Some(h)) => h,
         _ => {
-            let _ = crate::dispatch::route_to_ingest(
-                &ctx.notifier,
-                &ctx.ingest_dir,
+            return routed(
+                ctx,
                 &rel_str,
-                &new_content,
-                &crate::classifier::SlowPathReason::PathOrHeadUnavailable,
+                new_content,
+                crate::classifier::SlowPathReason::PathOrHeadUnavailable,
             );
-            return Ok(());
         }
     };
 
@@ -322,17 +381,19 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
     // server-side as the owner).
     let old_markdown = render_via_template(&spec, &head);
 
-    let new_str = String::from_utf8_lossy(&new_content);
+    let new_str = String::from_utf8_lossy(new_content);
     // No-op guard: if the on-disk content already matches the rendered
     // head, there's nothing to author. Required for restart
     // reconciliation, which walks every projection file and would
     // otherwise route unchanged files to ingest as `AmbiguousDiff`.
     if old_markdown == new_str {
-        return Ok(());
+        return EditOutcome::Ignored {
+            reason: "content matches the rendered head".into(),
+        };
     }
     let classification = classify(&spec, &head.claim, &old_markdown, &new_str);
 
-    let _ = dispatch(
+    match dispatch(
         classification,
         &ctx.store,
         &ctx.notifier,
@@ -340,11 +401,42 @@ async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::
         &head,
         &rel_str,
         path,
-        &new_content,
+        new_content,
         &ctx.ingest_dir,
         &ctx.suppression,
-    );
-    Ok(())
+    ) {
+        Ok(crate::dispatch::Receipt::Applied(r)) => EditOutcome::Applied {
+            atom_hash: r.atom_hash,
+        },
+        Ok(crate::dispatch::Receipt::Routed(r)) => EditOutcome::RoutedToIngest {
+            submission_path: r.submission_path,
+        },
+        Err(e) => EditOutcome::Ignored {
+            reason: format!("dispatch failed: {e}"),
+        },
+    }
+}
+
+fn routed(
+    ctx: &FastPathContext,
+    rel_str: &str,
+    new_content: &[u8],
+    reason: crate::classifier::SlowPathReason,
+) -> EditOutcome {
+    match crate::dispatch::route_to_ingest(
+        &ctx.notifier,
+        &ctx.ingest_dir,
+        rel_str,
+        new_content,
+        &reason,
+    ) {
+        Ok(r) => EditOutcome::RoutedToIngest {
+            submission_path: r.submission_path,
+        },
+        Err(e) => EditOutcome::Ignored {
+            reason: format!("route to ingest failed: {e}"),
+        },
+    }
 }
 
 /// Render a single atom into the diff-baseline markdown shape used by the

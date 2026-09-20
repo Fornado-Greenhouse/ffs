@@ -20,11 +20,13 @@ ffs-core = { workspace = true }
 ffs-federation = { workspace = true }
 # `ffs-skills-host` was a dev-dep through task_22; task_26 promotes
 # it to a regular dep so the daemon binary can spawn the scribe
-# subprocess. `ffs-skills-host` itself only depends on `ffs-core`,
-# so no cycle is introduced. The earlier comment-block warning
-# about `ffs-fastpath` still applies: that crate depends on
-# `ffs-daemon` for `EventPublisher`, so adding it would cycle.
+# subprocess. `ffs-skills-host` itself only depends on `ffs-core`.
 ffs-skills-host = { workspace = true }
+# task_49 / ADR-036: the dependency was inverted. `Event` and
+# `EventPublisher` moved to `ffs-core::events`, so `ffs-fastpath` no
+# longer depends on this crate and the daemon binary can start the
+# fast-path watcher and implement its `DecisionSink` in-process.
+ffs-fastpath = { workspace = true }
 
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

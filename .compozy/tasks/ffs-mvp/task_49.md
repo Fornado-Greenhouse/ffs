@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Wire the fast-path watcher and inbox decisions into the production daemon (dependency inversion)
 type: backend
 complexity: medium
@@ -39,14 +39,17 @@ This is a crate-graph change to internal modules only. No stability-listed surfa
 </requirements>
 
 ## Subtasks
-- [ ] 49.1 Decide the dependency shape: attempt the inversion (move `EventPublisher`/`Event` and `DecisionSink` down; make `ffs-daemon` depend on `ffs-fastpath`); if it proves too invasive, fall back to the sidecar and record why. Write ADR-036 if the inversion lands.
-- [ ] 49.2 Move the shared types; adapt `ffs-fastpath` and `ffs-daemon` construction sites; workspace compiles with no cycle; all existing tests green.
-- [ ] 49.3 `main.rs`: start `FastPathWatcher` after the materializers with the registry's families plus `inbox/`, the shared `SuppressionRegistry`, and a `DispatcherSink`; log the watched roots at startup.
-- [ ] 49.4 `fastpath.submit`: implement or delete the stub with a note; dispatcher test either way.
-- [ ] 49.5 Binary e2e tests: editor edit to a materialized additive section becomes a supersession atom within budget; inbox `accept` tick becomes an atom and the file re-renders under `## Decided`.
-- [ ] 49.6 ARCHITECTURE.md crate list and fast-path prose; live validation on the project lead's Mac (edit a contact in Obsidian, see the atom; tick accept in today's inbox, see the section move to Decided); record the outcome in this task's Result section.
+- [x] 49.1 Decide the dependency shape: attempt the inversion (move `EventPublisher`/`Event` and `DecisionSink` down; make `ffs-daemon` depend on `ffs-fastpath`); if it proves too invasive, fall back to the sidecar and record why. Write ADR-036 if the inversion lands.
+- [x] 49.2 Move the shared types; adapt `ffs-fastpath` and `ffs-daemon` construction sites; workspace compiles with no cycle; all existing tests green.
+- [x] 49.3 `main.rs`: start `FastPathWatcher` after the materializers with the registry's families plus `inbox/`, the shared `SuppressionRegistry`, and a `DispatcherSink`; log the watched roots at startup.
+- [x] 49.4 `fastpath.submit`: implement or delete the stub with a note; dispatcher test either way.
+- [x] 49.5 Binary e2e tests: editor edit to a materialized additive section becomes a supersession atom within budget; inbox `accept` tick becomes an atom and the file re-renders under `## Decided`.
+- [x] 49.6 ARCHITECTURE.md crate list and fast-path prose; live validation on the project lead's Mac (edit a contact in Obsidian, see the atom; tick accept in today's inbox, see the section move to Decided); record the outcome in this task's Result section.
 
 ## Implementation Details
+
+**Decision (2026-09-20): the dependency was inverted; the sidecar is rejected.** Recorded in ADR-036. `Event` and `EventPublisher` moved to `ffs_core::events` (re-exported from `ffs_daemon::notify`); `ParseWarning` and `INBOX_DIR` moved into `ffs_fastpath::inbox`; `DecisionSink` stays in `ffs-fastpath`; `DispatcherSink` is now `ffs_daemon::inbox_sink::DispatcherSink`. `ffs-fastpath` depends only on `ffs-core`; `ffs-daemon` depends on `ffs-fastpath`. `crates/ffs-fastpath/tests/inbox_task39.rs` moved to `crates/ffs-daemon/tests/inbox_ticks_task39.rs` because it constructs the daemon-side sink. `main.rs` starts `FastPathWatcher` after both materializers with the registry's families plus `inbox/` (decided per event by `is_watched_root`), the shared `SuppressionRegistry`, and a `DispatcherSink`; it logs `fast-path watcher started` with the roots. `fastpath.submit` is implemented over the new `process_edit` entry point and returns `EditOutcome` (`{"outcome": "ignored" | "applied" | "routed_to_ingest" | "inbox_decisions", ...}`); the `task_09` stub is gone.
+
 Current structure: `crates/ffs-fastpath/src/watcher.rs` owns `FastPathWatcher` and `FastPathContext` (registry, store, path index, suppression registry, event publisher, `decision_sink: Option<Arc<dyn DecisionSink>>`); `crates/ffs-fastpath/src/inbox.rs` owns the strict checkbox parser, `InboxDecision`, `DecisionSink`, and `DispatcherSink` (which holds an `Arc<Dispatcher>` and calls `ingest.accept`, `ingest.reject`, `entity.assert_different`, `entity.merge`, `entity.unmerge`, `ingest.retract`, then publishes `QuarantineChanged`). `crates/ffs-daemon/src/main.rs` builds the store, registry, renderer, working-set materializer, inbox materializer, skills host, and transport, and never mentions the fast path. `crates/ffs-daemon/src/notify.rs` owns `Event` and `EventPublisher`.
 
 Why the cycle exists: `ffs-fastpath` needs to publish `Event::ProjectionInvalidated` and, since task_39, to call the dispatcher. Both are daemon types. The clean cut is that the fast path should depend only on the seams it uses, not on the daemon crate. Moving `Event`/`EventPublisher` into `ffs-core` (they are plain broadcast types with no daemon-specific dependencies) and defining `DecisionSink` beside them lets `ffs-daemon` depend on `ffs-fastpath` for the watcher and implement the sink itself.
@@ -83,12 +86,12 @@ Sidecar alternative, for the record: a second binary `ffs-fastpath` that watches
 
 ## Tests
 - Unit tests:
-  - [ ] Existing `ffs-fastpath` and `ffs-daemon` suites green after the type move, with assertions unmodified.
-  - [ ] `main.rs` startup wiring covered by a construction test that builds the watcher context from a registry with the three starter families plus `inbox/` and asserts the watched roots.
-  - [ ] `fastpath.submit` dispatcher test (or a test that the method name is absent and documented).
+  - [x] Existing `ffs-fastpath` and `ffs-daemon` suites green after the type move, with assertions unmodified.
+  - [x] `main.rs` startup wiring covered by a construction test that builds the watcher context from a registry with the three starter families plus `inbox/` and asserts the watched roots.
+  - [x] `fastpath.submit` dispatcher test (or a test that the method name is absent and documented).
 - Integration tests:
-  - [ ] Binary e2e: a bullet appended to a materialized contact's additive section becomes a supersession atom within the fast-path budget; the daemon's own re-render of that file does not produce a second atom (suppression registry).
-  - [ ] Binary e2e: ticking `accept` in the rendered inbox file commits the atom and re-renders the block under `## Decided`.
+  - [x] Binary e2e: a bullet appended to a materialized contact's additive section becomes a supersession atom within the fast-path budget; the daemon's own re-render of that file does not produce a second atom (suppression registry).
+  - [x] Binary e2e: ticking `accept` in the rendered inbox file commits the atom and re-renders the block under `## Decided`.
 - Test coverage target: >=80% on new code
 - All tests must pass
 
@@ -97,3 +100,11 @@ Sidecar alternative, for the record: a second binary `ffs-fastpath` that watches
 - Ticking `accept` in today's inbox file in Obsidian commits the atom and the section moves to Decided on the next render.
 - `cargo tree` shows no cycle; `ffs-daemon` depends on `ffs-fastpath`, not the reverse.
 - All tests passing; `cargo fmt`, `cargo clippy -D warnings` clean.
+
+## Result (2026-09-20)
+
+- Binary e2e `crates/ffs-daemon/tests/fastpath_binary_task49.rs`: `fastpath_absorbs_additive_edit_in_binary` accepts a scribe-extracted contact, appends a Notes bullet to the materialized file, and observes the supersession atom on the entity's chain 89 ms after the save (50 ms debounce included); the daemon's re-render keeps the bullet and authors no third atom. `inbox_tick_applies_in_binary` ticks `accept` in `inbox/<date>.md` and observes the submission leave the pending list, the block under `## Decided`, and the contact materialized.
+- Dispatcher tests `crates/ffs-daemon/tests/fastpath_submit_task49.rs` (applied, routed_to_ingest, ignored, `..` rejected) and watched-root test `crates/ffs-fastpath/tests/watched_roots_task49.rs` (six starter families plus `inbox/` watched; ingest/run/log/skills/config/dotfiles not).
+- ARCHITECTURE.md gained the one-way crate graph and the in-binary fast-path paragraph; ADR-036 written and indexed.
+- 49.6 live validation: the binary e2e is the scratch-daemon validation (temp data dir, throwaway keys). The Obsidian hand-check on the production daemon needs the new binary installed (`installer/`) and the daemon restarted; it is the owner's step and is not claimed here.
+

@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 use ed25519_dalek::SigningKey;
 
 use ffs_core::capability::{Action, CapabilityScope, build_capability_atom};
+use ffs_core::events::EventPublisher;
 use ffs_core::predicate::SpecRegistry;
 use ffs_core::store::{AtomStore, MemAtomStore};
 use ffs_core::{AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, PublicKey, Tier};
-use ffs_daemon::EventPublisher;
 use ffs_fastpath::{FastPathContext, PollingFastPathWatcher, SuppressionRegistry};
 
 const CONTACT_TOML: &str = r#"

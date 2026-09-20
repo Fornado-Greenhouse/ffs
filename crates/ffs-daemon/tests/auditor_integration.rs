@@ -93,6 +93,7 @@ fn setup(with_signing_key: bool) -> Harness {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     };
     Harness {
         _dir: dir,

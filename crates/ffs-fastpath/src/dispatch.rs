@@ -10,9 +10,9 @@ use ed25519_dalek::SigningKey;
 use serde::Serialize;
 use tracing::{debug, warn};
 
+use ffs_core::events::{Event, EventPublisher};
 use ffs_core::store::AtomStore;
 use ffs_core::{AtomEnvelope, AtomTemplate, EntityId, Iso8601, Multihash, PredicateName, Tier};
-use ffs_daemon::notify::{Event, EventPublisher};
 
 use crate::classifier::{Classification, SlowPathReason};
 use crate::suppress::SuppressionRegistry;

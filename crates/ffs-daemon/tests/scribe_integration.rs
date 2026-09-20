@@ -325,6 +325,7 @@ fn setup_with_scribe(connect_scribe: bool) -> Option<Harness> {
         data_dir: None,
         skill_invoker: None,
         ingest_agent_identity: None,
+        suppression: None,
     };
     Some(Harness {
         _dir: dir,

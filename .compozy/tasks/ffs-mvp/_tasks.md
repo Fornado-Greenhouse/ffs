@@ -52,7 +52,7 @@
 | 46 | Attestations, derived status, and staleness (ADR-034 local half) | pending | medium | task_38, task_41 |
 | 47 | Shared intake and shared accuracy over federation (ADR-034 federation half) | pending | high | task_15, task_40, task_45, task_46 |
 | 48 | Morning read: the owner-present reading session skill (ADR-035) | pending | medium | task_37, task_40, task_46 |
-| 49 | Wire the fast-path watcher and inbox decisions into the production daemon (dependency inversion) | pending | medium | task_09, task_38, task_39 |
+| 49 | Wire the fast-path watcher and inbox decisions into the production daemon (dependency inversion) | completed | medium | task_09, task_38, task_39 |
 
 ## Build order (as of 2026-09-20)
 
