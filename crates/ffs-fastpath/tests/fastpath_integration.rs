@@ -373,3 +373,23 @@ async fn suppression_registry_ignores_daemon_self_write() {
     // Second check should miss (consumed).
     assert!(!h.ctx.suppression.check(&path, content));
 }
+
+/// A file event under `ingest/` (or any unwatched root) must be ignored
+/// before the file is read: the ingest watcher moves those files away,
+/// and reading first produced an ENOENT warning per drop (task_49 live
+/// run). A vanished path outside the watched roots is not an error.
+#[tokio::test]
+async fn fast_path_ignores_vanished_file_outside_watched_roots_without_error() {
+    let h = setup();
+    let vanished = h
+        .ctx
+        .working_set_dir
+        .join("ingest")
+        .join("never-existed.md");
+    assert!(!vanished.exists());
+    let result = ffs_fastpath::watcher::process_one(&h.ctx, &vanished).await;
+    assert!(
+        result.is_ok(),
+        "unwatched root must not surface an io error: {result:?}"
+    );
+}

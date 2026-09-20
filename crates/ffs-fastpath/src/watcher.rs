@@ -222,7 +222,19 @@ pub fn is_watched_root(rel: &str, table: &projection_path::FamilyTable) -> bool 
     table.for_folder(first).is_some()
 }
 
-async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::Result<()> {
+pub async fn process_one(ctx: &FastPathContext, path: &std::path::Path) -> std::io::Result<()> {
+    // Filter by root before touching the file. The ingest watcher moves
+    // files out of `ingest/`, and dotdirs churn, so reading first turned
+    // every such event into an ENOENT warning for a path the fast path
+    // never handles (seen live during task_49's scratch run).
+    if let Ok(rel) = path.strip_prefix(&ctx.working_set_dir) {
+        let rel_str = projection_path::normalize_separators(&rel.to_string_lossy()).into_owned();
+        let table = projection_path::FamilyTable::from_registry(&ctx.registry);
+        if !is_watched_root(&rel_str, &table) {
+            debug!(?path, "fast path ignored event outside watched roots");
+            return Ok(());
+        }
+    }
     let new_content = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) => return Err(e),
