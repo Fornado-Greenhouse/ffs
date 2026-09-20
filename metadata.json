@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2ZR24W820DMG7YF89P3X00C",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "crates/ffs-core/src/lib.rs",
+    "crates/ffs-core/src/urlnorm.rs",
+    "docs/agent-memory/CONVENTION.md",
+    "docs/agent-memory/README.md",
+    "docs/onboarding/first-use-guide.md",
+    "docs/onboarding/technical-friend-checklist.md",
+    "skills/_lib/ffs_skill.py",
+    "skills/scribe/engine.py",
+    "skills/scribe/heuristic.py",
+    "skills/scribe/prompt.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5906,
+    "cache_creation_tokens": 3239732,
+    "cache_read_tokens": 112735963,
+    "output_tokens": 328182,
+    "api_call_count": 245
+  }
+}

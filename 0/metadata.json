@@ -1,0 +1,477 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M2ZR24W820DMG7YF89P3X00C",
+  "session_id": "af7c00f1-b4ce-4505-8d35-b5ec4e0c9341",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T15:48:27.662163Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [
+    "crates/ffs-core/src/lib.rs",
+    "crates/ffs-core/src/urlnorm.rs",
+    "docs/agent-memory/CONVENTION.md",
+    "docs/agent-memory/README.md",
+    "docs/onboarding/first-use-guide.md",
+    "docs/onboarding/technical-friend-checklist.md",
+    "skills/_lib/ffs_skill.py",
+    "skills/scribe/engine.py",
+    "skills/scribe/heuristic.py",
+    "skills/scribe/prompt.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-7",
+  "turn_id": "5220e2459b23",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5906,
+    "cache_creation_tokens": 3239732,
+    "cache_read_tokens": 112735963,
+    "output_tokens": 328182,
+    "api_call_count": 245
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-goal-2026-09-14T01:32:22.806698Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "3a0c281baba0",
+      "timestamp": "2026-09-14T01:32:22.806698Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01W1FjK8eYw6scz7kqwtatCt",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5220e2459b23",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30,
+        "end": 31,
+        "entry_ids": [
+          "e9ee3f4f-b247-46e0-b362-d7be417895b7"
+        ],
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JEz9snmjRR7fayyfWwfKTf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5220e2459b23",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1428,
+        "end": 1429,
+        "entry_ids": [
+          "acc22cd1-0f7a-48b2-b339-32a26fa9ce71"
+        ],
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01AtFqmqtwyuW5QTAY3MianU",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5220e2459b23",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1826,
+        "end": 1827,
+        "entry_ids": [
+          "d6ba85b3-ffab-4cf8-a7ce-f82b1cec09f0"
+        ],
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Y6DyeARd37HStrSeobkJFp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5220e2459b23",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2105,
+        "end": 2106,
+        "entry_ids": [
+          "4e89967d-eadf-41b9-9e14-0515d6140bb4"
+        ],
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015LpifjMCeA5NktGSdFvFGx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5220e2459b23",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2236,
+        "end": 2237,
+        "entry_ids": [
+          "58076d69-e469-49c3-bdb7-658440bdbf1b"
+        ],
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 55
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T15:48:27.317559Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 9104,
+    "human_modified": 142,
+    "human_removed": 0,
+    "total_committed": 9206,
+    "total_lines_changed": 9382,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 2905,
+      "user_lines_removed": 18,
+      "agent_lines_added": 4020,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/agent-memory/CONVENTION.md": 60,
+        "docs/agent-memory/README.md": 12,
+        "docs/agent-memory/skill/ffs-courier/SKILL.md": 51,
+        "docs/onboarding/first-use-guide.md": 77,
+        "docs/onboarding/technical-friend-checklist.md": 12,
+        "skills/_lib/ffs_skill.py": 34,
+        "skills/_lib/fixtures/urlnorm.json": 61,
+        "skills/_lib/tests/conftest.py": 9,
+        "skills/_lib/tests/test_keychain.py": 13,
+        "skills/_lib/tests/test_urlnorm.py": 69,
+        "skills/_lib/urlnorm.py": 172,
+        "skills/scribe/contract.py": 435,
+        "skills/scribe/engine.py": 56,
+        "skills/scribe/heuristic.py": 17,
+        "skills/scribe/prompt.py": 1
+      },
+      "user_removed_per_file": {
+        "docs/agent-memory/CONVENTION.md": 10,
+        "docs/agent-memory/README.md": 1,
+        "skills/scribe/engine.py": 5,
+        "skills/scribe/heuristic.py": 2
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 2636,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4531,
+      "agent_lines_removed": 18,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/agent-memory/skill/ffs-courier/SKILL.md": 51,
+        "skills/_lib/fixtures/urlnorm.json": 61,
+        "skills/_lib/tests/conftest.py": 9,
+        "skills/_lib/tests/test_keychain.py": 13,
+        "skills/_lib/tests/test_urlnorm.py": 69,
+        "skills/_lib/urlnorm.py": 172,
+        "skills/scribe/contract.py": 435
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 2857,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4531,
+      "agent_lines_removed": 18,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/agent-memory/skill/ffs-courier/SKILL.md": 51,
+        "skills/_lib/fixtures/urlnorm.json": 61,
+        "skills/_lib/tests/conftest.py": 9,
+        "skills/_lib/tests/test_keychain.py": 13,
+        "skills/_lib/tests/test_urlnorm.py": 69,
+        "skills/_lib/urlnorm.py": 172,
+        "skills/scribe/contract.py": 435,
+        "skills/scribe/tests/test_contract.py": 221
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 8013,
+      "user_lines_removed": 103,
+      "agent_lines_added": 4531,
+      "agent_lines_removed": 18,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        ".compozy/tasks/ffs-mvp/task_39.md": 1,
+        "Cargo.lock": 1,
+        "crates/ffs-cli/Cargo.toml": 1,
+        "crates/ffs-cli/src/commands.rs": 88,
+        "crates/ffs-cli/src/lib.rs": 24,
+        "crates/ffs-cli/tests/cli_integration.rs": 111,
+        "crates/ffs-core/src/urlnorm.rs": 140,
+        "crates/ffs-daemon/src/api.rs": 51,
+        "crates/ffs-daemon/src/dispatch.rs": 418,
+        "crates/ffs-daemon/src/lib.rs": 2,
+        "crates/ffs-daemon/src/main.rs": 9,
+        "crates/ffs-daemon/src/resolver.rs": 315,
+        "crates/ffs-daemon/src/scribe.rs": 27,
+        "crates/ffs-daemon/tests/auditor_integration.rs": 2,
+        "crates/ffs-daemon/tests/courier_task40.rs": 618,
+        "crates/ffs-daemon/tests/dispatch_integration.rs": 4,
+        "crates/ffs-daemon/tests/federation_integration.rs": 2,
+        "crates/ffs-daemon/tests/federation_pull_integration.rs": 2,
+        "crates/ffs-daemon/tests/filing_cabinet_task38.rs": 2,
+        "crates/ffs-daemon/tests/librarian_integration.rs": 2,
+        "crates/ffs-daemon/tests/perf.rs": 2,
+        "crates/ffs-daemon/tests/resolver_task45.rs": 2,
+        "crates/ffs-daemon/tests/scribe_integration.rs": 2,
+        "crates/ffs-daemon/tests/summary_panel_integration.rs": 2,
+        "crates/ffs-mcp/src/tools.rs": 95,
+        "crates/ffs-mcp/tests/mcp_integration.rs": 85,
+        "docs/agent-memory/skill/ffs-courier/SKILL.md": 70,
+        "installer/install.ps1": 9,
+        "installer/install.sh": 11,
+        "skills/_lib/fixtures/urlnorm.json": 61,
+        "skills/_lib/tests/conftest.py": 9,
+        "skills/_lib/tests/test_keychain.py": 13,
+        "skills/_lib/tests/test_urlnorm.py": 69,
+        "skills/_lib/urlnorm.py": 172,
+        "skills/auditor/audit.py": 66,
+        "skills/auditor/tests/test_audit.py": 55,
+        "skills/courier/SKILL.md": 69,
+        "skills/courier/adapters/__init__.py": 24,
+        "skills/courier/adapters/charlotte_legistar.py": 100,
+        "skills/courier/adapters/meck_permits.py": 103,
+        "skills/courier/adapters/rss.py": 115,
+        "skills/courier/adapters/sec_edgar.py": 114,
+        "skills/courier/config.py": 294,
+        "skills/courier/courier.py": 238,
+        "skills/courier/definition.atom.json": 21,
+        "skills/courier/fetch.py": 185,
+        "skills/courier/ledger.py": 103,
+        "skills/courier/mailbox.py": 440,
+        "skills/courier/tests/conftest.py": 37,
+        "skills/courier/tests/fixtures/clip_newsletter.eml": 8,
+        "skills/courier/tests/fixtures/edgar_search.json": 36,
+        "skills/courier/tests/fixtures/expected/example-ledger-2026-09-14-widget-maker-breaks-ground-on-second-plant.md": 9,
+        "skills/courier/tests/fixtures/expected/example-ledger-digest-2026-09-14.md": 12,
+        "skills/courier/tests/fixtures/legistar_events.json": 8,
+        "skills/courier/tests/fixtures/legistar_matters.json": 18,
+        "skills/courier/tests/fixtures/meck_permits.json": 37,
+        "skills/courier/tests/fixtures/newsroom.atom": 3,
+        "skills/courier/tests/fixtures/newsroom.rss": 4,
+        "skills/courier/tests/fixtures/pointer_digest.eml": 12,
+        "skills/courier/tests/fixtures/text_digest.eml": 17,
+        "skills/courier/tests/fixtures/unrelated.eml": 7,
+        "skills/courier/tests/helpers.py": 100,
+        "skills/courier/tests/test_adapters.py": 128,
+        "skills/courier/tests/test_config.py": 76,
+        "skills/courier/tests/test_courier.py": 86,
+        "skills/courier/tests/test_fetch.py": 106,
+        "skills/courier/tests/test_mailbox.py": 155,
+        "skills/courier/writer.py": 167,
+        "skills/scribe/contract.py": 435,
+        "skills/scribe/tests/test_contract.py": 221,
+        "starter/config/courier.toml": 78,
+        "starter/config/sources.toml": 78
+      },
+      "user_removed_per_file": {
+        ".compozy/tasks/ffs-mvp/task_39.md": 1,
+        "crates/ffs-core/src/urlnorm.rs": 21,
+        "crates/ffs-daemon/src/api.rs": 1,
+        "crates/ffs-daemon/src/dispatch.rs": 60,
+        "crates/ffs-daemon/src/lib.rs": 1,
+        "crates/ffs-daemon/src/scribe.rs": 1,
+        "crates/ffs-mcp/src/tools.rs": 13,
+        "installer/install.ps1": 1,
+        "installer/install.sh": 3,
+        "skills/auditor/audit.py": 1
+      }
+    }
+  ]
+}
