@@ -64,6 +64,24 @@ RESULT_KEYS = (
 COURIER_USER_AGENT = "FFS-courier/0.1 (+https://github.com/Fornado-Greenhouse/ffs; personal use)"
 
 
+def make_fetcher(user_agent: str):
+    """A fetcher that names the courier as the owner phrased it in
+    `[courier] user_agent`; per-request headers (EDGAR's declared
+    contact) still win."""
+
+    def fetcher(url: str, headers: Dict[str, str]):
+        merged = {"User-Agent": user_agent or COURIER_USER_AGENT}
+        merged.update(headers or {})
+        req = urllib.request.Request(url, headers=merged)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - feed endpoints from the owner's config
+                return resp.status, resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read() if hasattr(e, "read") else b""
+
+    return fetcher
+
+
 def default_fetcher(url: str, headers: Dict[str, str]):
     merged = {"User-Agent": COURIER_USER_AGENT}
     merged.update(headers or {})
@@ -189,6 +207,8 @@ def run_tick(
     ticks = inp.get("ticks") or ["mailbox", "feeds"]
     try:
         cfg = cfg or load_courier(base)
+        if fetcher is default_fetcher and getattr(cfg, "user_agent", ""):
+            fetcher = make_fetcher(cfg.user_agent)
         sources = sources or load_sources(base)
     except ConfigError as e:
         return {"results": [], "last_error": str(e), "dry_run": dry}

@@ -64,6 +64,13 @@ publisher = "clttoday"
 user_agent = ""                # REQUIRED when a sec_edgar feed is on: "Your Name you@example.com" (SEC fair-access policy)
 max_rps = 8                    # ceiling 10
 
+# How the courier names itself on feed requests (public-record servers
+# and the SEC expect a client that identifies itself). Phrase it as you
+# like; a contact address is the usual courtesy. EDGAR uses [edgar]
+# user_agent instead, as its policy requires.
+[courier]
+user_agent = "FFS-courier/0.1 (personal use; contact: you@example.com)"
+
 [output]
 digest_title_prefix = ""
 

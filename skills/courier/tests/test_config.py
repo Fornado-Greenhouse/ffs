@@ -74,3 +74,50 @@ def test_starter_courier_toml_loads(starter_dir):
     assert any(w["host_pattern"] == "link.bizjournals.com" for w in cfg.wrappers)
     assert cfg.feeds == []  # feeds ship commented out
     assert cfg.body_limit == 4000
+
+
+def test_courier_user_agent_is_owner_phrased_from_toml_and_env(tmp_path, monkeypatch):
+    from config import load_courier
+
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir(exist_ok=True)
+    (cfg_dir / "courier.toml").write_text(
+        '[mailbox]\nhost = "imap.example.test"\nuser = "me@example.test"\n\n[courier]\nuser_agent = "My courier (me@example.test)"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("FFS_COURIER_USER_AGENT", raising=False)
+    cfg = load_courier(str(tmp_path))
+    assert cfg.user_agent == "My courier (me@example.test)"
+    monkeypatch.setenv("FFS_COURIER_USER_AGENT", "Override agent (x@y.z)")
+    assert load_courier(str(tmp_path)).user_agent == "Override agent (x@y.z)"
+
+
+def test_make_fetcher_sends_the_configured_user_agent(monkeypatch):
+    import urllib.request
+
+    import courier
+
+    seen = {}
+
+    class _Resp:
+        status = 200
+
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=30):
+        seen["ua"] = req.get_header("User-agent")
+        return _Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    fetcher = courier.make_fetcher("Owner phrased (o@w.n)")
+    assert fetcher("https://example.test/feed", {}) == (200, b"{}")
+    assert seen["ua"] == "Owner phrased (o@w.n)"
+    fetcher("https://example.test/feed", {"User-Agent": "EDGAR declared (e@d.g)"})
+    assert seen["ua"] == "EDGAR declared (e@d.g)"

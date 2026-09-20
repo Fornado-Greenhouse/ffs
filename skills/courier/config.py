@@ -113,6 +113,10 @@ class CourierConfig:
     digest_title_prefix: str
     wrappers: List[Dict[str, Any]]
     body_limit: int = 4000
+    # How the courier names itself on feed requests. Owner-phrased in
+    # `[courier] user_agent`; adapters with a stronger requirement (EDGAR's
+    # declared contact) override it per request.
+    user_agent: str = "FFS-courier/0.1 (+https://github.com/Fornado-Greenhouse/ffs; personal use)"
 
 
 def _refuse_secrets(obj: Any, path: str = "") -> None:
@@ -192,7 +196,7 @@ def parse_courier(text: str, env: Optional[Mapping[str, str]] = None) -> Courier
     except tomllib.TOMLDecodeError as e2:
         raise ConfigError(f"courier.toml: {e2}") from e2
     _refuse_secrets(raw)
-    _check_keys(raw, {"mailbox", "feed", "edgar", "output", "tracking", "scribe"}, "courier.toml")
+    _check_keys(raw, {"mailbox", "feed", "edgar", "output", "tracking", "scribe", "courier"}, "courier.toml")
 
     mailbox: Optional[Mailbox] = None
     mb = raw.get("mailbox")
@@ -270,6 +274,12 @@ def parse_courier(text: str, env: Optional[Mapping[str, str]] = None) -> Courier
         digest_title_prefix=str(output.get("digest_title_prefix") or ""),
         wrappers=wrappers,
         body_limit=int(scribe.get("body_limit", 4000)),
+        user_agent=str(
+            e.get("FFS_COURIER_USER_AGENT")
+            or (raw.get("courier") or {}).get("user_agent")
+            or CourierConfig.user_agent
+        ).strip()
+        or CourierConfig.user_agent,
     )
 
 
