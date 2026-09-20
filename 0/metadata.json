@@ -1,0 +1,608 @@
+{
+  "cli_version": "0.9.0",
+  "checkpoint_id": "01M3044J2BWRRF6NZV5M04CKAY",
+  "session_id": "af7c00f1-b4ce-4505-8d35-b5ec4e0c9341",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T19:19:29.785303Z",
+  "branch": "main",
+  "checkpoints_count": 6,
+  "save_step_count": 7,
+  "files_touched": [
+    ".compozy/tasks/ffs-mvp/task_39.md",
+    "crates/ffs-cli/src/commands.rs",
+    "crates/ffs-cli/src/lib.rs",
+    "crates/ffs-cli/tests/cli_integration.rs",
+    "crates/ffs-core/src/atom.rs",
+    "crates/ffs-core/src/capability/decision.rs",
+    "crates/ffs-core/src/capability/mod.rs",
+    "crates/ffs-core/src/capability/scope.rs",
+    "crates/ffs-core/src/lib.rs",
+    "crates/ffs-core/src/predicate/mod.rs",
+    "crates/ffs-core/src/projection/render.rs",
+    "crates/ffs-core/src/quarantine.rs",
+    "crates/ffs-core/src/quarantine_sqlite.rs",
+    "crates/ffs-core/src/store/mem.rs",
+    "crates/ffs-core/src/store/migrations.rs",
+    "crates/ffs-core/src/store/mod.rs",
+    "crates/ffs-core/src/store/schema.rs",
+    "crates/ffs-core/src/store/sqlite.rs",
+    "crates/ffs-daemon/src/api.rs",
+    "crates/ffs-daemon/src/dispatch.rs",
+    "crates/ffs-daemon/src/inbox.rs",
+    "crates/ffs-daemon/src/ingest_watcher.rs",
+    "crates/ffs-daemon/src/lib.rs",
+    "crates/ffs-daemon/src/main.rs",
+    "crates/ffs-daemon/src/notify.rs",
+    "crates/ffs-daemon/tests/auditor_integration.rs",
+    "crates/ffs-daemon/tests/autofile_task39.rs",
+    "crates/ffs-daemon/tests/courier_task40.rs",
+    "crates/ffs-daemon/tests/dispatch_integration.rs",
+    "crates/ffs-daemon/tests/federation_integration.rs",
+    "crates/ffs-daemon/tests/federation_pull_integration.rs",
+    "crates/ffs-daemon/tests/filing_cabinet_task38.rs",
+    "crates/ffs-daemon/tests/librarian_integration.rs",
+    "crates/ffs-daemon/tests/perf.rs",
+    "crates/ffs-daemon/tests/resolver_task45.rs",
+    "crates/ffs-daemon/tests/scribe_integration.rs",
+    "crates/ffs-daemon/tests/summary_panel_integration.rs",
+    "crates/ffs-fastpath/Cargo.toml",
+    "crates/ffs-fastpath/src/classifier.rs",
+    "crates/ffs-fastpath/src/inbox.rs",
+    "crates/ffs-fastpath/src/lib.rs",
+    "crates/ffs-fastpath/src/watcher.rs",
+    "crates/ffs-fastpath/tests/fastpath_integration.rs",
+    "crates/ffs-fastpath/tests/inbox_task39.rs",
+    "crates/ffs-mcp/tests/mcp_integration.rs",
+    "docs/agent-memory/CONVENTION.md",
+    "docs/agent-memory/skill/ffs-memory/SKILL.md",
+    "docs/onboarding/first-use-guide.md",
+    "docs/onboarding/troubleshooting.md",
+    "obsidian-plugin/src/main.ts",
+    "obsidian-plugin/src/summary.ts",
+    "obsidian-plugin/tests/summary.test.ts",
+    "skills/auditor/audit.py",
+    "skills/auditor/tests/test_audit.py",
+    "starter/predicates/event.business.toml",
+    "starter/predicates/source.article.toml",
+    "starter/templates/org-company.md.tera",
+    "starter/templates/person-generic.md.tera"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "774a2c32f692",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6416,
+    "cache_creation_tokens": 4911092,
+    "cache_read_tokens": 131634228,
+    "output_tokens": 361920,
+    "api_call_count": 269
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-goal-2026-09-14T01:32:22.806698Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "goal"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "3a0c281baba0",
+      "timestamp": "2026-09-14T01:32:22.806698Z",
+      "native": {
+        "command": "/goal"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/goal",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01W1FjK8eYw6scz7kqwtatCt",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30,
+        "end": 31,
+        "entry_ids": [
+          "e9ee3f4f-b247-46e0-b362-d7be417895b7"
+        ],
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01W1FjK8eYw6scz7kqwtatCt"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JEz9snmjRR7fayyfWwfKTf",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1428,
+        "end": 1429,
+        "entry_ids": [
+          "acc22cd1-0f7a-48b2-b339-32a26fa9ce71"
+        ],
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JEz9snmjRR7fayyfWwfKTf"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01AtFqmqtwyuW5QTAY3MianU",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1826,
+        "end": 1827,
+        "entry_ids": [
+          "d6ba85b3-ffab-4cf8-a7ce-f82b1cec09f0"
+        ],
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AtFqmqtwyuW5QTAY3MianU"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Y6DyeARd37HStrSeobkJFp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2105,
+        "end": 2106,
+        "entry_ids": [
+          "4e89967d-eadf-41b9-9e14-0515d6140bb4"
+        ],
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Y6DyeARd37HStrSeobkJFp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_015LpifjMCeA5NktGSdFvFGx",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2236,
+        "end": 2237,
+        "entry_ids": [
+          "58076d69-e469-49c3-bdb7-658440bdbf1b"
+        ],
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_015LpifjMCeA5NktGSdFvFGx"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_017chWquExT7jptaMoL2mh93",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "cy-execute-task"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "774a2c32f692",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2625,
+        "end": 2626,
+        "entry_ids": [
+          "60aa3ac9-48af-45eb-a421-07b96f7359e3"
+        ],
+        "tool_use_id": "toolu_017chWquExT7jptaMoL2mh93"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_017chWquExT7jptaMoL2mh93"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: cy-execute-task",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 63
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-20T19:19:29.390748Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 10560,
+    "human_modified": 481,
+    "human_removed": 0,
+    "total_committed": 10560,
+    "total_lines_changed": 11042,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 1978,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4021,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "docs/agent-memory/CONVENTION.md": 2,
+        "docs/agent-memory/skill/ffs-memory/SKILL.md": 2,
+        "docs/onboarding/first-use-guide.md": 84,
+        "docs/onboarding/troubleshooting.md": 64
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 3381,
+      "user_lines_removed": 77,
+      "agent_lines_added": 4173,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "crates/ffs-core/src/atom.rs": 6,
+        "crates/ffs-core/src/capability/decision.rs": 10,
+        "crates/ffs-core/src/capability/mod.rs": 240,
+        "crates/ffs-core/src/capability/scope.rs": 65,
+        "crates/ffs-core/src/lib.rs": 2,
+        "crates/ffs-core/src/predicate/mod.rs": 28,
+        "crates/ffs-core/src/projection/render.rs": 76,
+        "crates/ffs-core/src/quarantine.rs": 215,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 165,
+        "crates/ffs-core/src/store/mem.rs": 19,
+        "crates/ffs-core/src/store/migrations.rs": 49,
+        "crates/ffs-core/src/store/mod.rs": 46,
+        "crates/ffs-core/src/store/schema.rs": 10,
+        "crates/ffs-core/src/store/sqlite.rs": 18,
+        "crates/ffs-core/tests/auto_file_task39.rs": 587,
+        "crates/ffs-fastpath/src/classifier.rs": 1,
+        "starter/predicates/event.business.toml": 9,
+        "starter/predicates/source.article.toml": 9
+      },
+      "user_removed_per_file": {
+        "crates/ffs-core/src/projection/render.rs": 3,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 72,
+        "crates/ffs-core/src/store/migrations.rs": 1,
+        "crates/ffs-core/src/store/mod.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 6290,
+      "user_lines_removed": 326,
+      "agent_lines_added": 5141,
+      "agent_lines_removed": 77,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "Cargo.lock": 1,
+        "crates/ffs-cli/src/commands.rs": 125,
+        "crates/ffs-cli/src/lib.rs": 73,
+        "crates/ffs-cli/tests/cli_integration.rs": 2,
+        "crates/ffs-core/tests/auto_file_task39.rs": 587,
+        "crates/ffs-daemon/src/api.rs": 113,
+        "crates/ffs-daemon/src/autofile.rs": 405,
+        "crates/ffs-daemon/src/dispatch.rs": 937,
+        "crates/ffs-daemon/src/inbox.rs": 902,
+        "crates/ffs-daemon/src/ingest_watcher.rs": 16,
+        "crates/ffs-daemon/src/lib.rs": 8,
+        "crates/ffs-daemon/src/main.rs": 29,
+        "crates/ffs-daemon/src/notify.rs": 6,
+        "crates/ffs-daemon/tests/auditor_integration.rs": 1,
+        "crates/ffs-daemon/tests/courier_task40.rs": 1,
+        "crates/ffs-daemon/tests/dispatch_integration.rs": 2,
+        "crates/ffs-daemon/tests/federation_integration.rs": 1,
+        "crates/ffs-daemon/tests/federation_pull_integration.rs": 1,
+        "crates/ffs-daemon/tests/filing_cabinet_task38.rs": 1,
+        "crates/ffs-daemon/tests/librarian_integration.rs": 1,
+        "crates/ffs-daemon/tests/perf.rs": 1,
+        "crates/ffs-daemon/tests/resolver_task45.rs": 1,
+        "crates/ffs-daemon/tests/scribe_integration.rs": 1,
+        "crates/ffs-daemon/tests/summary_panel_integration.rs": 1,
+        "crates/ffs-fastpath/Cargo.toml": 1,
+        "crates/ffs-fastpath/src/inbox.rs": 764,
+        "crates/ffs-fastpath/src/lib.rs": 5,
+        "crates/ffs-fastpath/src/watcher.rs": 25,
+        "crates/ffs-fastpath/tests/inbox_task39.rs": 353,
+        "crates/ffs-mcp/tests/mcp_integration.rs": 1,
+        "obsidian-plugin/src/main.ts": 26,
+        "obsidian-plugin/src/summary.ts": 43,
+        "obsidian-plugin/tests/summary.test.ts": 30
+      },
+      "user_removed_per_file": {
+        "crates/ffs-daemon/src/dispatch.rs": 324,
+        "crates/ffs-daemon/src/ingest_watcher.rs": 1,
+        "crates/ffs-daemon/src/lib.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 3217,
+      "user_lines_removed": 40,
+      "agent_lines_added": 8612,
+      "agent_lines_removed": 403,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "Cargo.lock": 2,
+        "crates/ffs-cli/tests/cli_integration.rs": 157,
+        "crates/ffs-core/src/quarantine.rs": 8,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 8,
+        "crates/ffs-core/tests/auto_file_task39.rs": 587,
+        "crates/ffs-daemon/src/autofile.rs": 449,
+        "crates/ffs-daemon/src/dispatch.rs": 100,
+        "crates/ffs-daemon/src/inbox.rs": 6,
+        "crates/ffs-fastpath/Cargo.toml": 1,
+        "crates/ffs-fastpath/tests/fastpath_integration.rs": 1,
+        "crates/ffs-fastpath/tests/inbox_task39.rs": 2,
+        "skills/auditor/audit.py": 26,
+        "skills/auditor/tests/test_audit.py": 44
+      },
+      "user_removed_per_file": {
+        "crates/ffs-cli/tests/cli_integration.rs": 1,
+        "crates/ffs-core/src/quarantine.rs": 2,
+        "crates/ffs-core/src/quarantine_sqlite.rs": 2,
+        "crates/ffs-daemon/src/dispatch.rs": 29,
+        "crates/ffs-daemon/src/inbox.rs": 5,
+        "crates/ffs-fastpath/tests/inbox_task39.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 4164,
+      "user_lines_removed": 38,
+      "agent_lines_added": 8931,
+      "agent_lines_removed": 409,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        "Cargo.lock": 2,
+        "crates/ffs-cli/src/commands.rs": 3,
+        "crates/ffs-cli/tests/cli_integration.rs": 10,
+        "crates/ffs-core/src/projection/render.rs": 10,
+        "crates/ffs-core/tests/auto_file_task39.rs": 587,
+        "crates/ffs-daemon/src/autofile.rs": 458,
+        "crates/ffs-daemon/src/dispatch.rs": 52,
+        "crates/ffs-daemon/src/ingest_watcher.rs": 6,
+        "crates/ffs-daemon/src/lib.rs": 1,
+        "crates/ffs-daemon/tests/autofile_task39.rs": 1203,
+        "starter/templates/org-company.md.tera": 3,
+        "starter/templates/person-generic.md.tera": 3
+      },
+      "user_removed_per_file": {
+        "crates/ffs-cli/src/commands.rs": 2,
+        "crates/ffs-cli/tests/cli_integration.rs": 2,
+        "crates/ffs-core/src/projection/render.rs": 3,
+        "crates/ffs-daemon/src/dispatch.rs": 28,
+        "crates/ffs-daemon/src/ingest_watcher.rs": 2,
+        "crates/ffs-daemon/src/lib.rs": 1
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 2974,
+      "user_lines_removed": 0,
+      "agent_lines_added": 10227,
+      "agent_lines_removed": 442,
+      "user_added_per_file": {
+        ".agents/skills/cy-create-prd/SKILL.md": 185,
+        ".agents/skills/cy-create-prd/references/adr-template.md": 55,
+        ".agents/skills/cy-create-prd/references/prd-template.md": 102,
+        ".agents/skills/cy-create-prd/references/question-protocol.md": 83,
+        ".agents/skills/cy-create-tasks/SKILL.md": 111,
+        ".agents/skills/cy-create-tasks/references/task-context-schema.md": 35,
+        ".agents/skills/cy-create-tasks/references/task-template.md": 83,
+        ".agents/skills/cy-create-techspec/SKILL.md": 143,
+        ".agents/skills/cy-create-techspec/references/adr-template.md": 55,
+        ".agents/skills/cy-create-techspec/references/techspec-template.md": 116,
+        ".agents/skills/cy-execute-task/SKILL.md": 65,
+        ".agents/skills/cy-execute-task/references/tracking-checklist.md": 9,
+        ".agents/skills/cy-final-verify/SKILL.md": 154,
+        ".agents/skills/cy-fix-reviews/SKILL.md": 50,
+        ".agents/skills/cy-review-round/SKILL.md": 120,
+        ".agents/skills/cy-review-round/references/issue-template.md": 60,
+        ".agents/skills/cy-review-round/references/review-criteria.md": 123,
+        ".agents/skills/cy-workflow-memory/SKILL.md": 85,
+        ".agents/skills/cy-workflow-memory/references/memory-guidelines.md": 75,
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 33,
+        ".compozy/tasks/ffs-mvp/_tasks.md": 2,
+        ".compozy/tasks/ffs-mvp/task_49.md": 99,
+        "Cargo.lock": 2,
+        "crates/ffs-core/tests/auto_file_task39.rs": 587,
+        "crates/ffs-daemon/src/autofile.rs": 458
+      }
+    }
+  ]
+}
