@@ -121,3 +121,45 @@ def test_make_fetcher_sends_the_configured_user_agent(monkeypatch):
     assert seen["ua"] == "Owner phrased (o@w.n)"
     fetcher("https://example.test/feed", {"User-Agent": "EDGAR declared (e@d.g)"})
     assert seen["ua"] == "EDGAR declared (e@d.g)"
+
+
+def test_mailbox_carries_a_socket_timeout_so_a_stalled_server_cannot_hang_the_tick(tmp_path, monkeypatch):
+    """Live finding 2026-09-21: imaplib blocks with no deadline, so a
+    server that stopped sending mid-fetch parked the tick in read() for
+    35 minutes. A daily job must fail and be reported instead."""
+    from config import load_courier
+
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir(exist_ok=True)
+    (cfg_dir / "courier.toml").write_text(
+        '[mailbox]\nhost = "imap.example.test"\nuser = "me@example.test"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("FFS_COURIER_MAIL_TIMEOUT", raising=False)
+    assert load_courier(str(tmp_path)).mailbox.timeout_seconds == 60
+
+    (cfg_dir / "courier.toml").write_text(
+        '[mailbox]\nhost = "imap.example.test"\nuser = "me@example.test"\ntimeout_seconds = 15\n',
+        encoding="utf-8",
+    )
+    assert load_courier(str(tmp_path)).mailbox.timeout_seconds == 15
+    monkeypatch.setenv("FFS_COURIER_MAIL_TIMEOUT", "5")
+    assert load_courier(str(tmp_path)).mailbox.timeout_seconds == 5
+
+
+def test_imap_connect_passes_the_timeout_to_the_client(monkeypatch):
+    import mailbox as mbx
+    from config import Mailbox
+
+    seen = {}
+
+    class FakeSSL:
+        def __init__(self, host, port, timeout=None):
+            seen["timeout"] = timeout
+
+        def login(self, user, secret):
+            seen["login"] = user
+
+    monkeypatch.setattr(mbx.imaplib, "IMAP4_SSL", FakeSSL)
+    monkeypatch.setenv("FFS_COURIER_MAIL_PASSWORD", "x")
+    mbx.default_imap_factory(Mailbox(host="imap.example.test", user="me@example.test", timeout_seconds=17))
+    assert seen["timeout"] == 17

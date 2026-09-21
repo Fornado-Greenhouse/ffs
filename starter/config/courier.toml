@@ -14,6 +14,7 @@ folder = "INBOX"
 auth = "app_password"          # "oauth" is accepted but not implemented in this release
 user = ""                      # the mailbox address, e.g. you@yourdomain.example
 mark_seen = true               # mark a digest seen only after every item's file was written
+timeout_seconds = 60           # socket timeout per IMAP operation; without one a stalled server hangs the tick forever
 
 # Each source pairs a sender with a publisher key from sources.toml.
 [[mailbox.source]]

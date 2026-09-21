@@ -55,7 +55,11 @@ def default_imap_factory(mb: Mailbox) -> Any:
             f"no mailbox secret for {mb.host}: store it in the OS keychain under service "
             f"ffs.courier.{mb.host} (or set FFS_COURIER_MAIL_PASSWORD for tests)"
         )
-    client = imaplib.IMAP4_SSL(mb.host, mb.port)
+    # A socket timeout on every operation. imaplib's default is blocking
+    # with no deadline, so a server that stops sending mid-fetch parks
+    # the tick forever (seen live 2026-09-21: 35 minutes in read() on an
+    # established connection). A daily job must fail and be reported.
+    client = imaplib.IMAP4_SSL(mb.host, mb.port, timeout=mb.timeout_seconds)
     client.login(mb.user, secret)
     return client
 

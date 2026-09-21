@@ -90,6 +90,12 @@ class Mailbox:
     user: str = ""
     mark_seen: bool = True
     since: Optional[str] = None
+    # Socket timeout for every IMAP operation, in seconds. Without one,
+    # a read blocks forever when the server stops sending on an
+    # otherwise established connection: a live tick sat in read() for
+    # 35 minutes on 2026-09-21 and had to be killed. A daily job must
+    # fail and report instead of hanging.
+    timeout_seconds: int = 60
     sources: List[MailboxSource] = field(default_factory=list)
 
 
@@ -201,7 +207,7 @@ def parse_courier(text: str, env: Optional[Mapping[str, str]] = None) -> Courier
     mailbox: Optional[Mailbox] = None
     mb = raw.get("mailbox")
     if mb:
-        _check_keys(mb, {"host", "port", "folder", "auth", "user", "mark_seen", "since", "source"}, "[mailbox]")
+        _check_keys(mb, {"host", "port", "folder", "auth", "user", "mark_seen", "timeout_seconds", "since", "source"}, "[mailbox]")
         sources: List[MailboxSource] = []
         for i, s in enumerate(mb.get("source", []) or []):
             _check_keys(s, {"sender", "subject_filter", "publisher", "path_filter"}, f"[[mailbox.source]] #{i}")
@@ -223,6 +229,9 @@ def parse_courier(text: str, env: Optional[Mapping[str, str]] = None) -> Courier
             user=e.get("FFS_COURIER_MAIL_USER") or str(mb.get("user") or ""),
             mark_seen=bool(mb.get("mark_seen", True)),
             since=mb.get("since"),
+            timeout_seconds=int(
+                e.get("FFS_COURIER_MAIL_TIMEOUT") or mb.get("timeout_seconds", 60)
+            ),
             sources=sources,
         )
         if not mailbox.host:
