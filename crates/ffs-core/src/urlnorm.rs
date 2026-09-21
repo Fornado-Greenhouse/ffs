@@ -19,8 +19,32 @@
 
 use crate::multibase::decode_base58btc;
 
-/// Query parameter names dropped by [`normalize_url`].
-const STRIPPED_PARAMS: &[&str] = &["fbclid", "gclid", "mc_cid", "mc_eid"];
+/// Query parameter names dropped by [`normalize_url`]. These identify a
+/// send, not a document, and the normalized url is the article's
+/// identity key (ADR-030): the same story re-sent in a later digest
+/// arrives with a new `senddate` and `j` and would otherwise resolve as
+/// a second article. `ana`, `j`, and `senddate` are American City
+/// Business Journals' newsletter parameters, seen live on 2026-09-21.
+/// Must stay in step with `_TRACKING_PARAMS` in `skills/_lib/urlnorm.py`;
+/// the shared fixture `skills/_lib/fixtures/urlnorm.json` holds both to
+/// the same answers.
+const STRIPPED_PARAMS: &[&str] = &[
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "dclid",
+    "msclkid",
+    "ana",
+    "j",
+    "senddate",
+    "cid",
+    "s_cid",
+    "ncid",
+    "igshid",
+    "ref",
+    "sourcecode",
+];
 
 fn is_tracking_param(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();

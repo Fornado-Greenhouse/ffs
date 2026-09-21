@@ -61,7 +61,7 @@ RESULT_KEYS = (
 # the SEC fair-access policy both expect a client that names itself.
 # An adapter that sets its own User-Agent (EDGAR's declared contact)
 # wins; this is only the fallback.
-COURIER_USER_AGENT = "FFS-courier/0.1 (+https://github.com/Fornado-Greenhouse/ffs; personal use)"
+COURIER_USER_AGENT = "FFS-courier/0.1 (personal use)"
 
 
 def make_fetcher(user_agent: str):

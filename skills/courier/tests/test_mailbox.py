@@ -153,3 +153,33 @@ def test_oauth_connect_gives_clear_error(tmp_path):
     cfg.mailbox.auth = "oauth"
     res = mbx.mailbox_tick(cfg, sources_cfg(), Ledger(str(tmp_path)), Output(str(tmp_path / "ingest")))
     assert "oauth is not implemented" in (res["last_error"] or "")
+
+
+def test_published_at_prefers_the_articles_own_date_from_the_url():
+    """Live finding 2026-09-21: a digest re-ran a 2025 story. Dating it by
+    the send date would file a year-old article as today's news."""
+    from mailbox import _published_at
+
+    old = "https://www.bizjournals.com/charlotte/news/2025/10/01/story.html"
+    assert _published_at(old, "2026-09-19") == "2025-10-01"
+    # No date in the path: the digest's send date stands.
+    assert _published_at("https://example.test/news/story.html", "2026-09-19") == "2026-09-19"
+    # A future-dated path is not trusted over the send date.
+    assert _published_at("https://x.test/news/2099/01/01/s.html", "2026-09-19") == "2026-09-19"
+
+
+def test_reading_the_mailbox_never_marks_a_message_seen_by_itself(tmp_path):
+    """Live finding 2026-09-21: the tick fetched with RFC822, which sets
+    \\Seen as a side effect, so a dry run marked the owner's digests as
+    read and the next tick's UNSEEN search found nothing. The fetch must
+    peek; only a real tick whose files were all written marks the message.
+    """
+    _res, fake_dry, _ledger = _run(tmp_path, "pointer_digest.eml", dry=True)
+    assert all("\\Seen" not in f for f in fake_dry.flags.values()), (
+        "a dry run must leave every message unread"
+    )
+
+    _res2, fake_real, _l2 = _run(tmp_path / "real", "pointer_digest.eml")
+    assert "\\Seen" in fake_real.flags[1], (
+        "a real tick marks the message once every file was written"
+    )

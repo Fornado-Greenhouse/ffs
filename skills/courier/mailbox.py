@@ -80,7 +80,11 @@ class FakeImap:
 
     def fetch(self, num: str, parts: str) -> Tuple[str, List[Any]]:
         raw = self.messages[int(num) - 1]
-        return "OK", [(f"{num} (RFC822 {{{len(raw)}}}".encode(), raw), b")"]
+        # Mirror the server: a peeking fetch leaves \Seen alone, a plain
+        # RFC822 fetch sets it. The courier must always peek.
+        if "PEEK" not in parts.upper():
+            self.flags[int(num)].add("\\Seen")
+        return "OK", [(f"{num} ({parts} {{{len(raw)}}}".encode(), raw), b")"]
 
     def store(self, num: str, op: str, flag: str) -> Tuple[str, List[bytes]]:
         if "+FLAGS" in op:
@@ -149,6 +153,27 @@ class _DigestParser(HTMLParser):
 
 _ATTRIB_RE = re.compile(r"\(([^()]{2,60})\)\s*$")
 _NOISE_TEXT = re.compile(r"^(read full story|read more|learn more|view in browser|unsubscribe|manage preferences|see more)\W*$", re.I)
+
+
+_URL_DATE_RE = re.compile(r"/(20\d{2})/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/")
+
+
+def _published_at(url: str, digest_day: str) -> str:
+    """The article's own date when its url carries one, else the digest's
+    send date.
+
+    Live finding 2026-09-21: a digest re-ran a story whose url path said
+    2025/10/01 while the send date was 2026-09-19. Dating it by the send
+    date would put a year-old story in this week's briefing and start its
+    attestation window on the wrong day. The `/YYYY/MM/DD/` path segment
+    is a convention across news sites, not a publisher special case; when
+    it is absent, or dated in the future, the send date stands.
+    """
+    m = _URL_DATE_RE.search(url)
+    if not m:
+        return digest_day
+    found = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    return found if found <= digest_day else digest_day
 
 
 def _attribution(blurb: str) -> Tuple[str, Optional[str]]:
@@ -340,7 +365,7 @@ def items_for_message(
                 title=raw["headline"],
                 url=url,
                 publication=pub_name,
-                published_at=day,
+                published_at=_published_at(url, day),
                 intake=intake,
                 fetch=fetch,
                 body=body,
@@ -389,7 +414,13 @@ def mailbox_tick(
         refs_by_pub: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}
         for num in nums:
             num_s = num.decode() if isinstance(num, bytes) else str(num)
-            typ, parts = client.fetch(num_s, "(RFC822)")
+            # BODY.PEEK[], never RFC822: a plain FETCH RFC822 sets the
+            # \Seen flag as a side effect, so reading the mailbox marked
+            # the owner's digests as read even in a dry run, and the next
+            # tick's UNSEEN search then found nothing (seen live
+            # 2026-09-21). Seen is set below, explicitly, and only when
+            # this is not a dry run and every file was written.
+            typ, parts = client.fetch(num_s, "(BODY.PEEK[])")
             raw = b""
             for part in parts:
                 if isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], (bytes, bytearray)):

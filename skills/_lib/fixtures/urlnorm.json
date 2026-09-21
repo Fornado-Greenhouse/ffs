@@ -56,6 +56,16 @@
     {
       "raw": "https://www.example.com/a/b/",
       "normalized": "https://www.example.com/a/b"
+    },
+    {
+      "raw": "https://www.bizjournals.com/charlotte/news/2025/10/01/wp-church-restaurant-charleston-lawsuit-5church.html?ana=e_CH_EX&j=47558334&senddate=2026-09-19",
+      "normalized": "https://www.bizjournals.com/charlotte/news/2025/10/01/wp-church-restaurant-charleston-lawsuit-5church.html",
+      "note": "live 2026-09-21: the same story re-sent on another day must normalize to one url, or it files twice"
+    },
+    {
+      "raw": "https://www.example.com/news/story.html?ana=x&id=7&senddate=2026-01-02",
+      "normalized": "https://www.example.com/news/story.html?id=7",
+      "note": "campaign params dropped, real params kept in order"
     }
   ]
 }

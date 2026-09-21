@@ -67,3 +67,17 @@ def test_content_hash_multibase_is_blake2b_base58btc():
     assert all(c in urlnorm._B58_ALPHABET for c in h[1:])
     # leading zero bytes become '1's
     assert urlnorm.base58btc_encode(b"\x00\x00\x01") == "112"
+
+
+def test_campaign_params_are_stripped_so_a_resent_article_is_one_article():
+    """Live finding 2026-09-21: the Journal's digest carries ana, j, and
+    senddate. The normalized url is the article's identity key, so a story
+    re-sent on a later day must collapse to the same url."""
+    from urlnorm import normalize_url
+
+    base = "https://www.bizjournals.com/charlotte/news/2025/10/01/story.html"
+    day1 = normalize_url(base + "?ana=e_CH_EX&j=47558334&senddate=2026-09-19")
+    day2 = normalize_url(base + "?ana=e_CH_EX&j=48112900&senddate=2026-10-02")
+    assert day1 == day2 == base
+    # A real query parameter survives.
+    assert normalize_url(base + "?id=7&senddate=2026-09-19") == base + "?id=7"

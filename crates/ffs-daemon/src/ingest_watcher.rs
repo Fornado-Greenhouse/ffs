@@ -207,7 +207,7 @@ async fn event_loop(ctx: EventLoopCtx, mut rx: mpsc::UnboundedReceiver<NotifyEve
                     continue;
                 }
                 for path in ev.paths {
-                    if !is_eligible_ingest_file(&path) {
+                    if !is_eligible_ingest_file_under(&path, Some(&ctx.ingest_dir)) {
                         continue;
                     }
                     if ctx.stability_window.is_zero() {
@@ -233,7 +233,7 @@ async fn reconcile_existing(ctx: &EventLoopCtx, pending: &mut HashMap<PathBuf, P
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if !is_eligible_ingest_file(&path) {
+        if !is_eligible_ingest_file_under(&path, Some(&ctx.ingest_dir)) {
             continue;
         }
         if ctx.stability_window.is_zero() {
@@ -332,6 +332,20 @@ async fn check_stable(ctx: &EventLoopCtx, pending: &mut HashMap<PathBuf, Pending
 /// are also skipped — the watcher's mental model is "drop a note
 /// in ingest/", not "build a directory tree under ingest/".
 pub fn is_eligible_ingest_file(path: &Path) -> bool {
+    is_eligible_ingest_file_under(path, None)
+}
+
+/// As [`is_eligible_ingest_file`], bounded by the ingest directory so a
+/// hidden *directory* anywhere between `ingest_dir` and the file makes
+/// the file ineligible.
+///
+/// The bound matters: the substrate root is itself `~/.ffs`, so an
+/// unbounded walk toward `/` would reject every file. Without the rule,
+/// the watcher consumed the courier's dry-run output from
+/// `ingest/.courier/dry-run/` and fed 57 files into the real pipeline
+/// (seen live 2026-09-21). A dry run must stay dry, and hidden
+/// directories under `ingest/` are agent scratch space, not drops.
+pub fn is_eligible_ingest_file_under(path: &Path, ingest_dir: Option<&Path>) -> bool {
     if !path.is_file() {
         return false;
     }
@@ -344,9 +358,24 @@ pub fn is_eligible_ingest_file(path: &Path) -> bool {
     if path.extension().and_then(|s| s.to_str()) != Some("md") {
         return false;
     }
-    // Skip anything under the .processed/ retirement dir.
     for ancestor in path.ancestors().skip(1) {
-        if ancestor.file_name().and_then(|s| s.to_str()) == Some(PROCESSED_DIR) {
+        // Stop at the ingest dir: the substrate root is itself `~/.ffs`,
+        // so walking past it would reject everything.
+        if ingest_dir == Some(ancestor) {
+            break;
+        }
+        let Some(dir_name) = ancestor.file_name().and_then(|s| s.to_str()) else {
+            break;
+        };
+        let hidden = match ingest_dir {
+            // Bounded: any hidden directory under `ingest/` is scratch
+            // space, which covers `.processed/` and `.courier/`.
+            Some(_) => dir_name.starts_with('.'),
+            // Unbounded (legacy callers): only the retirement dir, since
+            // every path under `~/.ffs` has a hidden ancestor.
+            None => dir_name == PROCESSED_DIR,
+        };
+        if hidden {
             return false;
         }
     }
@@ -816,6 +845,48 @@ mod tests {
         assert!(
             quarantine.list(None).await.is_empty(),
             "no submission expected for a deleted file"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dry_run_isolation_tests {
+    use super::*;
+
+    /// Live finding 2026-09-21: the courier's dry run wrote to
+    /// `ingest/.courier/dry-run/<ts>/`, the watcher walked in, and 57
+    /// files meant as a preview entered the real pipeline. A dry run
+    /// must stay dry: hidden directories under `ingest/` are scratch.
+    #[test]
+    fn files_inside_a_hidden_directory_under_ingest_are_not_eligible() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ingest = tmp.path().join("ingest");
+        let scratch = ingest
+            .join(".courier")
+            .join("dry-run")
+            .join("20260921T112116Z");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let preview = scratch.join("charlotte-business-journal-2026-09-19-story.md");
+        std::fs::write(&preview, "---\npredicate: source.article\n---\n").unwrap();
+
+        assert!(
+            !is_eligible_ingest_file_under(&preview, Some(&ingest)),
+            "a dry-run preview must never be ingested"
+        );
+
+        // A real drop at the top of ingest/ is still eligible.
+        let drop = ingest.join("note.md");
+        std::fs::write(&drop, "hello").unwrap();
+        assert!(is_eligible_ingest_file_under(&drop, Some(&ingest)));
+
+        // The bound matters: the substrate root is itself hidden.
+        let hidden_root = tmp.path().join(".ffs").join("ingest");
+        std::fs::create_dir_all(&hidden_root).unwrap();
+        let under_hidden_root = hidden_root.join("note.md");
+        std::fs::write(&under_hidden_root, "hello").unwrap();
+        assert!(
+            is_eligible_ingest_file_under(&under_hidden_root, Some(&hidden_root)),
+            "a hidden ancestor above the ingest dir must not disqualify a drop"
         );
     }
 }

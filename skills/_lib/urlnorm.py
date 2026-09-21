@@ -32,7 +32,30 @@ import re
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-_TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "dclid", "msclkid"}
+# Campaign parameters that identify a send, not a document. They must be
+# stripped because the normalized url is the article's identity key
+# (ADR-030): the same story re-sent in a later digest arrives with a new
+# `senddate` and `j`, and would otherwise file as a second article.
+# `ana`, `j`, and `senddate` are American City Business Journals' own
+# newsletter parameters, seen live on 2026-09-21; the rest are the
+# common ad-network and mail-provider families.
+_TRACKING_PARAMS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "dclid",
+    "msclkid",
+    "ana",
+    "j",
+    "senddate",
+    "cid",
+    "s_cid",
+    "ncid",
+    "igshid",
+    "ref",
+    "sourcecode",
+}
 _TRACKING_PREFIXES = ("utm_",)
 
 # The default wrapper table. `segment_index` counts non-empty path

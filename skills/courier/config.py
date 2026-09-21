@@ -116,7 +116,7 @@ class CourierConfig:
     # How the courier names itself on feed requests. Owner-phrased in
     # `[courier] user_agent`; adapters with a stronger requirement (EDGAR's
     # declared contact) override it per request.
-    user_agent: str = "FFS-courier/0.1 (+https://github.com/Fornado-Greenhouse/ffs; personal use)"
+    user_agent: str = "FFS-courier/0.1 (personal use)"
 
 
 def _refuse_secrets(obj: Any, path: str = "") -> None:
